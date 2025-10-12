@@ -1,0 +1,4 @@
+{
+  "name": "agent-builder",
+  "pages_build_output_dir": "./dist"
+}
