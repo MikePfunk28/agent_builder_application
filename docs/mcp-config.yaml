@@ -1,0 +1,483 @@
+# MCP Integration Configuration for Agent Builder Platform
+# This configuration defines the MCP connections and knowledge synchronization settings
+
+mcpServers:
+  # Core AWS Documentation
+  aws-docs:
+    name: "AWS Documentation MCP"
+    description: "Comprehensive AWS service documentation, best practices, and pricing information"
+    command: "uvx"
+    args: ["awslabs.aws-documentation-mcp-server@latest"]
+    env:
+      FASTMCP_LOG_LEVEL: "ERROR"
+    disabled: false
+    autoApprove: ["search_documentation", "get_service_details", "find_best_practices"]
+    syncSchedule: "0 2 * * 1,4"  # Monday and Thursday at 2 AM
+    knowledgeCategories:
+      - "service_documentation"
+      - "best_practices"
+      - "pricing_information"
+      - "security_guidelines"
+      - "architecture_patterns"
+
+  # AWS Well-Architected Framework
+  aws-well-architected:
+    name: "AWS Well-Architected Framework MCP"
+    description: "AWS Well-Architected Framework pillars, best practices, and architectural guidance"
+    command: "uvx"
+    args: ["aws-well-architected-mcp@latest"]
+    env:
+      FASTMCP_LOG_LEVEL: "ERROR"
+    disabled: false
+    autoApprove: ["get_pillar_guidance", "assess_architecture", "get_best_practices"]
+    syncSchedule: "0 3 * * 2,5"  # Tuesday and Friday at 3 AM
+    knowledgeCategories:
+      - "operational_excellence"
+      - "security_pillar"
+      - "reliability_pillar"
+      - "performance_efficiency"
+      - "cost_optimization"
+      - "sustainability"
+
+  # AWS Solutions Library
+  aws-solutions:
+    name: "AWS Solutions Library MCP"
+    description: "AWS Solutions Library with reference architectures and implementation guides"
+    command: "uvx"
+    args: ["aws-solutions-library-mcp@latest"]
+    env:
+      FASTMCP_LOG_LEVEL: "ERROR"
+    disabled: false
+    autoApprove: ["search_solutions", "get_architecture_patterns", "get_implementation_guides"]
+    syncSchedule: "0 4 * * 3,6"  # Wednesday and Saturday at 4 AM
+    knowledgeCategories:
+      - "reference_architectures"
+      - "solution_patterns"
+      - "implementation_guides"
+      - "deployment_templates"
+
+  # AWS Pricing and Cost Management
+  aws-pricing:
+    name: "AWS Pricing MCP"
+    description: "Real-time AWS pricing, cost calculators, and optimization recommendations"
+    command: "uvx"
+    args: ["aws-pricing-mcp@latest"]
+    env:
+      FASTMCP_LOG_LEVEL: "ERROR"
+    disabled: false
+    autoApprove: ["get_pricing", "calculate_costs", "get_optimization_recommendations"]
+    syncSchedule: null  # Real-time pricing, no caching
+    knowledgeCategories:
+      - "service_pricing"
+      - "cost_calculators"
+      - "optimization_recommendations"
+      - "billing_information"
+
+  # AWS Security Best Practices
+  aws-security:
+    name: "AWS Security Best Practices MCP"
+    description: "AWS security services, compliance frameworks, and security best practices"
+    command: "uvx"
+    args: ["aws-security-mcp@latest"]
+    env:
+      FASTMCP_LOG_LEVEL: "ERROR"
+    disabled: false
+    autoApprove: ["get_security_guidance", "check_compliance", "get_security_services"]
+    syncSchedule: "0 5 * * 1,4"  # Monday and Thursday at 5 AM
+    knowledgeCategories:
+      - "security_services"
+      - "compliance_frameworks"
+      - "security_best_practices"
+      - "threat_detection"
+      - "identity_access_management"
+
+  # AWS Serverless Patterns
+  aws-serverless:
+    name: "AWS Serverless Patterns MCP"
+    description: "AWS serverless architecture patterns, Lambda best practices, and event-driven designs"
+    command: "uvx"
+    args: ["aws-serverless-patterns-mcp@latest"]
+    env:
+      FASTMCP_LOG_LEVEL: "ERROR"
+    disabled: false
+    autoApprove: ["get_serverless_patterns", "get_lambda_best_practices", "get_event_patterns"]
+    syncSchedule: "0 6 * * 2,5"  # Tuesday and Friday at 6 AM
+    knowledgeCategories:
+      - "serverless_patterns"
+      - "lambda_best_practices"
+      - "event_driven_architecture"
+      - "microservices_patterns"
+
+  # AWS Container Services
+  aws-containers:
+    name: "AWS Container Services MCP"
+    description: "ECS, EKS, Fargate patterns and container orchestration best practices"
+    command: "uvx"
+    args: ["aws-containers-mcp@latest"]
+    env:
+      FASTMCP_LOG_LEVEL: "ERROR"
+    disabled: false
+    autoApprove: ["get_container_patterns", "get_orchestration_guidance", "get_deployment_strategies"]
+    syncSchedule: "0 7 * * 3,6"  # Wednesday and Saturday at 7 AM
+    knowledgeCategories:
+      - "ecs_patterns"
+      - "eks_patterns"
+      - "fargate_best_practices"
+      - "container_security"
+
+  # AWS AI/ML Services
+  aws-aiml:
+    name: "AWS AI/ML Services MCP"
+    description: "Bedrock, SageMaker, and AI/ML service patterns and best practices"
+    command: "uvx"
+    args: ["aws-aiml-mcp@latest"]
+    env:
+      FASTMCP_LOG_LEVEL: "ERROR"
+    disabled: false
+    autoApprove: ["get_aiml_patterns", "get_bedrock_guidance", "get_model_deployment"]
+    syncSchedule: "0 8 * * 1,4"  # Monday and Thursday at 8 AM
+    knowledgeCategories:
+      - "bedrock_patterns"
+      - "sagemaker_patterns"
+      - "aiml_best_practices"
+      - "model_deployment"
+      - "inference_optimization"
+
+  strands-mcp:
+    name: "Strands Agent Resources MCP"
+    description: "Access to Strands agent templates, capabilities, and implementation examples"
+    command: "uvx"
+    args: ["strands-mcp-server@latest"]
+    env:
+      FASTMCP_LOG_LEVEL: "ERROR"
+    disabled: false
+    autoApprove: ["get_agent_templates", "search_capabilities", "get_implementation_examples"]
+    syncSchedule: "0 9 * * 2,5"  # Tuesday and Friday at 9 AM
+    knowledgeCategories:
+      - "agent_templates"
+      - "capabilities"
+      - "implementation_examples"
+      - "configuration_patterns"
+
+  github-mcp:
+    name: "GitHub Repository Analysis MCP"
+    description: "Analyzes GitHub repositories to discover and recommend MCPs for specific use cases"
+    command: "uvx"
+    args: ["github-mcp-server@latest"]
+    env:
+      FASTMCP_LOG_LEVEL: "ERROR"
+      GITHUB_TOKEN: "${GITHUB_TOKEN}"
+    disabled: false
+    autoApprove: ["search_repositories", "analyze_mcp_compatibility", "get_repository_details"]
+    syncSchedule: "0 4 * * 3,6"  # Wednesday and Saturday at 4 AM
+    knowledgeCategories:
+      - "mcp_repositories"
+      - "compatibility_matrix"
+      - "usage_examples"
+      - "community_ratings"
+
+  filesystem-mcp:
+    name: "Filesystem Operations MCP"
+    description: "Provides file system operations for agent configuration and code generation"
+    command: "uvx"
+    args: ["filesystem-mcp-server@latest"]
+    env:
+      FASTMCP_LOG_LEVEL: "ERROR"
+    disabled: false
+    autoApprove: ["read_file", "write_file", "list_directory"]
+    syncSchedule: null  # No sync needed for filesystem operations
+    knowledgeCategories: []
+
+  # AWS DevOps and CI/CD Patterns (Critical for agent deployment)
+  aws-devops:
+    name: "AWS DevOps and CI/CD MCP"
+    description: "CodePipeline, CodeBuild, deployment strategies, and DevOps best practices"
+    command: "uvx"
+    args: ["aws-devops-mcp@latest"]
+    env:
+      FASTMCP_LOG_LEVEL: "ERROR"
+    disabled: false
+    autoApprove: ["get_cicd_patterns", "get_deployment_strategies", "get_devops_best_practices"]
+    syncSchedule: "0 10 * * 1,4"  # Monday and Thursday at 10 AM
+    knowledgeCategories:
+      - "cicd_patterns"
+      - "deployment_strategies"
+      - "devops_best_practices"
+      - "infrastructure_as_code"
+      - "automated_testing"
+
+  # AWS Monitoring and Observability (Critical for production agents)
+  aws-monitoring:
+    name: "AWS Monitoring and Observability MCP"
+    description: "CloudWatch, X-Ray, monitoring patterns, and observability best practices"
+    command: "uvx"
+    args: ["aws-monitoring-mcp@latest"]
+    env:
+      FASTMCP_LOG_LEVEL: "ERROR"
+    disabled: false
+    autoApprove: ["get_monitoring_patterns", "get_observability_guidance", "get_alerting_strategies"]
+    syncSchedule: "0 11 * * 2,5"  # Tuesday and Friday at 11 AM
+    knowledgeCategories:
+      - "monitoring_patterns"
+      - "observability_practices"
+      - "alerting_strategies"
+      - "performance_monitoring"
+      - "troubleshooting_guides"
+
+  # AWS Networking (Critical for secure agent architectures)
+  aws-networking:
+    name: "AWS Networking MCP"
+    description: "VPC, networking patterns, hybrid connectivity, and network security"
+    command: "uvx"
+    args: ["aws-networking-mcp@latest"]
+    env:
+      FASTMCP_LOG_LEVEL: "ERROR"
+    disabled: false
+    autoApprove: ["get_vpc_patterns", "get_networking_guidance", "get_connectivity_solutions"]
+    syncSchedule: "0 12 * * 3,6"  # Wednesday and Saturday at 12 PM
+    knowledgeCategories:
+      - "vpc_patterns"
+      - "network_security"
+      - "hybrid_connectivity"
+      - "performance_optimization"
+      - "troubleshooting"
+
+  # Agent Core Patterns MCP (Critical for agent-specific guidance)
+  agent-core-patterns:
+    name: "Agent Core Patterns MCP"
+    description: "Agent Core framework patterns, best practices, and implementation guides"
+    command: "uvx"
+    args: ["agent-core-patterns-mcp@latest"]
+    env:
+      FASTMCP_LOG_LEVEL: "ERROR"
+    disabled: false
+    autoApprove: ["get_agent_patterns", "get_framework_guidance", "get_implementation_examples"]
+    syncSchedule: "0 13 * * 1,4"  # Monday and Thursday at 1 PM
+    knowledgeCategories:
+      - "agent_patterns"
+      - "framework_best_practices"
+      - "implementation_guides"
+      - "configuration_examples"
+      - "troubleshooting"
+
+  perplexity-mcp:
+    name: "Perplexity Research MCP"
+    description: "Provides deep research capabilities for current trends, best practices, and comprehensive technical analysis"
+    command: "uvx"
+    args: ["perplexity-mcp-server@latest"]
+    env:
+      FASTMCP_LOG_LEVEL: "ERROR"
+      PERPLEXITY_API_KEY: "${PERPLEXITY_API_KEY}"
+    disabled: false
+    autoApprove: ["research_query", "trend_analysis", "best_practices_search"]
+    syncSchedule: null  # Real-time research, no caching needed
+    rateLimiting:
+      enabled: true
+      requestsPerMinute: 20  # Conservative rate limiting
+      burstCapacity: 5
+      costLimit: 2.00  # $2/month limit for research queries
+    knowledgeCategories:
+      - "current_trends"
+      - "best_practices"
+      - "competitive_analysis"
+      - "technical_research"
+      - "community_insights"
+
+# Knowledge Base Configuration
+knowledgeBase:
+  syncFrequency: "2-3 times per week"
+  retentionPeriod: "90 days"
+  fallbackTimeout: "5 seconds"
+  cacheStrategy: "intelligent_routing"
+
+  # Vector Search Configuration
+  vectorSearch:
+    enabled: true
+    embeddingModel: "amazon.titan-embed-text-v1"
+    vectorDimension: 1536
+    similarityThreshold: 0.7
+    hybridSearchWeight: 0.7  # 70% vector, 30% text
+    fallbackToText: true
+
+  # DynamoDB table configurations
+  tables:
+    aws_knowledge:
+      tableName: "${PROJECT_NAME}-aws-knowledge-${ENVIRONMENT}"
+      partitionKey: "category"
+      sortKey: "item_id"
+      ttl: 604800  # 7 days
+
+    aws_well_architected:
+      tableName: "${PROJECT_NAME}-aws-well-architected-${ENVIRONMENT}"
+      partitionKey: "pillar"
+      sortKey: "item_id"
+      ttl: 1209600  # 14 days (more stable)
+
+    aws_solutions:
+      tableName: "${PROJECT_NAME}-aws-solutions-${ENVIRONMENT}"
+      partitionKey: "solution_category"
+      sortKey: "solution_id"
+      ttl: 1209600  # 14 days
+
+    aws_security:
+      tableName: "${PROJECT_NAME}-aws-security-${ENVIRONMENT}"
+      partitionKey: "security_domain"
+      sortKey: "item_id"
+      ttl: 604800  # 7 days (security updates frequently)
+
+    aws_serverless:
+      tableName: "${PROJECT_NAME}-aws-serverless-${ENVIRONMENT}"
+      partitionKey: "pattern_type"
+      sortKey: "pattern_id"
+      ttl: 604800  # 7 days
+
+    aws_containers:
+      tableName: "${PROJECT_NAME}-aws-containers-${ENVIRONMENT}"
+      partitionKey: "service_type"
+      sortKey: "pattern_id"
+      ttl: 604800  # 7 days
+
+    aws_aiml:
+      tableName: "${PROJECT_NAME}-aws-aiml-${ENVIRONMENT}"
+      partitionKey: "service_category"
+      sortKey: "pattern_id"
+      ttl: 604800  # 7 days
+
+    aws_devops:
+      tableName: "${PROJECT_NAME}-aws-devops-${ENVIRONMENT}"
+      partitionKey: "devops_category"
+      sortKey: "pattern_id"
+      ttl: 604800  # 7 days
+
+    aws_monitoring:
+      tableName: "${PROJECT_NAME}-aws-monitoring-${ENVIRONMENT}"
+      partitionKey: "monitoring_type"
+      sortKey: "pattern_id"
+      ttl: 604800  # 7 days
+
+    aws_networking:
+      tableName: "${PROJECT_NAME}-aws-networking-${ENVIRONMENT}"
+      partitionKey: "network_category"
+      sortKey: "pattern_id"
+      ttl: 604800  # 7 days
+
+    agent_core_patterns:
+      tableName: "${PROJECT_NAME}-agent-core-patterns-${ENVIRONMENT}"
+      partitionKey: "pattern_category"
+      sortKey: "pattern_id"
+      ttl: 1209600  # 14 days (more stable)
+
+    strands_knowledge:
+      tableName: "${PROJECT_NAME}-strands-knowledge-${ENVIRONMENT}"
+      partitionKey: "category"
+      sortKey: "item_id"
+      ttl: 604800  # 7 days
+
+    mcp_repository:
+      tableName: "${PROJECT_NAME}-mcp-repository-${ENVIRONMENT}"
+      partitionKey: "repository_name"
+      sortKey: "last_updated"
+      ttl: 1209600  # 14 days
+
+# Hybrid Access Pattern Configuration
+hybridAccess:
+  preferCached: true
+  freshnessThreshold: 86400  # 24 hours
+  fallbackToMCP: true
+  confidenceScoring: true
+
+  # Vector Search Enhancement
+  vectorSearch:
+    enabled: true
+    embeddingModel: "amazon.titan-embed-text-v1"
+    vectorDimension: 1536
+    similarityThreshold: 0.7
+    hybridSearchWeight: 0.7  # 70% vector, 30% text
+    maxEmbeddingTokens: 8000
+
+  # Search Strategy
+  searchStrategy:
+    primary: "vector"      # vector, text, or hybrid
+    fallback: "text"       # fallback method if primary fails
+    combineResults: true    # merge vector and text results
+    boostVectorResults: 1.2 # confidence boost for vector matches
+
+  # Routing rules
+  routingRules:
+    - condition: "query_type == 'pricing' || query_contains('cost', 'price', 'billing')"
+      action: "use_aws_pricing_realtime"
+      reason: "Pricing information changes frequently and needs real-time data"
+
+    - condition: "query_contains('well-architected', 'pillar', 'framework')"
+      action: "use_well_architected_cached"
+      reason: "Well-Architected Framework is stable and comprehensive when cached"
+
+    - condition: "query_contains('serverless', 'lambda', 'event-driven')"
+      action: "hybrid_serverless_vector"
+      reason: "Serverless patterns benefit from both cached patterns and vector search"
+
+    - condition: "query_contains('container', 'ecs', 'eks', 'fargate', 'kubernetes')"
+      action: "hybrid_containers_vector"
+      reason: "Container patterns need both specific guidance and semantic understanding"
+
+    - condition: "query_contains('bedrock', 'sagemaker', 'ai', 'ml', 'machine learning')"
+      action: "hybrid_aiml_research"
+      reason: "AI/ML field evolves rapidly, needs both patterns and current research"
+
+    - condition: "query_contains('security', 'compliance', 'iam', 'encryption')"
+      action: "hybrid_security_cached"
+      reason: "Security requires both current best practices and proven patterns"
+
+    - condition: "query_contains('architecture', 'solution', 'reference')"
+      action: "hybrid_solutions_vector"
+      reason: "Architecture queries benefit from solutions library and semantic search"
+
+    - condition: "query_type == 'research' || query_contains('latest', 'current', 'trends', 'best practices')"
+      action: "use_perplexity"
+      reason: "Research queries need current information and deep analysis"
+
+    - condition: "query_complexity == 'high' && cached_confidence < 0.8"
+      action: "hybrid_all_sources"
+      reason: "Complex queries benefit from all available knowledge sources"
+
+    - condition: "mcp_unavailable == true"
+      action: "use_cached_only"
+      reason: "Fallback to cached data when MCP is down"
+
+# Monitoring and Alerting
+monitoring:
+  healthChecks:
+    interval: "5 minutes"
+    timeout: "30 seconds"
+    retryCount: 3
+
+  alerts:
+    syncFailure:
+      enabled: true
+      snsTopicArn: "${SNS_TOPIC_ARN}"
+
+    mcpUnavailable:
+      enabled: true
+      snsTopicArn: "${SNS_TOPIC_ARN}"
+      threshold: "3 consecutive failures"
+
+    knowledgeStale:
+      enabled: true
+      snsTopicArn: "${SNS_TOPIC_ARN}"
+      threshold: "48 hours"
+
+# Security Configuration
+security:
+  encryption:
+    enabled: true
+    kmsKeyId: "${KMS_KEY_ID}"
+
+  accessControl:
+    iamRoles:
+      syncRole: "${PROJECT_NAME}-mcp-sync-role-${ENVIRONMENT}"
+      accessRole: "${PROJECT_NAME}-mcp-access-role-${ENVIRONMENT}"
+
+  rateLimiting:
+    enabled: true
+    requestsPerMinute: 100
+    burstCapacity: 200

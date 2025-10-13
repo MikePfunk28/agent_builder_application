@@ -4,15 +4,15 @@ import { ConvexReactClient } from "convex/react";
 import "./index.css";
 import App from "./App";
 
-const convexUrl = import.meta.env.VITE_CONVEX_URL || "https://unique-kookabura-922.convex.app";
-if (!convexUrl) {
+const convexUrl = import.meta.env.VITE_CONVEX_URL || "https://resolute-kudu-325.convex.cloud";
+if ( !convexUrl ) {
   throw new Error(
     "No VITE_CONVEX_URL environment variable found. Please add it to your environment variables."
   );
 }
-const convex = new ConvexReactClient(convexUrl);
+const convex = new ConvexReactClient( convexUrl );
 
-createRoot(document.getElementById("root")!).render(
+createRoot( document.getElementById( "root" )! ).render(
   <ConvexAuthProvider client={convex}>
     <App />
   </ConvexAuthProvider>,

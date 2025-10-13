@@ -13,12 +13,15 @@ import type {
   FilterApi,
   FunctionReference,
 } from "convex/server";
+import type * as agentcoreDeployment from "../agentcoreDeployment.js";
 import type * as agents from "../agents.js";
 import type * as auth from "../auth.js";
 import type * as codeGenerator from "../codeGenerator.js";
 import type * as http from "../http.js";
+import type * as modelRegistry from "../modelRegistry.js";
 import type * as router from "../router.js";
 import type * as templates from "../templates.js";
+import type * as toolRegistry from "../toolRegistry.js";
 
 /**
  * A utility for referencing Convex functions in your app's API.
@@ -29,12 +32,15 @@ import type * as templates from "../templates.js";
  * ```
  */
 declare const fullApi: ApiFromModules<{
+  agentcoreDeployment: typeof agentcoreDeployment;
   agents: typeof agents;
   auth: typeof auth;
   codeGenerator: typeof codeGenerator;
   http: typeof http;
+  modelRegistry: typeof modelRegistry;
   router: typeof router;
   templates: typeof templates;
+  toolRegistry: typeof toolRegistry;
 }>;
 export declare const api: FilterApi<
   typeof fullApi,
