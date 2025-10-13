@@ -7,35 +7,16 @@ import { toast } from "sonner";
 interface CodePreviewProps {
   code: string;
   dockerConfig?: string;
+  requirementsTxt?: string;
   deploymentType: string;
 }
 
-export function CodePreview({ code, dockerConfig, deploymentType }: CodePreviewProps) {
+export function CodePreview({ code, dockerConfig, requirementsTxt, deploymentType }: CodePreviewProps) {
   const [activeTab, setActiveTab] = useState<"agent" | "docker" | "requirements">("agent");
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
     toast.success("Copied to clipboard!");
-  };
-
-  const generateRequirements = () => {
-    const baseRequirements = [
-      "strandsagents>=1.0.0",
-      "agentcore>=1.0.0",
-    ];
-
-    if (deploymentType === "aws") {
-      baseRequirements.push("boto3", "bedrock-client");
-    } else if (deploymentType === "ollama") {
-      baseRequirements.push("ollama");
-    }
-
-    // Extract pip packages from code
-    const pipPackages = code.match(/pip install ([^\n]+)/g)?.map(line => 
-      line.replace("pip install ", "").split(" ")
-    ).flat() || [];
-
-    return [...baseRequirements, ...pipPackages].join("\n");
   };
 
   const tabs = [
@@ -139,7 +120,7 @@ export function CodePreview({ code, dockerConfig, deploymentType }: CodePreviewP
               }}
               showLineNumbers
             >
-              {generateRequirements()}
+              {requirementsTxt || "# No requirements generated yet"}
             </SyntaxHighlighter>
           )}
 
@@ -147,7 +128,7 @@ export function CodePreview({ code, dockerConfig, deploymentType }: CodePreviewP
             onClick={() => {
               const content = activeTab === "agent" ? code : 
                            activeTab === "docker" ? dockerConfig : 
-                           generateRequirements();
+                           requirementsTxt;
               copyToClipboard(content || "");
             }}
             className="absolute top-4 right-4 p-2 bg-gray-800/80 text-green-400 rounded-lg hover:bg-gray-700/80 transition-colors"

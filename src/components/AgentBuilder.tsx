@@ -55,6 +55,7 @@ export function AgentBuilder() {
   });
   const [generatedCode, setGeneratedCode] = useState<string>("");
   const [dockerConfig, setDockerConfig] = useState<string>("");
+  const [requirementsTxt, setRequirementsTxt] = useState<string>("");
   const [isGenerating, setIsGenerating] = useState(false);
 
   const generateAgent = useAction(api.codeGenerator.generateAgent);
@@ -90,6 +91,7 @@ export function AgentBuilder() {
 
       setGeneratedCode(result.generatedCode);
       setDockerConfig(result.dockerConfig || "");
+      setRequirementsTxt(result.requirementsTxt || "");
       toast.success("Agent generated successfully!");
     } catch (error) {
       toast.error("Failed to generate agent");
@@ -193,6 +195,7 @@ export function AgentBuilder() {
                 setConfig={setConfig}
                 generatedCode={generatedCode}
                 dockerConfig={dockerConfig}
+                requirementsTxt={requirementsTxt}
                 isGenerating={isGenerating}
                 onGenerate={handleGenerate}
                 onSave={handleSave}
@@ -346,7 +349,8 @@ function DeployStep({
   config, 
   setConfig, 
   generatedCode, 
-  dockerConfig, 
+  dockerConfig,
+  requirementsTxt, 
   isGenerating, 
   onGenerate, 
   onSave, 
@@ -356,6 +360,7 @@ function DeployStep({
   setConfig: (config: AgentConfig) => void;
   generatedCode: string;
   dockerConfig: string;
+  requirementsTxt: string;
   isGenerating: boolean;
   onGenerate: () => void;
   onSave: () => void;
@@ -420,6 +425,7 @@ function DeployStep({
         <CodePreview 
           code={generatedCode} 
           dockerConfig={dockerConfig}
+          requirementsTxt={requirementsTxt}
           deploymentType={config.deploymentType}
         />
       )}
