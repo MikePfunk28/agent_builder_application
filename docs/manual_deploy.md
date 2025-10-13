@@ -190,7 +190,7 @@ docker buildx build --platform linux/arm64 -t <account-id>.dkr.ecr.us-west-2.ama
 aws ecr describe-images --repository-name my-strands-agent --region us-west-2
 Step 5: Deploy Agent Runtime
 Example: deploy_agent.py
-
+```python
 import boto3
 
 client = boto3.client('bedrock-agentcore-control')
@@ -209,12 +209,14 @@ response = client.create_agent_runtime(
 print(f"Agent Runtime created successfully!")
 print(f"Agent Runtime ARN: {response['agentRuntimeArn']}")
 print(f"Status: {response['status']}")
+```
 Execute python file
-
+```bash
 uv run deploy_agent.py
+```
 Step 6: Invoke Your Agent
 Example: invoke_agent.py
-
+```python
 import boto3
 import json
 
@@ -233,6 +235,7 @@ response = agent_core_client.invoke_agent_runtime(
 response_body = response['response'].read()
 response_data = json.loads(response_body)
 print("Agent Response:", response_data)
+```
 Execute python file
 
 uv run invoke_agent.py

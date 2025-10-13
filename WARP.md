@@ -140,3 +140,24 @@ npm run build
 - Generated agents include comprehensive error handling and logging
 - Docker configs include all necessary dependencies
 - AWS deployments use SAM CLI for infrastructure management
+
+## Use docs folder to get docs or to store docs
+docs
+
+## M:/strandsagents
+Use this folder as well to look up implementations or examples.
+
+## Use the strands agents tools repo
+https://github.com/strands-agents/tools/tree/main/src/strands_tools/utils
+
+There are more tools then I realized, there is a browser tool, a local_chromium_browser, agent_core_browser, and browser.  Then there is also multiple code interpreter files,  code_interpreter, and agent_core_code_interpreter.  I copied the python files to the docs folder and made them markdown files, so check them out there.
+Lastly there is a utils folder with a few files I assume are tools as well, aws_util, console_util, data_util, detect_language.py, user_input.py, and generate_schema_util.py.  So check those out by going to the link on github or using the context7 mcp.
+
+## Remove hardcoded api keys
+
+## Docker - Sandbox - Testing Environment
+Where is the dockerfile, needed to upload it onto bedrock or test it.  (remember the docs/manual_deploy.md that shows you how you could deploy it on aws, I filled it out with my information, but that shouldnt be used in the script you print out, only if they want to deploy it on aws, in which case we will.)  It should generate the dockerfile if we say it, and it should generate the script I gave you to manually insert it into aws.
+Then if possible could we somehow run a docker container both as a sandbox for testing code and commands in a sandbox environment.  Then the model can be tested in it.
+
+## Agent Decorator - Expand the decorator's functionality
+Also remember to add to the @agent decorator, preprocess, and postprocess, maybe we could even add hooks you could call, or would that not make sense.  Then for a spell checking agent, file reading is important, maybe language detection, also maybe a grammar tool is needed, so you define a module for lang detection, and for grammar so it doesnt make mistakes on that and use the @tool decorator.  However that will mean we will need to use an agent to have that intelligent conversation with the user, in which case, we need the conversation manager for sliding context window, and use interleaved reasoning with claude.

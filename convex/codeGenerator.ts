@@ -222,26 +222,43 @@ function generateImports(tools: any[], deploymentType: string, modelId?: string)
   
   imports.push("");
   
-  // Add LangSmith and OpenTelemetry imports for monitoring
-  imports.push("# Monitoring imports");
-  imports.push("from langsmith import Client as LangSmithClient");
+  // Add AWS and monitoring imports
+  imports.push("# AWS and Monitoring imports");
+  if (deploymentType === "aws" || deploymentType === "agentcore") {
+    imports.push("import boto3");
+    imports.push("from botocore.config import Config");
+  }
   imports.push("from opentelemetry import trace");
+  imports.push("from opentelemetry.sdk.trace import TracerProvider");
+  imports.push("from opentelemetry.sdk.trace.export import BatchSpanProcessor");
   imports.push("");
   
   // Add logging setup
   imports.push("# Configure logging");
   imports.push("logging.basicConfig(");
-  imports.push("    level=logging.INFO,");
+  imports.push("    level=os.getenv('LOG_LEVEL', 'INFO'),");
   imports.push("    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'");
   imports.push(")");
   imports.push("logger = logging.getLogger(__name__)");
   imports.push("");
   
-  imports.push("# Initialize monitoring");
-  imports.push("langsmith_client = LangSmithClient(");
-  imports.push("    api_key=os.getenv('LANGSMITH_API_KEY', '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')");
-  imports.push(")");
+  // Add optional monitoring initialization
+  imports.push("# Initialize OpenTelemetry tracing");
+  imports.push("trace.set_tracer_provider(TracerProvider())");
   imports.push("tracer = trace.get_tracer(__name__)");
+  imports.push("");
+  
+  imports.push("# Optional: Initialize LangSmith if API key is provided");
+  imports.push("langsmith_client = None");
+  imports.push("if os.getenv('LANGSMITH_API_KEY'):");
+  imports.push("    try:");
+  imports.push("        from langsmith import Client as LangSmithClient");
+  imports.push("        langsmith_client = LangSmithClient()");
+  imports.push("        logger.info('LangSmith monitoring enabled')");
+  imports.push("    except ImportError:");
+  imports.push("        logger.warning('langsmith package not installed. Monitoring disabled.')");
+  imports.push("else:");
+  imports.push("    logger.info('LangSmith monitoring disabled (no API key provided)')");
   imports.push("");
   
   return imports.join("\n");
@@ -731,8 +748,8 @@ ${deploymentConfig}
 function generateRequirementsTxt(tools: any[]): string {
   const packages = new Set([
     'strands-agents>=1.0.0',
-    'langsmith>=0.1.0',
-    'opentelemetry-api>=1.0.0'
+    'opentelemetry-api>=1.0.0',
+    'opentelemetry-sdk>=1.0.0'
   ]);
 
   // Base tools package
@@ -806,8 +823,16 @@ services:
     ports:
       - "8000:8000"
     environment:
+      # AWS Configuration
       - AWS_REGION=\${AWS_REGION:-us-east-1}
-      - LANGSMITH_API_KEY=\${LANGSMITH_API_KEY}
+      - AWS_ACCESS_KEY_ID=\${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=\${AWS_SECRET_ACCESS_KEY}
+      - AWS_SESSION_TOKEN=\${AWS_SESSION_TOKEN}
+      
+      # Optional: LangSmith monitoring (if API key is set)
+      - LANGSMITH_API_KEY=\${LANGSMITH_API_KEY:-}
+      
+      # Logging
       - LOG_LEVEL=\${LOG_LEVEL:-INFO}
     volumes:
       - ./data:/app/data
@@ -1220,9 +1245,19 @@ docker build -t ${agentName.toLowerCase().replace(/[^a-z0-9]/g, '-')} .
 ### Run Container
 
 \`\`\`bash
+# Using AWS credentials
 docker run -p 8000:8000 \\
   -e AWS_REGION=us-east-1 \\
-  -e LANGSMITH_API_KEY=your_key \\
+  -e AWS_ACCESS_KEY_ID=\$AWS_ACCESS_KEY_ID \\
+  -e AWS_SECRET_ACCESS_KEY=\$AWS_SECRET_ACCESS_KEY \\
+  ${agentName.toLowerCase().replace(/[^a-z0-9]/g, '-')}
+
+# Optional: Add LangSmith monitoring
+docker run -p 8000:8000 \\
+  -e AWS_REGION=us-east-1 \\
+  -e AWS_ACCESS_KEY_ID=\$AWS_ACCESS_KEY_ID \\
+  -e AWS_SECRET_ACCESS_KEY=\$AWS_SECRET_ACCESS_KEY \\
+  -e LANGSMITH_API_KEY=\$LANGSMITH_API_KEY \\
   ${agentName.toLowerCase().replace(/[^a-z0-9]/g, '-')}
 \`\`\`
 
@@ -1266,10 +1301,22 @@ bash deploy_gcp.sh
 
 ## Environment Variables
 
+### Required
 - \`AWS_REGION\`: AWS region for Bedrock (default: us-east-1)
-- \`LANGSMITH_API_KEY\`: LangSmith API key for monitoring
+- \`AWS_ACCESS_KEY_ID\`: AWS access key (or use IAM role)
+- \`AWS_SECRET_ACCESS_KEY\`: AWS secret key (or use IAM role)
+
+### Optional
+- \`LANGSMITH_API_KEY\`: LangSmith API key for monitoring (optional)
 - \`LOG_LEVEL\`: Logging level (default: INFO)
 - \`BYPASS_TOOL_CONSENT\`: Auto-approve tool usage (default: true for container)
+- \`OTEL_EXPORTER_OTLP_ENDPOINT\`: OpenTelemetry endpoint for custom tracing
+
+### Security Note
+Never hardcode API keys or credentials in your code. Use:
+- AWS IAM roles when running in AWS
+- AWS Secrets Manager for sensitive credentials
+- Environment variables (but never commit .env files to git)
 
 ## API Usage
 
@@ -1287,9 +1334,31 @@ curl -X POST http://localhost:8000/invoke \\
 ## Monitoring
 
 This agent includes:
-- **LangSmith** integration for tracing
-- **OpenTelemetry** for metrics
-- Structured logging to stdout
+- **OpenTelemetry** for distributed tracing and metrics
+- **AWS CloudWatch** integration (when deployed to AWS)
+- **AWS X-Ray** support for trace visualization
+- **Optional LangSmith** integration (set LANGSMITH_API_KEY environment variable)
+- Structured logging to stdout/CloudWatch
+
+### AWS Native Monitoring
+
+When deployed to AWS, the agent automatically integrates with:
+- **CloudWatch Logs**: All logs are streamed
+- **CloudWatch Metrics**: Custom metrics for invocations, latency, errors
+- **X-Ray**: Distributed tracing across services
+
+### Optional: LangSmith
+
+To enable LangSmith monitoring:
+\`\`\`bash
+# Set environment variable
+export LANGSMITH_API_KEY=your-api-key
+
+# Or store in AWS Secrets Manager (recommended)
+aws secretsmanager create-secret \\
+  --name /agent/${agentName}/langsmith-key \\
+  --secret-string "your-api-key"
+\`\`\`
 
 ## Troubleshooting
 

@@ -1,9 +1,9 @@
 /**
  * Tool Registry - Complete Strands Tools Integration
- * 
+ *
  * This module provides a comprehensive registry of all 50+ tools from strands-agents-tools
  * with complete metadata including dependencies, platform support, and usage information.
- * 
+ *
  * Source: https://github.com/strands-agents/tools/tree/main/src/strands_tools
  */
 
@@ -32,18 +32,18 @@ export interface StrandsToolMetadata {
   displayName: string;
   description: string;
   category: ToolCategory;
-  
+
   // Dependencies
   basePip: string;
   extrasPip?: string;
   additionalPipPackages?: string[];
-  
+
   // Platform support
   notSupportedOn?: ("windows" | "macos" | "linux")[];
-  
+
   // Import information
   importPath: string;
-  
+
   // Documentation
   docsUrl: string;
   exampleUsage: string;
@@ -701,7 +701,7 @@ export const searchToolsByCapability = query({
   args: { capability: v.string() },
   handler: async (ctx, args) => {
     return Object.values(STRANDS_TOOLS_REGISTRY).filter(tool =>
-      tool.capabilities.some(cap => 
+      tool.capabilities.some(cap =>
         cap.toLowerCase().includes(args.capability.toLowerCase())
       )
     );
@@ -722,21 +722,21 @@ export const getToolMetadata = query({
  * Query to validate tool compatibility with platform
  */
 export const validateToolCompatibility = query({
-  args: { 
+  args: {
     toolName: v.string(),
     platform: v.union(v.literal("windows"), v.literal("macos"), v.literal("linux"))
   },
   handler: async (ctx, args) => {
     const tool = STRANDS_TOOLS_REGISTRY[args.toolName];
     if (!tool) return { compatible: false, reason: "Tool not found" };
-    
+
     if (tool.notSupportedOn?.includes(args.platform)) {
-      return { 
-        compatible: false, 
-        reason: `${tool.displayName} is not supported on ${args.platform}` 
+      return {
+        compatible: false,
+        reason: `${tool.displayName} is not supported on ${args.platform}`
       };
     }
-    
+
     return { compatible: true };
   },
 });
@@ -749,22 +749,22 @@ export const getRequiredPackages = query({
   handler: async (ctx, args) => {
     const packages = new Set<string>();
     const extras = new Set<string>();
-    
+
     packages.add("strands-agents-tools>=1.0.0");
-    
+
     for (const toolName of args.toolNames) {
       const tool = STRANDS_TOOLS_REGISTRY[toolName];
       if (!tool) continue;
-      
+
       if (tool.extrasPip) {
         extras.add(`strands-agents-tools[${tool.extrasPip}]`);
       }
-      
+
       if (tool.additionalPipPackages) {
         tool.additionalPipPackages.forEach(pkg => packages.add(pkg));
       }
     }
-    
+
     return {
       basePackages: Array.from(packages),
       extras: Array.from(extras),

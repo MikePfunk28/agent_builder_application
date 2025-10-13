@@ -13,6 +13,7 @@ import type {
   FilterApi,
   FunctionReference,
 } from "convex/server";
+import type * as agentcoreDeployment from "../agentcoreDeployment.js";
 import type * as agents from "../agents.js";
 import type * as auth from "../auth.js";
 import type * as codeGenerator from "../codeGenerator.js";
@@ -31,6 +32,7 @@ import type * as toolRegistry from "../toolRegistry.js";
  * ```
  */
 declare const fullApi: ApiFromModules<{
+  agentcoreDeployment: typeof agentcoreDeployment;
   agents: typeof agents;
   auth: typeof auth;
   codeGenerator: typeof codeGenerator;
