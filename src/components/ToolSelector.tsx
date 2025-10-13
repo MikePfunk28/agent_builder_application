@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { 
   Plus, Search, Code, Database, Globe, FileText, BarChart3, Cpu,
   Brain, MessageSquare, Image, Video, Mic, Network, GitBranch,
-  FileEdit, Terminal, Clock, Wifi, AlertTriangle
+  FileEdit, Terminal, Clock, Wifi, AlertTriangle, Package, Info
 } from "lucide-react";
 
 interface Tool {
@@ -434,6 +434,18 @@ const categories = [
 export function ToolSelector({ onAddTool }: ToolSelectorProps) {
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [searchTerm, setSearchTerm] = useState("");
+  const [showDetails, setShowDetails] = useState<string | null>(null);
+
+  // Count tools per category
+  const toolCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    categories.forEach(cat => {
+      counts[cat] = cat === "All" 
+        ? availableTools.length 
+        : availableTools.filter(t => t.category === cat).length;
+    });
+    return counts;
+  }, []);
 
   const filteredTools = availableTools.filter((tool) => {
     const matchesCategory = selectedCategory === "All" || tool.category === selectedCategory;
@@ -470,18 +482,25 @@ export function ToolSelector({ onAddTool }: ToolSelectorProps) {
           </div>
         </div>
         
-        <div className="flex gap-2 overflow-x-auto">
+        <div className="flex gap-2 overflow-x-auto pb-2">
           {categories.map((category) => (
             <button
               key={category}
               onClick={() => setSelectedCategory(category)}
-              className={`px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
+              className={`px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors flex items-center gap-2 ${
                 selectedCategory === category
                   ? "bg-green-600 text-white"
                   : "bg-gray-800 text-green-400 hover:bg-gray-700"
               }`}
             >
-              {category}
+              <span>{category}</span>
+              <span className={`text-xs px-1.5 py-0.5 rounded ${
+                selectedCategory === category
+                  ? "bg-white/20"
+                  : "bg-green-600/20"
+              }`}>
+                {toolCounts[category]}
+              </span>
             </button>
           ))}
         </div>
@@ -517,22 +536,64 @@ export function ToolSelector({ onAddTool }: ToolSelectorProps) {
               
               <p className="text-sm text-green-600 mb-3">{tool.description}</p>
               
-              {tool.extrasPip && (
-                <div className="text-xs text-yellow-400 mb-2">
-                  Requires: strands-agents-tools[{tool.extrasPip}]
-                </div>
-              )}
+              {/* Badges */}
+              <div className="flex flex-wrap gap-2 mb-2">
+                {tool.extrasPip && (
+                  <div className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs bg-yellow-600/20 text-yellow-400 border border-yellow-600/30">
+                    <Package className="w-3 h-3" />
+                    strands-agents-tools[{tool.extrasPip}]
+                  </div>
+                )}
+                
+                {tool.requiresPip && tool.pipPackages.length > 0 && (
+                  <div className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs bg-blue-600/20 text-blue-400 border border-blue-600/30">
+                    <Package className="w-3 h-3" />
+                    {tool.pipPackages.length} pip package{tool.pipPackages.length > 1 ? 's' : ''}
+                  </div>
+                )}
+                
+                {tool.notSupportedOn && tool.notSupportedOn.includes("windows") && (
+                  <div className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs bg-red-600/20 text-red-400 border border-red-600/30 font-medium">
+                    <AlertTriangle className="w-3 h-3" />
+                    Not on Windows
+                  </div>
+                )}
+              </div>
               
-              {tool.requiresPip && tool.pipPackages.length > 0 && (
-                <div className="text-xs text-yellow-400 mb-2">
-                  Requires: {tool.pipPackages.join(", ")}
-                </div>
-              )}
+              {/* Show details button */}
+              <button
+                onClick={() => setShowDetails(showDetails === tool.id ? null : tool.id)}
+                className="text-xs text-green-500 hover:text-green-400 flex items-center gap-1 mt-2"
+              >
+                <Info className="w-3 h-3" />
+                {showDetails === tool.id ? 'Hide' : 'Show'} details
+              </button>
               
-              {tool.notSupportedOn && tool.notSupportedOn.includes("windows") && (
-                <div className="flex items-center gap-1 text-xs text-red-400 font-medium">
-                  <AlertTriangle className="w-3 h-3" />
-                  Not supported on Windows
+              {/* Expanded details */}
+              {showDetails === tool.id && (
+                <div className="mt-3 pt-3 border-t border-green-900/30 space-y-2">
+                  {tool.extrasPip && (
+                    <div className="text-xs">
+                      <span className="text-green-500 font-medium">Install:</span>
+                      <code className="block mt-1 p-2 bg-black rounded border border-green-900/30 text-green-400">
+                        pip install strands-agents-tools[{tool.extrasPip}]
+                      </code>
+                    </div>
+                  )}
+                  {tool.pipPackages && tool.pipPackages.length > 0 && (
+                    <div className="text-xs">
+                      <span className="text-green-500 font-medium">Additional packages:</span>
+                      <code className="block mt-1 p-2 bg-black rounded border border-green-900/30 text-green-400">
+                        pip install {tool.pipPackages.join(' ')}
+                      </code>
+                    </div>
+                  )}
+                  <div className="text-xs">
+                    <span className="text-green-500 font-medium">Import:</span>
+                    <code className="block mt-1 p-2 bg-black rounded border border-green-900/30 text-green-400">
+                      from strands_tools import {tool.id}
+                    </code>
+                  </div>
                 </div>
               )}
             </div>
