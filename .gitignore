@@ -19,6 +19,12 @@ dist-ssr
 .env.production
 .env.test
 
+# JWT keys and secrets
+*jwt*.txt
+*jwt*.pem
+*.key
+*.pem
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
