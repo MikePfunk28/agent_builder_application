@@ -13,11 +13,13 @@ import {
   Plus,
   Trash2,
   Copy,
-  Download
+  Download,
+  TestTube
 } from "lucide-react";
 import { ModelSelector } from "./ModelSelector";
 import { ToolSelector } from "./ToolSelector";
 import { CodePreview } from "./CodePreview";
+import { AgentTester } from "./AgentTester";
 
 interface Tool {
   name: string;
@@ -40,6 +42,7 @@ const steps = [
   { id: "basic", title: "Basic Info", icon: Bot },
   { id: "model", title: "Model & Prompt", icon: Settings },
   { id: "tools", title: "Tools", icon: Code },
+  { id: "test", title: "Test", icon: TestTube },
   { id: "deploy", title: "Deploy", icon: Rocket },
 ];
 
@@ -190,6 +193,17 @@ export function AgentBuilder() {
             {currentStep === 1 && <ModelPromptStep config={config} setConfig={setConfig} />}
             {currentStep === 2 && <ToolsStep config={config} setConfig={setConfig} />}
             {currentStep === 3 && (
+              <TestStep 
+                agentCode={generatedCode}
+                requirements={requirementsTxt}
+                dockerfile={dockerConfig}
+                agentName={config.name}
+                modelId={config.model}
+                onGenerate={handleGenerate}
+                isGenerating={isGenerating}
+              />
+            )}
+            {currentStep === 4 && (
               <DeployStep 
                 config={config} 
                 setConfig={setConfig}
@@ -429,6 +443,74 @@ function DeployStep({
           deploymentType={config.deploymentType}
         />
       )}
+    </div>
+  );
+}
+
+function TestStep({ 
+  agentCode, 
+  requirements, 
+  dockerfile, 
+  agentName, 
+  modelId,
+  onGenerate,
+  isGenerating
+}: { 
+  agentCode: string;
+  requirements: string;
+  dockerfile: string;
+  agentName: string;
+  modelId: string;
+  onGenerate: () => void;
+  isGenerating: boolean;
+}) {
+  if (!agentCode) {
+    return (
+      <div className="space-y-6">
+        <h2 className="text-2xl font-bold text-green-400 mb-6">Test Your Agent</h2>
+        <div className="bg-yellow-900/20 border border-yellow-600/30 rounded-lg p-6">
+          <div className="flex items-start gap-3">
+            <TestTube className="w-5 h-5 text-yellow-400 mt-0.5" />
+            <div>
+              <h3 className="font-medium text-yellow-400 mb-2">Generate Agent First</h3>
+              <p className="text-yellow-300/70 text-sm mb-4">
+                You need to generate your agent code before you can test it.
+              </p>
+              <button
+                onClick={onGenerate}
+                disabled={isGenerating}
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {isGenerating ? (
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+                ) : (
+                  <Code className="w-4 h-4" />
+                )}
+                Generate Agent
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold text-green-400 mb-6">Test Your Agent</h2>
+      <div className="bg-green-900/10 border border-green-600/30 rounded-lg p-4 mb-4">
+        <p className="text-green-300 text-sm">
+          Test your agent in a real Docker container to see how it behaves with actual models and tools.
+          This helps you catch issues before deployment!
+        </p>
+      </div>
+      <AgentTester
+        agentCode={agentCode}
+        requirements={requirements}
+        dockerfile={dockerfile}
+        agentName={agentName}
+        modelId={modelId}
+      />
     </div>
   );
 }
