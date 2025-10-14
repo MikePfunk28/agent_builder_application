@@ -40,3 +40,4 @@ dist-ssr
 package-lock.json
 .cursor/rules/convex_rules.mdc
 .env
+.env
