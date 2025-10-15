@@ -444,96 +444,93 @@ class ErrorResponse:
 - **Input Validation**: Prevent injection attacks and malformed data
 - **AWS Security**: IAM roles and resource access controls
 
-## Comprehensive Tool Support
+## Comprehensive Strands Agents Tool Support
 
-### Memory and Vector Database Tools
-- **mem0_memory**: Persistent memory with vector embeddings
-- **ChromaDB**: Open-source vector database with local/cloud deployment
-- **Pinecone**: Managed vector database service
-- **Weaviate**: GraphQL-based vector search engine
-- **Qdrant**: High-performance vector similarity search
-- **Redis**: In-memory data structure store with vector support
+### RAG & Memory Tools
+- **retrieve**: Semantically retrieve data from Amazon Bedrock Knowledge Bases for RAG, memory, and other purposes
+- **memory**: Agent memory persistence in Amazon Bedrock Knowledge Bases
+- **agent_core_memory**: Integration with Amazon Bedrock Agent Core Memory
+- **mem0_memory**: Agent memory and personalization built on top of Mem0
 
-### Browser and Web Automation Tools
-- **local_chromium_browser**: Local Chrome/Chromium automation
-- **agent_core_browser**: Cloud-based browser automation
-- **Playwright**: Cross-browser automation framework
-- **Selenium**: Web application testing and automation
-- **BeautifulSoup**: HTML/XML parsing and scraping
-- **Scrapy**: Web crawling and scraping framework
+### File Operations Tools
+- **editor**: File editing operations like line edits, search, and undo
+- **file_read**: Read and parse files
+- **file_write**: Create and modify files
 
-### Code Execution and Development Tools
-- **agent_core_code_interpreter**: Secure cloud code execution
-- **Docker**: Containerized code execution environment
-- **Jupyter**: Interactive notebook execution
-- **subprocess**: System command execution
-- **Git integration**: Version control operations
+### Shell & System Tools
+- **environment**: Manage environment variables
+- **shell**: Execute shell commands
+- **cron**: Task scheduling with cron jobs
+- **use_computer**: Automate desktop actions and GUI interactions
 
-### Communication and Integration Tools
-- **a2a_client**: Agent-to-agent communication
-- **Slack SDK**: Slack workspace integration
-- **Discord.py**: Discord bot and server integration
-- **Twilio**: SMS and voice communication
-- **SendGrid**: Email delivery service
-- **WebSocket**: Real-time bidirectional communication
+### Code Interpretation Tools
+- **python_repl**: Run Python code (not supported on Windows due to fcntl module)
+- **code_interpreter**: Execute code in isolated sandboxes
+- **agent_core_code_interpreter**: Cloud-based code execution with AgentCore
 
-### Data Processing and Analysis Tools
-- **pandas**: Data manipulation and analysis
-- **numpy**: Numerical computing
-- **matplotlib/seaborn/plotly**: Data visualization
-- **scipy**: Scientific computing
-- **scikit-learn**: Machine learning algorithms
-- **transformers**: Hugging Face model integration
+### Web & Network Tools
+- **http_request**: Make API calls, fetch web data, and call local HTTP servers
+- **slack**: Slack integration with real-time events, API access, and message sending
+- **browser**: Automate web browser interactions
+- **local_chromium_browser**: Local Chrome/Chromium browser automation
+- **agent_core_browser**: Cloud-based browser automation through AgentCore
+- **rss**: Manage and process RSS feeds
 
-### Document and File Processing Tools
-- **PyPDF2**: PDF document processing
-- **python-docx**: Microsoft Word document handling
-- **openpyxl**: Excel spreadsheet processing
-- **python-pptx**: PowerPoint presentation handling
-- **Markdown**: Markdown document processing
-- **ReportLab**: PDF generation and reporting
+### Multi-modal Tools
+- **generate_image_stability**: Create images with Stability AI
+- **image_reader**: Process and analyze images
+- **generate_image**: Create AI generated images with Amazon Bedrock
+- **nova_reels**: Create AI generated videos with Nova Reels on Amazon Bedrock
+- **speak**: Generate speech from text using macOS say command or Amazon Polly
+- **diagram**: Create cloud architecture and UML diagrams
 
-### Media Processing Tools
-- **Pillow**: Image processing and manipulation
-- **OpenCV**: Computer vision and image analysis
-- **imageio**: Image and video I/O
-- **pydub**: Audio file manipulation
-- **speech-recognition**: Speech-to-text conversion
-- **Whisper**: OpenAI's speech recognition model
+### AWS Services Tools
+- **use_aws**: Interact with AWS services
 
-### Database and Storage Tools
-- **SQLAlchemy**: SQL database ORM
-- **psycopg2**: PostgreSQL adapter
-- **pymongo**: MongoDB driver
-- **Redis**: Key-value store and caching
-- **S3**: AWS object storage integration
-- **Google Cloud Storage**: GCS integration
+### Utility Tools
+- **calculator**: Perform mathematical operations
+- **current_time**: Get the current date and time
+- **load_tool**: Dynamically load more tools at runtime
+- **sleep**: Pause execution with interrupt support
 
-### Diagram and Visualization Tools
-- **diagram**: System architecture diagrams
-- **Mermaid**: Flowcharts and diagrams
-- **Graphviz**: Graph visualization
-- **NetworkX**: Network analysis and visualization
-- **Plotly**: Interactive visualizations
+### Agents & Workflows Tools
+- **graph**: Create and manage multi-agent systems using Strands SDK Graph implementation
+- **agent_graph**: Create and manage graphs of agents
+- **journal**: Create structured tasks and logs for agents to manage and work from
+- **swarm**: Coordinate multiple AI agents in a swarm/network of agents
+- **stop**: Force stop the agent event loop
+- **handoff_to_user**: Enable human-in-the-loop workflows by pausing agent execution for user input
+- **use_agent**: Run a new AI event loop with custom prompts and different model providers
+- **think**: Perform deep thinking by creating parallel branches of agentic reasoning
+- **use_llm**: Run a new AI event loop with custom prompts
+- **workflow**: Orchestrate sequenced workflows
+- **batch**: Call multiple tools from a single model request
+- **a2a_client**: Enable agent-to-agent communication
 
-### RSS and Content Tools
-- **rss**: RSS feed processing and monitoring
-- **feedparser**: RSS/Atom feed parsing
-- **newspaper3k**: Article extraction and processing
-- **requests**: HTTP client for API integration
+### Tool Categories by Installation Requirements
 
-### Computer Control Tools
-- **use_computer**: Screen capture and automation
-- **pyautogui**: GUI automation
-- **keyboard/mouse**: Input device control
-- **screenshot**: Screen capture utilities
+**Base Tools** (included with strands-agents-tools):
+- retrieve, memory, agent_core_memory, editor, file_read, file_write, environment, shell, cron, python_repl, code_interpreter, http_request, slack, browser, generate_image_stability, image_reader, generate_image, nova_reels, speak, use_aws, calculator, current_time, load_tool, sleep, graph, agent_graph, journal, swarm, stop, handoff_to_user, use_agent, think, use_llm, workflow, batch
 
-### Monitoring and Observability Tools
-- **OpenTelemetry**: Distributed tracing and metrics
-- **LangSmith**: LLM application monitoring
-- **Weights & Biases**: ML experiment tracking
-- **CloudWatch**: AWS monitoring and logging
-- **X-Ray**: AWS distributed tracing
+**Tools Requiring Extra Dependencies**:
+- **mem0_memory**: `pip install 'strands-agents-tools[mem0_memory]'`
+- **local_chromium_browser**: `pip install 'strands-agents-tools[local_chromium_browser]'`
+- **agent_core_browser**: `pip install 'strands-agents-tools[agent_core_browser]'`
+- **agent_core_code_interpreter**: `pip install 'strands-agents-tools[agent_core_code_interpreter]'`
+- **a2a_client**: `pip install 'strands-agents-tools[a2a_client]'`
+- **diagram**: `pip install 'strands-agents-tools[diagram]'`
+- **rss**: `pip install 'strands-agents-tools[rss]'`
+- **use_computer**: `pip install 'strands-agents-tools[use_computer]'`
+
+### Supporting Infrastructure Tools
+- **Vector Databases**: ChromaDB, Pinecone, Weaviate, Qdrant, Redis (for memory tools)
+- **Web Automation**: Selenium, Playwright, BeautifulSoup (supporting browser tools)
+- **Data Processing**: pandas, numpy, matplotlib, scipy (supporting analysis tools)
+- **Document Processing**: PyPDF2, python-docx, openpyxl (supporting file tools)
+- **Image Processing**: Pillow, OpenCV (supporting image tools)
+- **Audio Processing**: pydub, speech-recognition (supporting speak tool)
+- **Communication**: slack-sdk, discord.py, twilio (supporting communication tools)
+- **Monitoring**: OpenTelemetry, LangSmith, CloudWatch, X-Ray (for observability)
 
 ## Deployment Architecture
 
