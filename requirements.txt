@@ -74,11 +74,11 @@ imageio>=2.31.0
 
 # Audio processing (for speak tool)
 pydub>=0.25.1
-speech-recognition>=3.10.0
+# speech-recognition>=3.10.0  # Not compatible with Python 3.13
 
 # Communication tools (for slack tool)
 slack-sdk>=3.0.0
-discord.py>=2.3.0
+# discord.py>=2.3.0  # May not support Python 3.13
 twilio>=8.10.0
 sendgrid>=6.10.0
 
@@ -179,10 +179,10 @@ isort>=5.12.0
 # Fix dependency conflicts for Python 3.13 compatibility
 watchdog==4.0.2
 
-# Additional model-specific dependencies
-transformers>=4.35.0
-torch>=2.1.0
-sentence-transformers>=2.2.0
+# Additional model-specific dependencies (commented out for Python 3.13 compatibility)
+# transformers>=4.35.0  # Requires torch
+# torch>=2.1.0  # No Python 3.13 wheels available yet
+# sentence-transformers>=2.2.0  # Requires torch
 
 # Performance monitoring
 psutil>=5.9.0
