@@ -1,49 +1,31 @@
 # Core agent framework
 strands-agents>=1.0.0
-bedrock-agentcore>=1.0.0
+
+# JWT for authentication
 pyjwt>=2.8.0
-bedrock-agentcore-starter-toolkit>=0.1.25
 
-# Strands agents tools with all extras
-strands-agents-tools>=1.0.0
-
-# Tool-specific extras (install as needed)
-# strands-agents-tools[mem0_memory]
-# strands-agents-tools[local_chromium_browser]
-# strands-agents-tools[agent_core_browser]
-# strands-agents-tools[agent_core_code_interpreter]
-# strands-agents-tools[a2a_client]
-# strands-agents-tools[diagram]
-# strands-agents-tools[rss]
-# strands-agents-tools[use_computer]
-
-# AWS Bedrock support
+# AWS support
 boto3>=1.28.0
 anthropic>=0.25.0
-
-# Ollama support
-ollama>=0.1.0
 
 # OpenAI support
 openai>=1.0.0
 
-# Additional dependencies for tools
+# Basic dependencies for tools
 requests>=2.31.0
 beautifulsoup4>=4.12.0
 pandas>=2.0.0
 numpy>=1.24.0
-matplotlib>=3.7.0
-slack-sdk>=3.0.0
 
-# Monitoring and observability
-opentelemetry-api>=1.0.0
-opentelemetry-sdk>=1.0.0
-langsmith>=0.1.0
-
-# FastAPI for web interface (optional)
+# FastAPI for web interface
 fastapi>=0.100.0
 uvicorn>=0.23.0
 
 # Environment and configuration
 python-dotenv>=1.0.0
 pydantic>=2.0.0
+
+# Fix dependency conflicts
+watchdog==4.0.2
+ml-dtypes>=0.4.0,<0.5.0
+tensorboard>=2.18,<2.19
