@@ -1,31 +1,247 @@
 # Core agent framework
 strands-agents>=1.0.0
 
+# Strands agents tools with ALL extras
+strands-agents-tools[mem0_memory]>=0.2.11
+strands-agents-tools[local_chromium_browser]>=0.2.11
+strands-agents-tools[agent_core_browser]>=0.2.11
+strands-agents-tools[agent_core_code_interpreter]>=0.2.11
+strands-agents-tools[a2a_client]>=0.2.11
+strands-agents-tools[diagram]>=0.2.11
+strands-agents-tools[rss]>=0.2.11
+strands-agents-tools[use_computer]>=0.2.11
+
+# AgentCore and Bedrock support (use available versions)
+# bedrock-agentcore>=0.1.6  # Latest available version
+# bedrock-agentcore-starter-toolkit>=0.1.25  # If available
+
 # JWT for authentication
 pyjwt>=2.8.0
 
-# AWS support
+# AWS services support
 boto3>=1.28.0
+botocore>=1.31.0
+aiobotocore>=2.5.0
+
+# AI Model providers
 anthropic>=0.25.0
-
-# OpenAI support
 openai>=1.0.0
+google-generativeai>=0.3.0
+cohere>=4.0.0
 
-# Basic dependencies for tools
-requests>=2.31.0
+# Ollama support
+ollama>=0.1.0
+
+# Bedrock model support
+amazon-bedrock-client>=0.1.0
+
+# LangChain integration (for additional model support)
+langchain>=0.1.0
+langchain-community>=0.0.20
+langchain-aws>=0.1.0
+langchain-anthropic>=0.1.0
+langchain-openai>=0.1.0
+langchain-google-genai>=1.0.0
+
+# Memory and vector databases
+chromadb>=0.4.0
+pinecone-client>=2.2.0
+weaviate-client>=3.25.0
+qdrant-client>=1.6.0
+redis>=4.5.0
+mem0ai>=0.1.0
+
+# Web scraping and browser automation
+selenium>=4.15.0
+playwright>=1.40.0
 beautifulsoup4>=4.12.0
-pandas>=2.0.0
-numpy>=1.24.0
+scrapy>=2.11.0
+requests>=2.31.0
+httpx>=0.24.0
+aiohttp>=3.8.0
 
-# FastAPI for web interface
+# Data processing and analysis
+pandas>=2.0.0
+numpy>=1.24.0,<2.0.0  # Avoid Python 3.13 issues
+matplotlib>=3.7.0
+seaborn>=0.12.0
+plotly>=5.17.0
+scipy>=1.11.0
+
+# Document processing
+pypdf2>=3.0.0
+python-docx>=0.8.11
+openpyxl>=3.1.0
+python-pptx>=0.6.21
+markdown>=3.5.0
+
+# Image processing
+pillow>=10.0.0
+opencv-python>=4.8.0
+imageio>=2.31.0
+
+# Audio processing
+pydub>=0.25.1
+speech-recognition>=3.10.0
+whisper>=1.1.10
+
+# Communication tools
+slack-sdk>=3.0.0
+discord.py>=2.3.0
+twilio>=8.10.0
+sendgrid>=6.10.0
+
+# Database support
+sqlalchemy>=2.0.0
+alembic>=1.12.0
+psycopg2-binary>=2.9.0
+pymongo>=4.5.0
+asyncpg>=0.28.0
+
+# Monitoring and observability
+opentelemetry-api>=1.0.0
+opentelemetry-sdk>=1.0.0
+opentelemetry-instrumentation>=0.41b0
+opentelemetry-instrumentation-fastapi>=0.41b0
+opentelemetry-instrumentation-requests>=0.41b0
+opentelemetry-instrumentation-boto3sqs>=0.41b0
+opentelemetry-instrumentation-sqlalchemy>=0.41b0
+langsmith>=0.1.0
+wandb>=0.16.0
+
+# FastAPI and web framework
 fastapi>=0.100.0
-uvicorn>=0.23.0
+uvicorn[standard]>=0.23.0
+starlette>=0.27.0
+jinja2>=3.1.0
+python-multipart>=0.0.6
+
+# WebSocket support
+websockets>=11.0.0
+socketio>=5.9.0
+
+# Authentication and security
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+cryptography>=41.0.0
+authlib>=1.2.0
 
 # Environment and configuration
 python-dotenv>=1.0.0
 pydantic>=2.0.0
+pydantic-settings>=2.0.0
+dynaconf>=3.2.0
 
-# Fix dependency conflicts
+# File handling and utilities
+pathlib2>=2.3.0
+click>=8.0.0
+typer>=0.9.0
+rich>=13.0.0
+tqdm>=4.66.0
+
+# YAML and JSON processing
+pyyaml>=6.0.0
+toml>=0.10.2
+jsonschema>=4.19.0
+
+# Docker support for local testing
+docker>=6.0.0
+docker-compose>=1.29.0
+
+# Kubernetes support (for advanced deployments)
+kubernetes>=28.1.0
+
+# Cloud storage
+google-cloud-storage>=2.10.0
+azure-storage-blob>=12.19.0
+
+# Message queues
+celery>=5.3.0
+redis>=4.5.0
+pika>=1.3.0
+
+# Caching
+redis>=4.5.0
+memcached>=1.59
+
+# RSS and feed processing
+feedparser>=6.0.10
+newspaper3k>=0.2.8
+
+# PDF and document generation
+reportlab>=4.0.0
+weasyprint>=60.0
+
+# Code execution and sandboxing
+subprocess32>=3.5.4
+docker>=6.0.0
+
+# Network and HTTP utilities
+urllib3>=2.0.0
+certifi>=2023.7.22
+chardet>=5.2.0
+idna>=3.4
+
+# Date and time utilities
+python-dateutil>=2.8.2
+pytz>=2023.3
+arrow>=1.3.0
+
+# Logging and debugging
+loguru>=0.7.0
+structlog>=23.1.0
+
+# Testing dependencies
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+pytest-mock>=3.11.0
+pytest-cov>=4.1.0
+factory-boy>=3.3.0
+
+# Development dependencies
+black>=23.0.0
+flake8>=6.0.0
+mypy>=1.5.0
+isort>=5.12.0
+pre-commit>=3.4.0
+
+# Fix dependency conflicts for Python 3.13 compatibility
 watchdog==4.0.2
-ml-dtypes>=0.4.0,<0.5.0
-tensorboard>=2.18,<2.19
+# Avoid problematic packages that cause Python 3.13 issues
+# ml-dtypes>=0.4.0,<0.5.0
+# tensorboard>=2.18,<2.19
+
+# Additional model-specific dependencies
+transformers>=4.35.0
+torch>=2.1.0
+torchvision>=0.16.0
+sentence-transformers>=2.2.0
+
+# Jupyter notebook support (for development)
+jupyter>=1.0.0
+ipykernel>=6.25.0
+notebook>=7.0.0
+
+# API documentation
+sphinx>=7.1.0
+sphinx-rtd-theme>=1.3.0
+
+# Performance monitoring
+psutil>=5.9.0
+memory-profiler>=0.61.0
+
+# Async utilities
+asyncio>=3.4.3
+aiofiles>=23.2.1
+aiodns>=3.1.0
+
+# GraphQL support
+graphene>=3.3.0
+strawberry-graphql>=0.213.0
+
+# Protocol buffers
+protobuf>=4.24.0
+
+# gRPC support
+grpcio>=1.59.0
+grpcio-tools>=1.59.0
