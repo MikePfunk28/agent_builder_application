@@ -41,3 +41,6 @@ package-lock.json
 .cursor/rules/convex_rules.mdc
 .env
 .env
+specs/004-TODO-Features/outline.md
+specs/004-TODO-Features/OVERVIEW.md
+.claude/settings.local.json

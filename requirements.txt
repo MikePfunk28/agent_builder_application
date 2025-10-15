@@ -1,0 +1,66 @@
+# Core Agent Frameworks
+strands-agents>=0.1.0
+agentcore>=0.1.0
+
+# Strands Agent Tools - Base package
+strands-agents-tools
+
+# Strands Agent Tools - All optional dependencies for all tools
+# Memory and RAG
+strands-agents-tools[mem0_memory]
+
+# Browser and Web Tools
+strands-agents-tools[local_chromium_browser]
+strands-agents-tools[agent_core_browser]
+
+# Code Interpretation
+strands-agents-tools[agent_core_code_interpreter]
+
+# Agent Communication
+strands-agents-tools[a2a_client]
+
+# Diagram Generation
+strands-agents-tools[diagram]
+
+# RSS Feed Management
+strands-agents-tools[rss]
+
+# Computer Use / Desktop Automation
+strands-agents-tools[use_computer]
+
+# AWS Bedrock and Cloud Services
+boto3>=1.34.0
+botocore>=1.34.0
+awscli
+
+# Anthropic Claude (for direct API access)
+anthropic>=0.25.0
+
+# OpenAI (for compatibility)
+openai>=1.0.0
+
+# Common ML/AI dependencies
+numpy>=1.24.0
+pandas>=2.0.0
+requests>=2.31.0
+
+# Ollama Python Client
+ollama>=0.1.0
+
+# Environment and Configuration
+python-dotenv>=1.0.0
+pydantic>=2.0.0
+
+# Async support
+aiohttp>=3.9.0
+asyncio
+
+# JSON and data handling
+jsonschema>=4.17.0
+
+# Logging and monitoring
+structlog>=23.1.0
+
+# Testing and validation
+pytest>=7.4.0
+pytest-asyncio>=0.21.0

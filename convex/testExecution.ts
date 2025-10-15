@@ -1,0 +1,520 @@
+/**
+ * Test Execution API
+ *
+ * Manages the complete lifecycle of agent tests from submission to completion.
+ * Provides real-time log streaming and test management.
+ */
+
+import { mutation, query, internalMutation, internalQuery, action, internalAction } from "./_generated/server";
+import { v } from "convex/values";
+import { internal, api } from "./_generated/api";
+
+// Validation constants
+const MAX_QUERY_LENGTH = 2000;
+const MAX_AGENT_CODE_SIZE = 100 * 1024; // 100KB
+const MAX_REQUIREMENTS_SIZE = 10 * 1024; // 10KB
+const MAX_DOCKERFILE_SIZE = 5 * 1024; // 5KB
+const MIN_TIMEOUT = 10000; // 10 seconds
+const MAX_TIMEOUT = 600000; // 10 minutes
+const MAX_CONCURRENT_TESTS = parseInt(process.env.MAX_CONCURRENT_TESTS || "10");
+
+/**
+ * Submit a new agent test
+ */
+export const submitTest = mutation({
+  args: {
+    agentId: v.id("agents"),
+    testQuery: v.string(),
+    timeout: v.optional(v.number()),
+    priority: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    // Authentication
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    // Get agent
+    const agent = await ctx.db.get(args.agentId);
+    if (!agent) {
+      throw new Error("Agent not found");
+    }
+
+    // Verify ownership or public
+    if (agent.createdBy !== identity.subject && !agent.isPublic) {
+      throw new Error("Not authorized to test this agent");
+    }
+
+    // Validate test query
+    if (!args.testQuery || args.testQuery.length < 1 || args.testQuery.length > MAX_QUERY_LENGTH) {
+      throw new Error(`Test query must be 1-${MAX_QUERY_LENGTH} characters`);
+    }
+
+    // Validate timeout
+    const timeout = args.timeout || 180000; // 3 minutes default
+    if (timeout < MIN_TIMEOUT || timeout > MAX_TIMEOUT) {
+      throw new Error(`Timeout must be between ${MIN_TIMEOUT} and ${MAX_TIMEOUT} milliseconds`);
+    }
+
+    // Validate priority
+    const priority = args.priority || 2; // Normal priority
+    if (priority < 1 || priority > 3) {
+      throw new Error("Priority must be 1 (high), 2 (normal), or 3 (low)");
+    }
+
+    // Validate code sizes
+    if (agent.generatedCode.length > MAX_AGENT_CODE_SIZE) {
+      throw new Error(`Agent code exceeds maximum size of ${MAX_AGENT_CODE_SIZE} bytes`);
+    }
+
+    // Extract requirements from agent tools
+    const requirements = generateRequirements(agent.tools);
+    if (requirements.length > MAX_REQUIREMENTS_SIZE) {
+      throw new Error(`Requirements exceed maximum size of ${MAX_REQUIREMENTS_SIZE} bytes`);
+    }
+
+    // Generate Dockerfile
+    const dockerfile = generateDockerfile(agent.model, agent.deploymentType);
+    if (dockerfile.length > MAX_DOCKERFILE_SIZE) {
+      throw new Error(`Dockerfile exceeds maximum size of ${MAX_DOCKERFILE_SIZE} bytes`);
+    }
+
+    // Determine model provider and config
+    const { modelProvider, modelConfig } = extractModelConfig(agent.model, agent.deploymentType);
+
+    // Create test execution record
+    const testId = await ctx.db.insert("testExecutions", {
+      agentId: args.agentId,
+      userId: identity.subject,
+      testQuery: args.testQuery,
+      agentCode: agent.generatedCode,
+      requirements,
+      dockerfile,
+      modelProvider,
+      modelConfig,
+      timeout,
+      status: "CREATED",
+      phase: "queued",
+      logs: [],
+      submittedAt: Date.now(),
+    });
+
+    // Add to queue
+    await ctx.db.insert("testQueue", {
+      testId,
+      priority,
+      status: "pending",
+      createdAt: Date.now(),
+      attempts: 0,
+    });
+
+    // Update test status to QUEUED
+    await ctx.db.patch(testId, { status: "QUEUED" });
+
+    // Get queue position
+    const queuePosition = await getQueuePosition(ctx, testId);
+
+    return {
+      testId,
+      status: "QUEUED",
+      queuePosition,
+      estimatedWaitTime: queuePosition * 30, // Rough estimate: 30s per queued test
+    };
+  },
+});
+
+/**
+ * Get test execution by ID
+ */
+export const getTestById = query({
+  args: { testId: v.id("testExecutions") },
+  handler: async (ctx, args) => {
+    const test = await ctx.db.get(args.testId);
+    if (!test) {
+      return null;
+    }
+
+    // Check authorization
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity || test.userId !== identity.subject) {
+      // Could also check if agent is public
+      return null;
+    }
+
+    return test;
+  },
+});
+
+/**
+ * Internal query for getTestById (skips auth)
+ */
+export const getTestByIdInternal = internalQuery({
+  args: { testId: v.id("testExecutions") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.testId);
+  },
+});
+
+/**
+ * Get user's test history
+ */
+export const getUserTests = query({
+  args: {
+    limit: v.optional(v.number()),
+    status: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      return { tests: [], hasMore: false };
+    }
+
+    const limit = Math.min(args.limit || 20, 100);
+
+    let query = ctx.db
+      .query("testExecutions")
+      .withIndex("by_user", (q) => q.eq("userId", identity.subject))
+      .order("desc");
+
+    if (args.status) {
+      query = query.filter((q) => q.eq(q.field("status"), args.status));
+    }
+
+    const tests = await query.take(limit + 1);
+    const hasMore = tests.length > limit;
+
+    return {
+      tests: tests.slice(0, limit),
+      hasMore,
+    };
+  },
+});
+
+/**
+ * Cancel a running test
+ */
+export const cancelTest = mutation({
+  args: { testId: v.id("testExecutions") },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    const test = await ctx.db.get(args.testId);
+    if (!test) {
+      throw new Error("Test not found");
+    }
+
+    if (test.userId !== identity.subject) {
+      throw new Error("Not authorized");
+    }
+
+    if (test.status === "COMPLETED" || test.status === "FAILED") {
+      throw new Error("Test already finished");
+    }
+
+    // If queued, just remove from queue
+    if (test.status === "QUEUED") {
+      const queueEntry = await ctx.db
+        .query("testQueue")
+        .withIndex("by_test", (q) => q.eq("testId", args.testId))
+        .first();
+
+      if (queueEntry) {
+        await ctx.db.delete(queueEntry._id);
+      }
+
+      await ctx.db.patch(args.testId, {
+        status: "FAILED",
+        success: false,
+        error: "Cancelled by user while queued",
+        completedAt: Date.now(),
+      });
+
+      return { success: true, message: "Test removed from queue" };
+    }
+
+    // If running, stop ECS task
+    if (test.ecsTaskArn) {
+      await ctx.scheduler.runAfter(0, internal.containerOrchestrator.stopTestContainer, {
+        testId: args.testId,
+        taskArn: test.ecsTaskArn,
+      });
+
+      return { success: true, message: "Test cancellation requested" };
+    }
+
+    throw new Error("Cannot cancel test in current state");
+  },
+});
+
+/**
+ * Retry a failed test
+ */
+export const retryTest = mutation({
+  args: {
+    testId: v.id("testExecutions"),
+    modifyQuery: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    const originalTest = await ctx.db.get(args.testId);
+    if (!originalTest) {
+      throw new Error("Test not found");
+    }
+
+    if (originalTest.userId !== identity.subject) {
+      throw new Error("Not authorized");
+    }
+
+    // Create new test with same configuration
+    const newTestId = await ctx.db.insert("testExecutions", {
+      agentId: originalTest.agentId,
+      userId: identity.subject,
+      testQuery: args.modifyQuery || originalTest.testQuery,
+      agentCode: originalTest.agentCode,
+      requirements: originalTest.requirements,
+      dockerfile: originalTest.dockerfile,
+      modelProvider: originalTest.modelProvider,
+      modelConfig: originalTest.modelConfig,
+      timeout: originalTest.timeout,
+      status: "CREATED",
+      phase: "queued",
+      logs: [],
+      submittedAt: Date.now(),
+    });
+
+    // Add to queue
+    await ctx.db.insert("testQueue", {
+      testId: newTestId,
+      priority: 2, // Normal priority
+      status: "pending",
+      createdAt: Date.now(),
+      attempts: 0,
+    });
+
+    await ctx.db.patch(newTestId, { status: "QUEUED" });
+
+    return {
+      newTestId,
+      originalTestId: args.testId,
+    };
+  },
+});
+
+/**
+ * Get queue status
+ */
+export const getQueueStatus = query({
+  args: {},
+  handler: async (ctx) => {
+    const pending = await ctx.db
+      .query("testQueue")
+      .withIndex("by_status_priority", (q) => q.eq("status", "pending"))
+      .collect();
+
+    const running = await ctx.db
+      .query("testExecutions")
+      .withIndex("by_status", (q) => q.eq("status", "RUNNING"))
+      .collect();
+
+    // Calculate average wait time from last 10 completed tests
+    const recent = await ctx.db
+      .query("testExecutions")
+      .withIndex("by_status", (q) => q.eq("status", "COMPLETED"))
+      .order("desc")
+      .take(10);
+
+    const avgWaitTime = recent.length > 0
+      ? recent.reduce((sum, t) => sum + (t.queueWaitTime || 0), 0) / recent.length / 1000
+      : 0;
+
+    const oldestPending = pending.length > 0
+      ? Math.floor((Date.now() - Math.min(...pending.map(p => p.createdAt))) / 1000)
+      : 0;
+
+    return {
+      pendingCount: pending.length,
+      runningCount: running.length,
+      capacity: MAX_CONCURRENT_TESTS,
+      avgWaitTime: Math.round(avgWaitTime),
+      oldestPendingAge: oldestPending,
+    };
+  },
+});
+
+/**
+ * Update test status (internal)
+ */
+export const updateStatus = internalMutation({
+  args: {
+    testId: v.id("testExecutions"),
+    status: v.string(),
+    success: v.optional(v.boolean()),
+    error: v.optional(v.string()),
+    errorStage: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const test = await ctx.db.get(args.testId);
+    if (!test) return;
+
+    const updates: any = { status: args.status };
+
+    if (args.status === "BUILDING") {
+      updates.startedAt = Date.now();
+      updates.queueWaitTime = Date.now() - test.submittedAt;
+      updates.phase = "building";
+    } else if (args.status === "RUNNING") {
+      updates.phase = "running";
+    } else if (args.status === "COMPLETED" || args.status === "FAILED") {
+      updates.completedAt = Date.now();
+      updates.success = args.success;
+      updates.phase = "completed";
+      if (test.startedAt) {
+        updates.executionTime = Date.now() - test.startedAt;
+      }
+      if (args.error) {
+        updates.error = args.error;
+        updates.errorStage = args.errorStage;
+      }
+    }
+
+    await ctx.db.patch(args.testId, updates);
+  },
+});
+
+/**
+ * Append logs (internal)
+ */
+export const appendLogs = internalMutation({
+  args: {
+    testId: v.id("testExecutions"),
+    logs: v.array(v.string()),
+    timestamp: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const test = await ctx.db.get(args.testId);
+    if (!test) return;
+
+    await ctx.db.patch(args.testId, {
+      logs: [...test.logs, ...args.logs],
+      lastLogFetchedAt: args.timestamp,
+    });
+  },
+});
+
+// Helper Functions
+
+function generateRequirements(tools: any[]): string {
+  const packages = new Set<string>([
+    "strands-agents-tools",
+  ]);
+
+  tools.forEach(tool => {
+    if (tool.requiresPip && tool.pipPackages) {
+      tool.pipPackages.forEach((pkg: string) => packages.add(pkg));
+    }
+  });
+
+  return Array.from(packages).join("\n");
+}
+
+function generateDockerfile(model: string, deploymentType: string): string {
+  return `FROM python:3.11-slim
+
+# System dependencies for tools
+RUN apt-get update && apt-get install -y \\
+    xvfb \\
+    x11vnc \\
+    fluxbox \\
+    chromium \\
+    gcc \\
+    g++ \\
+    && rm -rf /var/lib/apt/lists/*
+
+# Create app directory
+WORKDIR /app
+
+# Copy and install requirements
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy agent code
+COPY agent.py .
+COPY test_runner.py .
+
+# Create non-root user
+RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
+USER appuser
+
+# Run test
+CMD ["python", "test_runner.py"]
+`;
+}
+
+function extractModelConfig(model: string, deploymentType: string): {
+  modelProvider: string;
+  modelConfig: {
+    baseUrl?: string;
+    modelId?: string;
+    region?: string;
+  };
+} {
+  if (deploymentType === "ollama") {
+    return {
+      modelProvider: "ollama",
+      modelConfig: {
+        baseUrl: process.env.OLLAMA_BASE_URL || "http://host.docker.internal:11434",
+        modelId: model,
+      },
+    };
+  } else if (deploymentType === "aws") {
+    return {
+      modelProvider: "bedrock",
+      modelConfig: {
+        region: "us-east-1",
+        modelId: model,
+      },
+    };
+  }
+
+  // Default to Ollama
+  return {
+    modelProvider: "ollama",
+    modelConfig: {
+      baseUrl: "http://host.docker.internal:11434",
+      modelId: "llama2",
+    },
+  };
+}
+
+async function getQueuePosition(ctx: any, testId: string): Promise<number> {
+  const queueEntry = await ctx.db
+    .query("testQueue")
+    .withIndex("by_test", (q: any) => q.eq("testId", testId))
+    .first();
+
+  if (!queueEntry) return 0;
+
+  const ahead = await ctx.db
+    .query("testQueue")
+    .withIndex("by_status_priority", (q: any) => q.eq("status", "pending"))
+    .filter((q: any) => {
+      return q.or(
+        q.lt(q.field("priority"), queueEntry.priority),
+        q.and(
+          q.eq(q.field("priority"), queueEntry.priority),
+          q.lt(q.field("createdAt"), queueEntry.createdAt)
+        )
+      );
+    })
+    .collect();
+
+  return ahead.length + 1;
+}

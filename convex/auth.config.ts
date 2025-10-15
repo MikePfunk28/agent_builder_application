@@ -5,12 +5,19 @@ export default {
       domain: process.env.CONVEX_SITE_URL,
       applicationID: "convex",
     },
-    // Add this provider for GitHub OAuth
+    // GitHub OAuth
     {
       domain: "https://github.com",
       applicationID: "github",
-      clientID: process.env.GITHUB_CLIENT_ID!,
-      clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+      clientID: process.env.AUTH_GITHUB_ID!,
+      clientSecret: process.env.AUTH_GITHUB_SECRET!,
+    },
+    // Google OAuth
+    {
+      domain: "https://accounts.google.com",
+      applicationID: "google",
+      clientID: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
     },
   ],
 };

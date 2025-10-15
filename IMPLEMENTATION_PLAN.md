@@ -33,3 +33,11 @@ See full architectural plans in repository for:
 - Meta-tooling capabilities
 - Multi-cloud deployment
 - AgentCore integration
+
+
+ one later feature I want to add is being able to deploy your agent to aws with the       
+  push of a button.  However remember to plan everything first and make sure the docker    
+   sandbox is working and the ability to test the user created agent inside of that        
+  docker container.  So it is then connected to the ollama model, the agentcore and        
+  strandsagents tools, or bedrock if it is a bedrock model and all the tools work, and     
+  it responds.
