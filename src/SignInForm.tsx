@@ -82,7 +82,7 @@ export function SignInForm() {
         Sign in with GitHub
       </button>
       <button
-        className="auth-button flex items-center justify-center gap-2"
+        className="auth-button flex items-center justify-center gap-2 mt-3"
         onClick={() => void signIn( "google" )}
       >
         <svg className="w-5 h-5" viewBox="0 0 24 24">
@@ -93,7 +93,7 @@ export function SignInForm() {
         </svg>
         Sign in with Google
       </button>
-      <button className="auth-button" onClick={() => void signIn( "anonymous" )}>
+      <button className="auth-button mt-3" onClick={() => void signIn( "anonymous" )}>
         Sign in anonymously
       </button>
     </div>
