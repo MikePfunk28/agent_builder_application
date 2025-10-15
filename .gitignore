@@ -44,3 +44,4 @@ package-lock.json
 specs/004-TODO-Features/outline.md
 specs/004-TODO-Features/OVERVIEW.md
 .claude/settings.local.json
+example_requirements.txt

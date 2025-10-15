@@ -1,9 +1,9 @@
 # Core agent framework
 strands-agents>=1.0.0
-agentcore>=1.0.0
-bedrock-agentcore
-pyjwt
-bedrock-agentcore-starter-toolkit
+bedrock-agentcore>=1.0.0
+pyjwt>=2.8.0
+bedrock-agentcore-starter-toolkit>=1.0.0
+
 # Strands agents tools with all extras
 strands-agents-tools>=1.0.0
 
