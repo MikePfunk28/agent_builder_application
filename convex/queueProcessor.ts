@@ -5,8 +5,9 @@
  * Runs every 5 seconds to maintain ~2 second queue latency.
  */
 
-import { internalAction } from "./_generated/server";
+import { internalAction, internalQuery, internalMutation } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { v } from "convex/values";
 
 const MAX_CONCURRENT_TESTS = parseInt(process.env.MAX_CONCURRENT_TESTS || "10");
 
@@ -20,18 +21,19 @@ export const processQueue = internalAction({
       console.log("🔄 Processing test queue...");
 
       // Check current capacity
-      const runningTests = await ctx.runQuery(internal.queueProcessor.getRunningTestsCount);
+      const runningTests = await ctx.runQuery(internal.queueProcessor.queryRunningTests);
+      const runningCount = runningTests.length;
 
-      if (runningTests >= MAX_CONCURRENT_TESTS) {
-        console.log(`⏸️  At capacity (${runningTests}/${MAX_CONCURRENT_TESTS}), skipping queue processing`);
+      if (runningCount >= MAX_CONCURRENT_TESTS) {
+        console.log(`⏸️  At capacity (${runningCount}/${MAX_CONCURRENT_TESTS}), skipping queue processing`);
         return;
       }
 
-      const availableSlots = MAX_CONCURRENT_TESTS - runningTests;
+      const availableSlots = MAX_CONCURRENT_TESTS - runningCount;
       console.log(`📊 Available slots: ${availableSlots}`);
 
       // Get next pending tests (ordered by priority and creation time)
-      const nextTests = await ctx.runQuery(internal.queueProcessor.getNextPendingTests, {
+      const nextTests = await ctx.runQuery(internal.queueProcessor.queryNextPendingTests, {
         limit: availableSlots,
       });
 
@@ -185,8 +187,8 @@ export const processQueue = internalAction({
  */
 export const getRunningTestsCount = internalAction({
   args: {},
-  handler: async (ctx) => {
-    const running = await ctx.runQuery(internal.queueProcessor.queryRunningTests);
+  handler: async (ctx): Promise<number> => {
+    const running: any[] = await ctx.runQuery(internal.queueProcessor.queryRunningTests);
     return running.length;
   },
 });
@@ -206,7 +208,7 @@ export const queryRunningTests = internalQuery({
  */
 export const getNextPendingTests = internalAction({
   args: { limit: v.number() },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<any[]> => {
     return await ctx.runQuery(internal.queueProcessor.queryNextPendingTests, {
       limit: args.limit,
     });
@@ -239,7 +241,7 @@ export const claimTest = internalMutation({
     await ctx.db.patch(args.queueId, {
       status: "claimed",
       claimedAt: Date.now(),
-      claimedBy: ctx.auth?.userId || "system",
+      claimedBy: "system", // ctx.auth?.userId is not available in internal mutations
     });
 
     return true;
@@ -357,5 +359,4 @@ export const queryAbandonedTests = internalQuery({
   },
 });
 
-// Import v from convex/values
-import { v } from "convex/values";
+// v is already imported at the top of the file

@@ -1,30 +1,26 @@
 // AWS S3 client wrapper for deployment packages and build contexts
-import {
-  S3Client,
-  PutObjectCommand,
-  GetObjectCommand,
-  DeleteObjectCommand,
-  type PutObjectCommandInput,
-} from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+// Note: AWS SDK imports are done dynamically in actions to avoid Convex environment issues
 
 // Get AWS credentials from environment
 const AWS_REGION = process.env.AWS_S3_REGION || "us-east-1";
 const AWS_ACCESS_KEY_ID = process.env.AWS_ACCESS_KEY_ID;
 const AWS_SECRET_ACCESS_KEY = process.env.AWS_SECRET_ACCESS_KEY;
-
-// Initialize S3 client
-export const s3Client = new S3Client({
-  region: AWS_REGION,
-  credentials: AWS_ACCESS_KEY_ID && AWS_SECRET_ACCESS_KEY
-    ? {
-        accessKeyId: AWS_ACCESS_KEY_ID,
-        secretAccessKey: AWS_SECRET_ACCESS_KEY,
-      }
-    : undefined,
-});
-
 const DEPLOYMENT_BUCKET = process.env.AWS_S3_DEPLOYMENT_BUCKET || "";
+
+// Create S3 client dynamically to avoid Convex environment issues
+async function createS3Client() {
+  const { S3Client } = await import("@aws-sdk/client-s3");
+  
+  return new S3Client({
+    region: AWS_REGION,
+    credentials: AWS_ACCESS_KEY_ID && AWS_SECRET_ACCESS_KEY
+      ? {
+          accessKeyId: AWS_ACCESS_KEY_ID,
+          secretAccessKey: AWS_SECRET_ACCESS_KEY,
+        }
+      : undefined,
+  });
+}
 
 /**
  * Upload a file to S3
@@ -35,13 +31,16 @@ export async function uploadToS3(params: {
   body: string | Buffer;
   contentType?: string;
 }): Promise<{ bucket: string; key: string; url: string }> {
+  const { PutObjectCommand } = await import("@aws-sdk/client-s3");
+  const s3Client = await createS3Client();
+  
   const bucket = params.bucket || DEPLOYMENT_BUCKET;
 
   if (!bucket) {
     throw new Error("Missing S3 bucket configuration. Set AWS_S3_DEPLOYMENT_BUCKET environment variable.");
   }
 
-  const putCommand: PutObjectCommandInput = {
+  const putCommand = {
     Bucket: bucket,
     Key: params.key,
     Body: params.body,
@@ -64,6 +63,10 @@ export async function generatePreSignedUrl(params: {
   key: string;
   expiresIn?: number; // seconds, default 24 hours
 }): Promise<string> {
+  const { GetObjectCommand } = await import("@aws-sdk/client-s3");
+  const { getSignedUrl } = await import("@aws-sdk/s3-request-presigner");
+  const s3Client = await createS3Client();
+  
   const bucket = params.bucket || DEPLOYMENT_BUCKET;
   const expiresIn = params.expiresIn || 86400; // 24 hours
 
@@ -87,6 +90,9 @@ export async function deleteFromS3(params: {
   bucket?: string;
   key: string;
 }): Promise<void> {
+  const { DeleteObjectCommand } = await import("@aws-sdk/client-s3");
+  const s3Client = await createS3Client();
+  
   const bucket = params.bucket || DEPLOYMENT_BUCKET;
 
   if (!bucket) {

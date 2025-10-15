@@ -1,0 +1,129 @@
+/**
+ * Test Sessions - Database operations for Docker container testing
+ */
+
+import { mutation, query } from "./_generated/server";
+import { v } from "convex/values";
+
+/**
+ * Create a new test session
+ */
+export const createTestSession = mutation({
+  args: {
+    agentId: v.id("agents"),
+    userId: v.string(),
+    containerArn: v.string(),
+    containerId: v.string(),
+    status: v.string(),
+    chatEndpoint: v.string(),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db.insert("testSessions", {
+      agentId: args.agentId,
+      userId: args.userId,
+      containerArn: args.containerArn,
+      containerId: args.containerId,
+      status: args.status,
+      chatEndpoint: args.chatEndpoint,
+      createdAt: Date.now(),
+      messages: [],
+    });
+  },
+});
+
+/**
+ * Get test session by ID
+ */
+export const getTestSession = query({
+  args: { sessionId: v.id("testSessions") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.sessionId);
+  },
+});
+
+/**
+ * Update session status
+ */
+export const updateSessionStatus = mutation({
+  args: {
+    sessionId: v.id("testSessions"),
+    status: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.sessionId, {
+      status: args.status,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
+/**
+ * Add chat message to session
+ */
+export const addChatMessage = mutation({
+  args: {
+    sessionId: v.id("testSessions"),
+    userMessage: v.string(),
+    agentResponse: v.string(),
+    timestamp: v.number(),
+    metadata: v.any(),
+  },
+  handler: async (ctx, args) => {
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) return;
+
+    const newMessage = {
+      id: Date.now().toString(),
+      userMessage: args.userMessage,
+      agentResponse: args.agentResponse,
+      timestamp: args.timestamp,
+      metadata: args.metadata,
+    };
+
+    const updatedMessages = [...(session.messages || []), newMessage];
+    
+    await ctx.db.patch(args.sessionId, {
+      messages: updatedMessages,
+      lastMessageAt: args.timestamp,
+    });
+  },
+});
+
+/**
+ * Get chat messages for session
+ */
+export const getChatMessages = query({
+  args: { sessionId: v.id("testSessions") },
+  handler: async (ctx, args) => {
+    const session = await ctx.db.get(args.sessionId);
+    return session?.messages || [];
+  },
+});
+
+/**
+ * Create deployment record
+ */
+export const createDeployment = mutation({
+  args: {
+    agentId: v.id("agents"),
+    sessionId: v.id("testSessions"),
+    userId: v.string(),
+    deploymentId: v.string(),
+    agentArn: v.string(),
+    status: v.string(),
+    region: v.string(),
+    deployedAt: v.number(),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db.insert("deployments", {
+      agentId: args.agentId,
+      sessionId: args.sessionId,
+      userId: args.userId,
+      deploymentId: args.deploymentId,
+      agentArn: args.agentArn,
+      status: args.status,
+      region: args.region,
+      deployedAt: args.deployedAt,
+    });
+  },
+});

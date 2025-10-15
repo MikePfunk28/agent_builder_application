@@ -7,7 +7,7 @@
  * Replaces the simulated Docker service with real container orchestration.
  */
 
-import { action } from "./_generated/server";
+import { action, internalAction } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 
@@ -24,7 +24,7 @@ interface ECSTaskConfig {
 /**
  * Start an ECS Fargate task to execute an agent test
  */
-export const startTestContainer = action({
+export const startTestContainer = internalAction({
   args: {
     testId: v.id("testExecutions"),
     agentCode: v.string(),
@@ -158,7 +158,7 @@ export const startTestContainer = action({
 /**
  * Poll CloudWatch Logs for real-time log streaming
  */
-export const pollLogs = action({
+export const pollLogs = internalAction({
   args: {
     testId: v.id("testExecutions"),
     logGroup: v.string(),
@@ -177,7 +177,7 @@ export const pollLogs = action({
       });
 
       // Get test to check status and last fetched timestamp
-      const test = await ctx.runQuery(internal.testExecution.getTestById, { testId: args.testId });
+      const test = await ctx.runQuery(internal.testExecution.getTestByIdInternal, { testId: args.testId });
 
       if (!test || test.status === "COMPLETED" || test.status === "FAILED") {
         // Test finished, stop polling
@@ -235,7 +235,7 @@ export const pollLogs = action({
       console.error("❌ Log polling error:", error);
 
       // Retry with exponential backoff (up to 3 attempts)
-      const test = await ctx.runQuery(internal.testExecution.getTestById, { testId: args.testId });
+      const test = await ctx.runQuery(internal.testExecution.getTestByIdInternal, { testId: args.testId });
       const attempts = (test?.logs?.filter((l: string) => l.includes("Log polling error")).length || 0) + 1;
 
       if (attempts < 3) {
@@ -252,14 +252,14 @@ export const pollLogs = action({
 /**
  * Handle test timeout
  */
-export const handleTimeout = action({
+export const handleTimeout = internalAction({
   args: {
     testId: v.id("testExecutions"),
     taskArn: v.string(),
   },
   handler: async (ctx, args) => {
     // Check if test is still running
-    const test = await ctx.runQuery(internal.testExecution.getTestById, { testId: args.testId });
+    const test = await ctx.runQuery(internal.testExecution.getTestByIdInternal, { testId: args.testId });
 
     if (!test || test.status === "COMPLETED" || test.status === "FAILED") {
       return; // Already finished
@@ -306,7 +306,7 @@ export const handleTimeout = action({
 /**
  * Stop a running ECS task (for cancellation)
  */
-export const stopTestContainer = action({
+export const stopTestContainer = internalAction({
   args: {
     testId: v.id("testExecutions"),
     taskArn: v.string(),

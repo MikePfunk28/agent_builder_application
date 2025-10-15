@@ -1,0 +1,1 @@
+I want to also build a diagram of the deployment as well with all the pieces, frontend, backend, aws, auth, cognito, github, google, etc.

@@ -2,13 +2,14 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useMutation, useAction } from "convex/react";
 import { api } from "../../convex/_generated/api";
+import type { Id } from "../../convex/_generated/dataModel";
 import { toast } from "sonner";
-import { 
-  Bot, 
-  Settings, 
-  Code, 
-  Rocket, 
-  ChevronRight, 
+import {
+  Bot,
+  Settings,
+  Code,
+  Rocket,
+  ChevronRight,
   ChevronLeft,
   Plus,
   Trash2,
@@ -60,6 +61,7 @@ export function AgentBuilder() {
   const [dockerConfig, setDockerConfig] = useState<string>("");
   const [requirementsTxt, setRequirementsTxt] = useState<string>("");
   const [isGenerating, setIsGenerating] = useState(false);
+  const [savedAgentId, setSavedAgentId] = useState<Id<"agents"> | null>(null);
 
   const generateAgent = useAction(api.codeGenerator.generateAgent);
   const createAgent = useMutation(api.agents.create);
@@ -111,7 +113,7 @@ export function AgentBuilder() {
     }
 
     try {
-      await createAgent({
+      const agentId = await createAgent({
         name: config.name,
         description: config.description,
         model: config.model,
@@ -123,6 +125,7 @@ export function AgentBuilder() {
         isPublic: false,
       });
 
+      setSavedAgentId(agentId);
       toast.success("Agent saved successfully!");
     } catch (error) {
       toast.error("Failed to save agent");
@@ -193,13 +196,15 @@ export function AgentBuilder() {
             {currentStep === 1 && <ModelPromptStep config={config} setConfig={setConfig} />}
             {currentStep === 2 && <ToolsStep config={config} setConfig={setConfig} />}
             {currentStep === 3 && (
-              <TestStep 
+              <TestStep
+                agentId={savedAgentId}
                 agentCode={generatedCode}
                 requirements={requirementsTxt}
                 dockerfile={dockerConfig}
                 agentName={config.name}
                 modelId={config.model}
                 onGenerate={handleGenerate}
+                onSave={handleSave}
                 isGenerating={isGenerating}
               />
             )}
@@ -447,21 +452,25 @@ function DeployStep({
   );
 }
 
-function TestStep({ 
-  agentCode, 
-  requirements, 
-  dockerfile, 
-  agentName, 
+function TestStep({
+  agentId,
+  agentCode,
+  requirements,
+  dockerfile,
+  agentName,
   modelId,
   onGenerate,
+  onSave,
   isGenerating
-}: { 
+}: {
+  agentId: Id<"agents"> | null;
   agentCode: string;
   requirements: string;
   dockerfile: string;
   agentName: string;
   modelId: string;
   onGenerate: () => void;
+  onSave: () => void;
   isGenerating: boolean;
 }) {
   if (!agentCode) {
@@ -495,16 +504,43 @@ function TestStep({
     );
   }
 
+  if (!agentId) {
+    return (
+      <div className="space-y-6">
+        <h2 className="text-2xl font-bold text-green-400 mb-6">Test Your Agent</h2>
+        <div className="bg-blue-900/20 border border-blue-600/30 rounded-lg p-6">
+          <div className="flex items-start gap-3">
+            <TestTube className="w-5 h-5 text-blue-400 mt-0.5" />
+            <div>
+              <h3 className="font-medium text-blue-400 mb-2">Save Agent First</h3>
+              <p className="text-blue-300/70 text-sm mb-4">
+                You need to save your agent before you can test it. This allows the testing system to track your agent's tests and results.
+              </p>
+              <button
+                onClick={onSave}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <Copy className="w-4 h-4" />
+                Save Agent
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-bold text-green-400 mb-6">Test Your Agent</h2>
       <div className="bg-green-900/10 border border-green-600/30 rounded-lg p-4 mb-4">
         <p className="text-green-300 text-sm">
-          Test your agent in a real Docker container to see how it behaves with actual models and tools.
+          Test your agent in a containerized environment to see how it behaves with actual models and tools.
           This helps you catch issues before deployment!
         </p>
       </div>
       <AgentTester
+        agentId={agentId}
         agentCode={agentCode}
         requirements={requirements}
         dockerfile={dockerfile}

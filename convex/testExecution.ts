@@ -86,7 +86,7 @@ export const submitTest = mutation({
     // Create test execution record
     const testId = await ctx.db.insert("testExecutions", {
       agentId: args.agentId,
-      userId: identity.subject,
+      userId: identity.subject as any,
       testQuery: args.testQuery,
       agentCode: agent.generatedCode,
       requirements,
@@ -174,7 +174,7 @@ export const getUserTests = query({
 
     let query = ctx.db
       .query("testExecutions")
-      .withIndex("by_user", (q) => q.eq("userId", identity.subject))
+      .withIndex("by_user", (q) => q.eq("userId", identity.subject as any))
       .order("desc");
 
     if (args.status) {
@@ -276,7 +276,7 @@ export const retryTest = mutation({
     // Create new test with same configuration
     const newTestId = await ctx.db.insert("testExecutions", {
       agentId: originalTest.agentId,
-      userId: identity.subject,
+      userId: identity.subject as any,
       testQuery: args.modifyQuery || originalTest.testQuery,
       agentCode: originalTest.agentCode,
       requirements: originalTest.requirements,

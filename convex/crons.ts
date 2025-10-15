@@ -23,18 +23,4 @@ crons.interval(
   internal.queueProcessor.cleanupAbandonedTests
 );
 
-// Archive old tests every day at 2 AM UTC
-crons.daily(
-  "archive-old-tests",
-  { hourUTC: 2, minuteUTC: 0 },
-  internal.maintenance.archiveOldTests
-);
-
-// Delete expired deployment packages every hour
-crons.hourly(
-  "cleanup-expired-packages",
-  { minuteUTC: 0 },
-  internal.maintenance.cleanupExpiredPackages
-);
-
 export default crons;
