@@ -231,43 +231,99 @@ if __name__ == "__main__":
  * CRITICAL: Must use linux/arm64 platform
  */
 function generateAgentCoreDockerfile(): string {
-  return `# AgentCore Dockerfile - ARM64 Platform Required
-# This Dockerfile builds a container compatible with AWS Bedrock AgentCore
+  return `# Production AgentCore Dockerfile - ARM64 Platform Required
+# Multi-stage build for optimized production deployment
+# Compatible with AWS Bedrock AgentCore Runtime
 
-# CRITICAL: Must use ARM64 platform for AgentCore
-FROM --platform=linux/arm64 ghcr.io/astral-sh/uv:python3.11-bookworm-slim
+# Build stage - Install dependencies and compile
+FROM --platform=linux/arm64 ghcr.io/astral-sh/uv:python3.11-bookworm-slim AS builder
+
+# Install system dependencies for building
+RUN apt-get update && apt-get install -y \\
+    build-essential \\
+    gcc \\
+    g++ \\
+    curl \\
+    git \\
+    pkg-config \\
+    libffi-dev \\
+    libssl-dev \\
+    && rm -rf /var/lib/apt/lists/* \\
+    && apt-get clean
 
 # Set working directory
 WORKDIR /app
 
-# Copy uv dependency files
+# Copy dependency files
 COPY pyproject.toml uv.lock ./
 
-# Install dependencies using uv (faster than pip)
+# Install dependencies with optimizations
 # --frozen ensures reproducible builds
-# --no-cache reduces image size
-RUN uv sync --frozen --no-cache
+# --no-dev excludes development dependencies
+# --compile-bytecode for faster startup
+RUN uv sync --frozen --no-dev --compile-bytecode --no-cache
+
+# Production stage - Minimal runtime image
+FROM --platform=linux/arm64 python:3.11-slim-bookworm AS production
+
+# Install only runtime system dependencies
+RUN apt-get update && apt-get install -y \\
+    curl \\
+    ca-certificates \\
+    && rm -rf /var/lib/apt/lists/* \\
+    && apt-get clean \\
+    && groupadd -r agentcore \\
+    && useradd -r -g agentcore -u 1000 agentcore
+
+# Set working directory
+WORKDIR /app
+
+# Copy Python environment from builder
+COPY --from=builder /app/.venv /app/.venv
 
 # Copy agent files
-COPY agent.py ./
-COPY agentcore_server.py ./
+COPY --chown=agentcore:agentcore agent.py ./
+COPY --chown=agentcore:agentcore agentcore_server.py ./
 
 # Copy custom tools if they exist
-COPY tools/ ./tools/ 2>/dev/null || true
+COPY --chown=agentcore:agentcore tools/ ./tools/ 2>/dev/null || true
+
+# Copy configuration files
+COPY --chown=agentcore:agentcore config/ ./config/ 2>/dev/null || true
+
+# Set environment variables for production
+ENV PATH="/app/.venv/bin:$PATH" \\
+    PYTHONPATH="/app" \\
+    PYTHONUNBUFFERED=1 \\
+    PYTHONDONTWRITEBYTECODE=1 \\
+    PYTHONHASHSEED=random \\
+    PIP_NO_CACHE_DIR=1 \\
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \\
+    PORT=8080 \\
+    WORKERS=1 \\
+    LOG_LEVEL=INFO \\
+    TIMEOUT=300 \\
+    KEEP_ALIVE=2
+
+# Security: Run as non-root user
+USER agentcore
 
 # Expose port 8080 (AgentCore standard)
 EXPOSE 8080
 
-# Set environment variables
-ENV PORT=8080
-ENV PYTHONUNBUFFERED=1
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \\
+# Health check with proper timeout and retries
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \\
     CMD curl -f http://localhost:8080/ping || exit 1
 
-# Run the AgentCore server using uv
-CMD ["uv", "run", "uvicorn", "agentcore_server:app", "--host", "0.0.0.0", "--port", "8080"]
+# Production startup with proper signal handling
+CMD ["python", "-m", "uvicorn", "agentcore_server:app", \\
+     "--host", "0.0.0.0", \\
+     "--port", "8080", \\
+     "--workers", "1", \\
+     "--log-level", "info", \\
+     "--access-log", \\
+     "--timeout-keep-alive", "2", \\
+     "--timeout-graceful-shutdown", "30"]
 `;
 }
 

@@ -3,6 +3,107 @@ import { v } from "convex/values";
 import { authTables } from "@convex-dev/auth/server";
 
 const applicationTables = {
+  // User AWS Accounts for Tier 2 (Cross-Account Deployment)
+  userAWSAccounts: defineTable({
+    userId: v.id("users"),
+    externalId: v.string(), // Unique security token
+    roleArn: v.optional(v.string()), // User's cross-account role ARN
+    region: v.optional(v.string()),
+    awsAccountId: v.optional(v.string()),
+    status: v.string(), // "pending", "connected", "disconnected"
+    createdAt: v.number(),
+    connectedAt: v.optional(v.number()),
+    disconnectedAt: v.optional(v.number()),
+  })
+    .index("by_user_id", ["userId"])
+    .index("by_user_and_external_id", ["userId", "externalId"])
+    .index("by_external_id", ["externalId"]),
+
+  // Deployment History (Merged: Simple + AWS Deployments)
+  deployments: defineTable({
+    // Identity
+    agentId: v.id("agents"),
+    userId: v.id("users"),
+    
+    // Tier & Account Info
+    tier: v.string(), // "freemium", "personal", "enterprise"
+    awsAccountId: v.optional(v.string()),
+    region: v.string(),
+    environment: v.optional(v.string()), // dev | staging | prod
+    
+    // Deployment Configuration
+    agentName: v.optional(v.string()),
+    description: v.optional(v.string()),
+    
+    // AWS Resources
+    taskArn: v.optional(v.string()), // ECS task ARN
+    agentCoreRuntimeId: v.optional(v.string()),
+    agentCoreEndpoint: v.optional(v.string()),
+    cloudFormationStackId: v.optional(v.string()),
+    ecrRepositoryUri: v.optional(v.string()),
+    s3BucketName: v.optional(v.string()),
+    
+    // Status & Progress
+    status: v.string(), // "running", "completed", "failed", "CREATING", "ACTIVE", etc.
+    progress: v.optional(v.object({
+      stage: v.string(),
+      percentage: v.number(),
+      message: v.string(),
+      currentStep: v.optional(v.string()),
+      totalSteps: v.optional(v.number()),
+    })),
+    
+    // Configuration
+    enableMonitoring: v.optional(v.boolean()),
+    enableAutoScaling: v.optional(v.boolean()),
+    enableXRay: v.optional(v.boolean()),
+    logRetentionDays: v.optional(v.number()),
+    
+    // Logs & Errors
+    error: v.optional(v.string()),
+    logs: v.optional(v.union(
+      v.string(), // Simple string logs
+      v.array(v.object({ // Structured logs
+        timestamp: v.number(),
+        level: v.string(),
+        message: v.string(),
+        source: v.optional(v.string()),
+      }))
+    )),
+    
+    // Timestamps
+    startedAt: v.number(),
+    completedAt: v.optional(v.number()),
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
+    deployedAt: v.optional(v.number()),
+    deletedAt: v.optional(v.number()),
+    
+    // Metadata
+    version: v.optional(v.string()),
+    isActive: v.optional(v.boolean()),
+    lastHealthCheck: v.optional(v.number()),
+    healthStatus: v.optional(v.string()),
+  })
+    .index("by_agent", ["agentId"])
+    .index("by_user", ["userId"])
+    .index("by_tier", ["tier"])
+    .index("by_status", ["status"])
+    .index("by_active", ["isActive"]),
+
+  // User Profiles with Tier Information
+  users: defineTable({
+    userId: v.string(), // From auth
+    email: v.optional(v.string()),
+    name: v.optional(v.string()),
+    tier: v.string(), // "freemium", "personal", "enterprise"
+    testsThisMonth: v.optional(v.number()), // For freemium limits
+    upgradedAt: v.optional(v.number()),
+    createdAt: v.number(),
+  })
+    .index("by_user_id", ["userId"])
+    .index("by_tier", ["tier"]),
+
   agents: defineTable({
     name: v.string(),
     description: v.optional(v.string()),
@@ -57,6 +158,7 @@ const applicationTables = {
       region: v.optional(v.string()),
     }),
     timeout: v.number(),
+    agentRuntimeArn: v.optional(v.string()), // For AgentCore testing
 
     // Execution State
     status: v.string(), // CREATED | QUEUED | BUILDING | RUNNING | COMPLETED | FAILED | ABANDONED | ARCHIVED
@@ -100,6 +202,7 @@ const applicationTables = {
     testId: v.id("testExecutions"),
     priority: v.number(), // 1 = high, 2 = normal, 3 = low
     status: v.string(), // pending | claimed | abandoned
+    testType: v.optional(v.string()), // docker | agentcore
 
     // Timestamps
     createdAt: v.number(),
@@ -143,6 +246,8 @@ const applicationTables = {
     .index("by_test", ["testId"])
     .index("by_user", ["userId", "generatedAt"])
     .index("by_expiry", ["urlExpiresAt"]),
+
+
 };
 
 export default defineSchema({

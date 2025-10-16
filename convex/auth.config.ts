@@ -19,5 +19,12 @@ export default {
       clientID: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
     },
+    // AWS Cognito OAuth (optional - only enabled if configured)
+    ...(process.env.COGNITO_ISSUER_URL && process.env.COGNITO_CLIENT_ID ? [{
+      domain: process.env.COGNITO_ISSUER_URL,
+      applicationID: "cognito",
+      clientID: process.env.COGNITO_CLIENT_ID,
+      clientSecret: process.env.COGNITO_CLIENT_SECRET || "",
+    }] : []),
   ],
 };

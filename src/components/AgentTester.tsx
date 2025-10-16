@@ -5,6 +5,7 @@ import { api } from "../../convex/_generated/api";
 import { toast } from "sonner";
 import type { Id } from "../../convex/_generated/dataModel";
 import { DockerSetupGuide } from "./DockerSetupGuide";
+import { OllamaSetupGuide } from "./OllamaSetupGuide";
 import { 
   Play, 
   Square, 
@@ -72,6 +73,7 @@ export function AgentTester({ agentId, agentCode, requirements, dockerfile, agen
   const [showHistory, setShowHistory] = useState(false);
   const [showDiagram, setShowDiagram] = useState(false);
   const [showSetupGuide, setShowSetupGuide] = useState(false);
+  const [showOllamaGuide, setShowOllamaGuide] = useState(false);
 
   const submitTest = useMutation(api.testExecution.submitTest);
   const cancelTest = useMutation(api.testExecution.cancelTest);
@@ -221,13 +223,23 @@ export function AgentTester({ agentId, agentCode, requirements, dockerfile, agen
           </p>
         </div>
         <div className="flex gap-2">
-          <button
-            onClick={() => setShowSetupGuide(true)}
-            className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            <HelpCircle className="w-4 h-4" />
-            Setup Guide
-          </button>
+          {modelId.includes(':') ? (
+            <button
+              onClick={() => setShowOllamaGuide(true)}
+              className="flex items-center gap-2 px-3 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
+            >
+              <HelpCircle className="w-4 h-4" />
+              Ollama Setup
+            </button>
+          ) : (
+            <button
+              onClick={() => setShowSetupGuide(true)}
+              className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <HelpCircle className="w-4 h-4" />
+              AWS Setup
+            </button>
+          )}
           {testResult?.diagram && (
             <button
               onClick={() => setShowDiagram(true)}
@@ -520,11 +532,19 @@ export function AgentTester({ agentId, agentCode, requirements, dockerfile, agen
         </div>
       )}
 
-      {/* Docker Setup Guide Modal */}
+      {/* Setup Guide Modals */}
       {showSetupGuide && (
         <DockerSetupGuide 
           modelId={modelId}
           onClose={() => setShowSetupGuide(false)}
+        />
+      )}
+
+      {showOllamaGuide && (
+        <OllamaSetupGuide
+          isOpen={showOllamaGuide}
+          onClose={() => setShowOllamaGuide(false)}
+          modelId={modelId}
         />
       )}
 
