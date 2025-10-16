@@ -49,10 +49,11 @@
   - Create model parameter validation
   - _Requirements: 2.2, 2.3_
 
-- [ ] 2.3 Create agent code generator
-  - Generate Strands Agent code with selected tools
+- [ ] 2.3 Create agent code generator with Strands decorator
+  - Generate Strands Agent code using @agent decorator pattern
   - Include proper tool imports and configurations
-  - Add AgentCore Runtime wrapper code
+  - Add AgentCore Runtime wrapper with BedrockAgentCoreApp
+  - Verify Strands Agents implementation follows best practices
   - Generate requirements.txt for agent dependencies
   - _Requirements: 2.4, 2.5_
 
@@ -63,11 +64,12 @@
   - Create testing environment selection logic
   - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5_
 
-- [ ] 3.1 Create Ollama Docker testing
-  - Set up Docker container for Ollama testing
-  - Implement agent execution in Docker environment
+- [ ] 3.1 Create Ollama Docker testing (like the UI shows)
+  - Set up Docker container with Ollama (python:3.11-slim base)
+  - Implement agent execution in Docker environment with real Ollama API
   - Add Docker container lifecycle management
-  - Create test result capture and logging
+  - Create test result capture and logging with real-time output
+  - Match the existing UI: "Execute your agent in a real Docker environment with real Ollama connection"
   - _Requirements: 3.1, 3.4_
 
 - [ ] 3.2 Implement AgentCore sandbox testing
