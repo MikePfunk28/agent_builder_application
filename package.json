@@ -15,6 +15,7 @@
     "@aws-sdk/client-cloudwatch-logs": "^3.701.0",
     "@aws-sdk/client-ecs": "^3.701.0",
     "@aws-sdk/client-s3": "^3.701.0",
+    "@aws-sdk/client-sts": "^3.911.0",
     "@aws-sdk/s3-request-presigner": "^3.910.0",
     "@convex-dev/auth": "^0.0.80",
     "@types/react-syntax-highlighter": "^15.5.13",
