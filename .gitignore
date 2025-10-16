@@ -18,6 +18,13 @@ dist-ssr
 .env.development
 .env.production
 .env.test
+.env.aws
+
+# AWS Configuration files (contain secrets)
+aws-config*.json
+.aws/
+deploy-to-aws.sh
+AWS-SETUP-COMPLETE.md
 
 # JWT keys and secrets
 *jwt*.txt
@@ -45,3 +52,4 @@ specs/004-TODO-Features/outline.md
 specs/004-TODO-Features/OVERVIEW.md
 .claude/settings.local.json
 example_requirements.txt
+AWS-SETUP-COMPLETE.md

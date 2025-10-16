@@ -259,7 +259,7 @@ try {
                     "logs:CreateLogStream",
                     "logs:PutLogEvents"
                 )
-                Resource = "arn:aws:logs:$Region:*:log-group:/aws/*"
+                Resource = "arn:aws:logs:${Region}:*:log-group:/aws/*"
             },
             @{
                 Effect = "Allow"

@@ -24,17 +24,17 @@ const applicationTables = {
     // Identity
     agentId: v.id("agents"),
     userId: v.id("users"),
-    
+
     // Tier & Account Info
     tier: v.string(), // "freemium", "personal", "enterprise"
     awsAccountId: v.optional(v.string()),
     region: v.string(),
     environment: v.optional(v.string()), // dev | staging | prod
-    
+
     // Deployment Configuration
     agentName: v.optional(v.string()),
     description: v.optional(v.string()),
-    
+
     // AWS Resources
     taskArn: v.optional(v.string()), // ECS task ARN
     agentCoreRuntimeId: v.optional(v.string()),
@@ -42,7 +42,7 @@ const applicationTables = {
     cloudFormationStackId: v.optional(v.string()),
     ecrRepositoryUri: v.optional(v.string()),
     s3BucketName: v.optional(v.string()),
-    
+
     // Status & Progress
     status: v.string(), // "running", "completed", "failed", "CREATING", "ACTIVE", etc.
     progress: v.optional(v.object({
@@ -52,13 +52,13 @@ const applicationTables = {
       currentStep: v.optional(v.string()),
       totalSteps: v.optional(v.number()),
     })),
-    
+
     // Configuration
     enableMonitoring: v.optional(v.boolean()),
     enableAutoScaling: v.optional(v.boolean()),
     enableXRay: v.optional(v.boolean()),
     logRetentionDays: v.optional(v.number()),
-    
+
     // Logs & Errors
     error: v.optional(v.string()),
     logs: v.optional(v.union(
@@ -70,7 +70,7 @@ const applicationTables = {
         source: v.optional(v.string()),
       }))
     )),
-    
+
     // Timestamps
     startedAt: v.number(),
     completedAt: v.optional(v.number()),
@@ -78,7 +78,7 @@ const applicationTables = {
     updatedAt: v.optional(v.number()),
     deployedAt: v.optional(v.number()),
     deletedAt: v.optional(v.number()),
-    
+
     // Metadata
     version: v.optional(v.string()),
     isActive: v.optional(v.boolean()),

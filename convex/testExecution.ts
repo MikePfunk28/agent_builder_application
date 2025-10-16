@@ -46,20 +46,21 @@ export const submitTest = mutation({
     const isOwner = agent.createdBy === userId;
     const isPublic = Boolean(agent.isPublic);
 
-    // For now, allow testing for all authenticated users (can be restricted later)
-    // This enables testing during development
-    if (!isOwner && !isPublic) {
-      // Temporarily allow all authenticated users to test any agent for development
-      console.log("Authorization check:", {
-        userId,
-        agentCreatedBy: agent.createdBy,
-        isPublic: agent.isPublic,
-        agentId: args.agentId,
-        allowing: "development mode"
-      });
-      // Remove this comment and uncomment the line below to enforce strict authorization:
-      // throw new Error("Not authorized to test this agent");
-    }
+    // Allow testing for authenticated users (development mode)
+    console.log("Authorization check:", {
+      userId,
+      agentCreatedBy: agent.createdBy,
+      isOwner,
+      isPublic,
+      agentId: args.agentId,
+      allowing: "all authenticated users"
+    });
+    
+    // Authorization is relaxed for development
+    // In production, uncomment this to enforce strict ownership:
+    // if (!isOwner && !isPublic) {
+    //   throw new Error("Not authorized to test this agent");
+    // }
 
     // Validate test query
     if (!args.testQuery || args.testQuery.length < 1 || args.testQuery.length > MAX_QUERY_LENGTH) {
