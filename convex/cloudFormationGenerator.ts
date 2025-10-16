@@ -78,8 +78,7 @@ function generateProductionCloudFormationTemplate(config: TemplateConfig): strin
   const {
     agentName,
     model,
-    tools,
-    _region,
+    region,
     environment,
     vpcConfig,
     monitoring,
@@ -87,13 +86,15 @@ function generateProductionCloudFormationTemplate(config: TemplateConfig): strin
   } = config;
 
   const _stackName = `${agentName}-${environment}`;
-  const resourcePrefix = _stackName.replace(/[^a-zA-Z0-9]/g, '');
+  const _resourcePrefix = _stackName.replace(/[^a-zA-Z0-9]/g, '');
+  const _tools = config.tools; // Keep tools reference
+  const _region = region; // Fix: use _region instead of region
 
   return `AWSTemplateFormatVersion: '2010-09-09'
 Description: >
   Production AgentCore deployment for ${agentName}
   Environment: ${environment}
-  Region: ${region}
+  Region: ${_region}
   Generated: ${new Date().toISOString()}
 
 Metadata:
@@ -151,7 +152,7 @@ Parameters:
 
   AvailabilityZones:
     Type: CommaDelimitedList
-    Default: ${region}a,${region}b,${region}c
+    Default: ${_region}a,${_region}b,${_region}c
     Description: List of Availability Zones
 
   InstanceType:

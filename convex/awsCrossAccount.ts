@@ -48,9 +48,10 @@ export const assumeUserRole = action({
         expiration: credentials.Expiration,
       };
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
       console.error("AssumeRole failed:", error);
       throw new Error(
-        `Cannot assume role in user's AWS account: ${error.message}`
+        `Cannot assume role in user's AWS account: ${errorMessage}`
       );
     }
   },
@@ -75,7 +76,7 @@ export const deployToUserAccount = action({
 
     // Assume role in user's account
     const credentials = await ctx.runAction(api.awsCrossAccount.assumeUserRole, {
-      roleArn: awsAccount.roleArn,
+      roleArn: awsAccount.roleArn!,
       externalId: awsAccount.externalId,
       sessionName: `agent-${args.agentId}-${Date.now()}`,
     });
@@ -87,7 +88,7 @@ export const deployToUserAccount = action({
     // Deploy to user's Fargate using their credentials
     const deployment = await deployToFargate({
       credentials,
-      region: awsAccount.region,
+      region: awsAccount.region!,
       agent,
       accountType: "user",
     });
@@ -97,7 +98,7 @@ export const deployToUserAccount = action({
       agentId: args.agentId,
       tier: "personal",
       awsAccountId: awsAccount.awsAccountId,
-      region: awsAccount.region,
+      region: awsAccount.region!,
       taskArn: deployment.taskArn,
       status: "running",
     });
@@ -132,10 +133,11 @@ export const validateRole = action({
       // If we got credentials, the role is valid
       return { valid: true };
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
       console.error("Role validation failed:", error);
       return {
         valid: false,
-        error: error.message,
+        error: errorMessage,
       };
     }
   },

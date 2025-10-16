@@ -6,6 +6,7 @@
 
 import { action, query, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
 
 /**
  * Analyze and debug issues with agent testing or deployment
@@ -25,7 +26,7 @@ export const debugIssue = action({
       region: v.optional(v.string()),
     })),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<any> => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
       throw new Error("Not authenticated");
@@ -41,7 +42,7 @@ export const debugIssue = action({
     const recommendations = await generateRecommendations(analysis, args);
 
     // Store the debugging session
-    const debugSessionId = await ctx.runMutation(internal.debuggingAgent.createDebugSession, {
+    const debugSessionId: string = await ctx.runMutation(internal.debuggingAgent.createDebugSession, {
       userId: identity.subject as any,
       issueType: args.issueType,
       analysis,
@@ -74,19 +75,10 @@ export const getDebuggingSuggestions = query({
  */
 export const getDebugSessions = query({
   args: { limit: v.optional(v.number()) },
-  handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      return [];
-    }
-
-    const limit = Math.min(args.limit || 10, 50);
-
-    return await ctx.db
-      .query("debugSessions")
-      .withIndex("by_user", (q) => q.eq("userId", identity.subject as any))
-      .order("desc")
-      .take(limit);
+  handler: async (_ctx, _args) => {
+    // Debug sessions table not yet implemented
+    // Return empty array for now
+    return [];
   },
 });
 
@@ -111,8 +103,8 @@ async function gatherDiagnostics(ctx: any, args: any) {
         toolCount: agent?.tools?.length || 0,
         codeSize: agent?.generatedCode?.length || 0,
       };
-    } catch (error) {
-      diagnostics.agentError = error.message;
+    } catch (error: unknown) {
+      diagnostics.agentError = error instanceof Error ? error.message : String(error);
     }
   }
 
@@ -131,8 +123,8 @@ async function gatherDiagnostics(ctx: any, args: any) {
         executionTime: test?.executionTime,
         error: test?.error,
       };
-    } catch (error) {
-      diagnostics.testError = error.message;
+    } catch (error: unknown) {
+      diagnostics.testError = error instanceof Error ? error.message : String(error);
     }
   }
 
@@ -149,8 +141,8 @@ async function gatherDiagnostics(ctx: any, args: any) {
         error: deployment?.error,
         message: deployment?.message,
       };
-    } catch (error) {
-      diagnostics.deploymentError = error.message;
+    } catch (error: unknown) {
+      diagnostics.deploymentError = error instanceof Error ? error.message : String(error);
     }
   }
 
@@ -241,7 +233,7 @@ function identifyAffectedComponents(diagnostics: any): string[] {
   return components;
 }
 
-function getTestFailureRecommendations(analysis: any, args: any) {
+function getTestFailureRecommendations(_analysis: any, args: any) {
   const recommendations = [
     {
       title: "Check Agent Configuration",
@@ -275,7 +267,7 @@ function getTestFailureRecommendations(analysis: any, args: any) {
   return recommendations;
 }
 
-function getDeploymentFailureRecommendations(analysis: any, args: any) {
+function getDeploymentFailureRecommendations(_analysis: any, _args: any) {
   return [
     {
       title: "Verify AWS Credentials",
@@ -298,7 +290,7 @@ function getDeploymentFailureRecommendations(analysis: any, args: any) {
   ];
 }
 
-function getAuthErrorRecommendations(analysis: any, args: any) {
+function getAuthErrorRecommendations(_analysis: any, _args: any) {
   return [
     {
       title: "Re-authenticate",
@@ -315,7 +307,7 @@ function getAuthErrorRecommendations(analysis: any, args: any) {
   ];
 }
 
-function getModelErrorRecommendations(analysis: any, args: any) {
+function getModelErrorRecommendations(_analysis: any, _args: any) {
   return [
     {
       title: "Verify Model Access",
@@ -332,7 +324,7 @@ function getModelErrorRecommendations(analysis: any, args: any) {
   ];
 }
 
-function getGeneralRecommendations(analysis: any, args: any) {
+function getGeneralRecommendations(_analysis: any, _args: any) {
   return [
     {
       title: "Check System Status",
@@ -399,7 +391,7 @@ export const createDebugSession = internalMutation({
     recommendations: v.any(),
     diagnostics: v.any(),
   },
-  handler: async (ctx, args) => {
+  handler: async (_ctx, args) => {
     // For now, we'll just log the debug session
     // In a full implementation, you might want to store this in a debugSessions table
     console.log("Debug session created:", {
@@ -409,6 +401,6 @@ export const createDebugSession = internalMutation({
     });
     
     // Return a mock debug session ID
-    return `debug_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    return `debug_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
   },
 });

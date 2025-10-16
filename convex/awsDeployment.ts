@@ -23,7 +23,7 @@ export const deployToAWS = action({
       enableAutoScaling: v.optional(v.boolean()),
     }),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<any> => {
     // Authentication check
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
@@ -31,7 +31,7 @@ export const deployToAWS = action({
     }
 
     // Get agent
-    const agent = await ctx.runQuery(internal.agents.getInternal, { 
+    const agent: any = await ctx.runQuery(internal.agents.getInternal, { 
       id: args.agentId 
     });
     
@@ -95,17 +95,12 @@ export const executeDeployment = internalAction({
       await ctx.runMutation(internal.awsDeployment.updateDeploymentStatusInternal, {
         deploymentId: args.deploymentId,
         status: "BUILDING",
-        message: "Building Docker container...",
-        progress: 10,
-        currentStep: "Building container",
-        totalSteps: 5,
-        stepDetails: {
-          stepName: "Building Docker container",
-          stepIndex: 1,
+        progress: {
+          stage: "building",
+          percentage: 10,
+          message: "Building Docker container...",
+          currentStep: "Building container",
           totalSteps: 5,
-          stepStatus: "running",
-          stepMessage: "Generating Dockerfile and building container image",
-          estimatedTimeRemaining: 180, // 3 minutes
         },
       });
 
@@ -122,19 +117,15 @@ export const executeDeployment = internalAction({
       const artifacts = await generateDeploymentArtifacts(agent, args.config);
 
       // Update status to deploying with progress
-      await ctx.runMutation(internal.awsDeployment.updateDeploymentStatus, {
+      await ctx.runMutation(internal.awsDeployment.updateDeploymentStatusInternal, {
         deploymentId: args.deploymentId,
         status: "DEPLOYING",
-        message: "Deploying to AWS AgentCore...",
-        progress: 60,
-        currentStep: "Deploying to AWS",
-        stepDetails: {
-          stepName: "Deploying to AWS AgentCore",
-          stepIndex: 3,
+        progress: {
+          stage: "deploying",
+          percentage: 60,
+          message: "Deploying to AWS AgentCore...",
+          currentStep: "Deploying to AWS",
           totalSteps: 5,
-          stepStatus: "running",
-          stepMessage: "Creating AgentCore Runtime and configuring endpoints",
-          estimatedTimeRemaining: 120, // 2 minutes
         },
       });
 
@@ -142,20 +133,15 @@ export const executeDeployment = internalAction({
       const deploymentResult = await deployToAgentCore(artifacts, args.config);
 
       // Update status to completed with final progress
-      await ctx.runMutation(internal.awsDeployment.updateDeploymentStatus, {
+      await ctx.runMutation(internal.awsDeployment.updateDeploymentStatusInternal, {
         deploymentId: args.deploymentId,
         status: "COMPLETED",
-        message: "Deployment successful! Agent is now live.",
-        progress: 100,
-        currentStep: "Completed",
-        result: deploymentResult,
-        stepDetails: {
-          stepName: "Deployment Complete",
-          stepIndex: 5,
+        progress: {
+          stage: "completed",
+          percentage: 100,
+          message: "Deployment successful! Agent is now live.",
+          currentStep: "Completed",
           totalSteps: 5,
-          stepStatus: "completed",
-          stepMessage: "Agent successfully deployed and ready to use",
-          estimatedTimeRemaining: 0,
         },
       });
 
@@ -163,19 +149,15 @@ export const executeDeployment = internalAction({
 
     } catch (error: any) {
       // Update status to failed with error details
-      await ctx.runMutation(internal.awsDeployment.updateDeploymentStatus, {
+      await ctx.runMutation(internal.awsDeployment.updateDeploymentStatusInternal, {
         deploymentId: args.deploymentId,
         status: "FAILED",
-        message: `Deployment failed: ${error.message}`,
-        error: error.message,
-        stepDetails: {
-          stepName: "Deployment Failed",
-          stepIndex: 0,
-          totalSteps: 5,
-          stepStatus: "failed",
-          stepMessage: error.message,
-          estimatedTimeRemaining: 0,
+        progress: {
+          stage: "failed",
+          percentage: 0,
+          message: `Deployment failed: ${error.message}`,
         },
+        error: error.message,
       });
 
       throw error;
@@ -890,9 +872,9 @@ export const executeDeploymentInternal = internalAction({
 /**
  * Tier 1: Deploy to YOUR Fargate (Freemium)
  */
-async function deployTier1(ctx: any, args: any, userId: string) {
+async function deployTier1(ctx: any, args: any, userId: string): Promise<any> {
   // Create deployment record
-  const deploymentId = await ctx.runMutation(internal.awsDeployment.createDeploymentInternal, {
+  const deploymentId: any = await ctx.runMutation(internal.awsDeployment.createDeploymentInternal, {
     agentId: args.agentId,
     userId,
     tier: "freemium",
@@ -920,7 +902,7 @@ async function deployTier1(ctx: any, args: any, userId: string) {
 /**
  * Tier 2: Deploy to USER's Fargate (Personal AWS Account)
  */
-async function deployTier2(ctx: any, args: any, userId: string) {
+async function deployTier2(ctx: any, args: any, userId: string): Promise<any> {
   // Check if user has connected AWS account
   const awsAccount = await ctx.runQuery(internal.awsDeployment.getUserAWSAccountInternal, { userId });
   
@@ -929,7 +911,7 @@ async function deployTier2(ctx: any, args: any, userId: string) {
   }
 
   // Create deployment record
-  const deploymentId = await ctx.runMutation(internal.awsDeployment.createDeploymentInternal, {
+  const deploymentId: any = await ctx.runMutation(internal.awsDeployment.createDeploymentInternal, {
     agentId: args.agentId,
     userId,
     tier: "personal",

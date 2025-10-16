@@ -60,13 +60,13 @@ export const getUserTier = query({
 });
 
 // Tier 1: Deploy to YOUR Fargate (Freemium)
-async function deployTier1(ctx: any, args: any, userId: string) {
+async function deployTier1(ctx: any, args: any, userId: string): Promise<any> {
   // Check usage limits
   const user = await ctx.runQuery(api.deploymentRouter.getUserTier);
 
   if (!user) throw new Error("User not found");
 
-  const testsThisMonth = user.testsThisMonth || 0;
+  const testsThisMonth: number = user.testsThisMonth || 0;
   const limit = 10; // Free tier limit
 
   if (testsThisMonth >= limit) {
@@ -78,11 +78,18 @@ async function deployTier1(ctx: any, args: any, userId: string) {
     };
   }
 
-  // Deploy to YOUR Fargate
+  // Deploy to YOUR Fargate - using awsDeployment instead
   try {
-    const result = await ctx.runAction(api.tier1Deployment.deployToYourFargate, {
+    // Use the main deployment function which handles tier routing
+    const result: any = await ctx.runAction(api.awsDeployment.deployToAWS, {
       agentId: args.agentId,
-      testQuery: args.testQuery,
+      deploymentConfig: {
+        region: "us-east-1",
+        agentName: `agent-${args.agentId}`,
+        description: "Freemium tier deployment",
+        enableMonitoring: true,
+        enableAutoScaling: false,
+      },
     });
 
     // Increment usage counter
@@ -97,19 +104,20 @@ async function deployTier1(ctx: any, args: any, userId: string) {
       message: "Agent deployed to platform infrastructure",
       upgradePrompt: `You have ${limit - testsThisMonth - 1} free tests remaining. Upgrade to deploy to your own AWS account!`,
     };
-  } catch (error: any) {
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
     return {
       success: false,
-      error: error.message,
+      error: errorMessage,
       tier: "freemium",
     };
   }
 }
 
 // Tier 2: Deploy to USER's Fargate (Personal AWS Account)
-async function deployTier2(ctx: any, args: any, userId: string) {
+async function deployTier2(ctx: any, args: any, userId: string): Promise<any> {
   try {
-    const result = await ctx.runAction(
+    const result: any = await ctx.runAction(
       api.awsCrossAccount.deployToUserAccount,
       {
         agentId: args.agentId,
@@ -122,10 +130,11 @@ async function deployTier2(ctx: any, args: any, userId: string) {
       result,
       message: "Agent deployed to your AWS account",
     };
-  } catch (error: any) {
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
     return {
       success: false,
-      error: error.message,
+      error: errorMessage,
       tier: "personal",
       message:
         "Failed to deploy to your AWS account. Check your connection settings.",
@@ -134,7 +143,7 @@ async function deployTier2(ctx: any, args: any, userId: string) {
 }
 
 // Tier 3: Deploy to ENTERPRISE AWS (via SSO)
-async function deployTier3(ctx: any, args: any, userId: string) {
+async function deployTier3(ctx: any, args: any, userId: string): Promise<any> {
   try {
     // TODO: Implement enterprise SSO deployment
     // This would use AWS SSO credentials instead of AssumeRole
@@ -145,10 +154,11 @@ async function deployTier3(ctx: any, args: any, userId: string) {
       tier: "enterprise",
       message: "Enterprise SSO deployment coming soon!",
     };
-  } catch (error: any) {
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
     return {
       success: false,
-      error: error.message,
+      error: errorMessage,
       tier: "enterprise",
     };
   }

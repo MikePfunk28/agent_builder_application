@@ -93,13 +93,14 @@ const applicationTables = {
 
   // User Profiles with Tier Information
   users: defineTable({
-    userId: v.string(), // From auth
+    userId: v.optional(v.string()), // From auth - optional for anonymous users
     email: v.optional(v.string()),
     name: v.optional(v.string()),
-    tier: v.string(), // "freemium", "personal", "enterprise"
+    tier: v.optional(v.string()), // "freemium", "personal", "enterprise"
     testsThisMonth: v.optional(v.number()), // For freemium limits
     upgradedAt: v.optional(v.number()),
-    createdAt: v.number(),
+    createdAt: v.optional(v.number()),
+    isAnonymous: v.optional(v.boolean()), // For anonymous users
   })
     .index("by_user_id", ["userId"])
     .index("by_tier", ["tier"]),
