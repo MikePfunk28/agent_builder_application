@@ -5,7 +5,7 @@
  * Provides real-time log streaming and test management.
  */
 
-import { mutation, query, internalMutation, internalQuery, action, internalAction } from "./_generated/server";
+import { mutation, query, internalMutation, internalQuery, action } from "./_generated/server";
 import { v } from "convex/values";
 import { internal, api } from "./_generated/api";
 
@@ -675,3 +675,81 @@ async function getQueuePosition(ctx: any, testId: string): Promise<number> {
 
   return ahead.length + 1;
 }
+
+/**
+ * Execute agent directly (for MCP tool invocation)
+ * This is a simplified execution path for MCP tool calls
+ */
+export const executeAgent = action({
+  args: {
+    agentId: v.id("agents"),
+    input: v.string(),
+  },
+  handler: async (ctx, args): Promise<{
+    success: boolean;
+    response: string | null;
+    error?: string;
+  }> => {
+    // Get agent - use internal query since this is an action
+    const agent = await ctx.runQuery(internal.agents.getInternal, { id: args.agentId });
+    if (!agent) {
+      throw new Error("Agent not found");
+    }
+
+    // For now, submit a test and wait for completion
+    // In a production system, this would be a more direct execution path
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    // Submit test
+    const result: { testId: any; status: string; queuePosition: number; estimatedWaitTime: number } = await ctx.runMutation(api.testExecution.submitTest, {
+      agentId: args.agentId,
+      testQuery: args.input,
+      timeout: 180000, // 3 minutes
+      priority: 1, // High priority for MCP calls
+    });
+
+    // Poll for completion (simplified - in production use webhooks or streaming)
+    let attempts = 0;
+    const maxAttempts = 60; // 60 attempts * 3 seconds = 3 minutes max
+    
+    while (attempts < maxAttempts) {
+      await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3 seconds
+      
+      const test: any = await ctx.runQuery(api.testExecution.getTestById, { 
+        testId: result.testId 
+      });
+      
+      if (!test) {
+        throw new Error("Test not found");
+      }
+      
+      if (test.status === "COMPLETED") {
+        return {
+          success: test.success || false,
+          response: test.response || null,
+          error: test.error,
+        };
+      }
+      
+      if (test.status === "FAILED") {
+        return {
+          success: false,
+          response: null,
+          error: test.error || "Test failed",
+        };
+      }
+      
+      attempts++;
+    }
+    
+    // Timeout
+    return {
+      success: false,
+      response: null,
+      error: "Execution timeout - test did not complete in time",
+    };
+  },
+});

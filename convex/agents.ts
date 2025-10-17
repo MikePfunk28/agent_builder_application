@@ -73,6 +73,9 @@ export const create = mutation({
     dockerConfig: v.optional(v.string()),
     deploymentType: v.string(),
     isPublic: v.optional(v.boolean()),
+    exposableAsMCPTool: v.optional(v.boolean()),
+    mcpToolName: v.optional(v.string()),
+    mcpInputSchema: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -105,6 +108,9 @@ export const update = mutation({
     dockerConfig: v.optional(v.string()),
     deploymentType: v.optional(v.string()),
     isPublic: v.optional(v.boolean()),
+    exposableAsMCPTool: v.optional(v.boolean()),
+    mcpToolName: v.optional(v.string()),
+    mcpInputSchema: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -136,5 +142,45 @@ export const remove = mutation({
     }
 
     await ctx.db.delete(args.id);
+  },
+});
+
+export const listExposableAgents = query({
+  args: {},
+  handler: async (ctx) => {
+    // Get all agents marked as exposable as MCP tools
+    const agents = await ctx.db
+      .query("agents")
+      .filter((q) => q.eq(q.field("exposableAsMCPTool"), true))
+      .collect();
+    
+    // Convert to MCP tool format
+    return agents.map(agent => ({
+      _id: agent._id,
+      name: agent.mcpToolName || agent.name,
+      description: agent.description || `AI agent: ${agent.name}`,
+      inputSchema: agent.mcpInputSchema || {
+        type: "object",
+        properties: {
+          input: { 
+            type: "string", 
+            description: "Input to the agent" 
+          }
+        },
+        required: ["input"]
+      }
+    }));
+  },
+});
+
+export const getByMCPToolName = query({
+  args: { name: v.string() },
+  handler: async (ctx, args) => {
+    const agent = await ctx.db
+      .query("agents")
+      .withIndex("by_mcp_tool_name", (q) => q.eq("mcpToolName", args.name))
+      .first();
+    
+    return agent;
   },
 });

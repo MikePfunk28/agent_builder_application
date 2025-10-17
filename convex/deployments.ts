@@ -13,6 +13,8 @@ export const create = mutation({
     region: v.string(),
     taskArn: v.optional(v.string()),
     status: v.string(),
+    agentCoreRuntimeId: v.optional(v.string()),
+    agentCoreEndpoint: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -25,6 +27,8 @@ export const create = mutation({
       awsAccountId: args.awsAccountId,
       region: args.region,
       taskArn: args.taskArn,
+      agentCoreRuntimeId: args.agentCoreRuntimeId,
+      agentCoreEndpoint: args.agentCoreEndpoint,
       status: args.status,
       startedAt: Date.now(),
     });
@@ -73,5 +77,55 @@ export const list = query({
       .withIndex("by_user", (q) => q.eq("userId", userId as any))
       .order("desc")
       .take(args.limit || 20);
+  },
+});
+
+// Update AgentCore-specific metadata
+export const updateAgentCoreMetadata = mutation({
+  args: {
+    deploymentId: v.id("deployments"),
+    agentCoreRuntimeId: v.optional(v.string()),
+    agentCoreEndpoint: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.deploymentId, {
+      agentCoreRuntimeId: args.agentCoreRuntimeId,
+      agentCoreEndpoint: args.agentCoreEndpoint,
+    });
+  },
+});
+
+
+// Delete deployment (with AgentCore cleanup)
+export const deleteDeployment = mutation({
+  args: {
+    deploymentId: v.id("deployments"),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+
+    const deployment = await ctx.db.get(args.deploymentId);
+    if (!deployment) {
+      throw new Error("Deployment not found");
+    }
+
+    if (deployment.userId !== userId) {
+      throw new Error("Not authorized to delete this deployment");
+    }
+
+    // Mark as deleted
+    await ctx.db.patch(args.deploymentId, {
+      status: "DELETED",
+      deletedAt: Date.now(),
+      isActive: false,
+    });
+
+    // Return sandbox ID for cleanup (if AgentCore deployment)
+    return {
+      success: true,
+      agentCoreRuntimeId: deployment.agentCoreRuntimeId,
+      tier: deployment.tier,
+    };
   },
 });

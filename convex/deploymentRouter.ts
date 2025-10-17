@@ -59,7 +59,7 @@ export const getUserTier = query({
   },
 });
 
-// Tier 1: Deploy to YOUR Fargate (Freemium)
+// Tier 1: Deploy to AgentCore (Freemium)
 async function deployTier1(ctx: any, args: any, userId: string): Promise<any> {
   // Check usage limits
   const user = await ctx.runQuery(api.deploymentRouter.getUserTier);
@@ -78,19 +78,39 @@ async function deployTier1(ctx: any, args: any, userId: string): Promise<any> {
     };
   }
 
-  // Deploy to YOUR Fargate - using awsDeployment instead
+  // Deploy to AgentCore sandbox
   try {
-    // Use the main deployment function which handles tier routing
-    const result: any = await ctx.runAction(api.awsDeployment.deployToAWS, {
+    // Get agent details
+    const agent = await ctx.runQuery(api.agents.get, { id: args.agentId });
+    if (!agent) {
+      throw new Error("Agent not found");
+    }
+
+    // Extract dependencies from agent tools
+    const dependencies: string[] = [];
+    for (const tool of agent.tools || []) {
+      if (tool.requiresPip && tool.pipPackages) {
+        dependencies.push(...tool.pipPackages);
+      }
+    }
+
+    // Build environment variables
+    const environmentVariables: Record<string, string> = {
+      AGENT_NAME: agent.name,
+      AGENT_MODEL: agent.model,
+    };
+
+    // Deploy to AgentCore
+    const result: any = await ctx.runAction(api.agentcoreDeployment.deployToAgentCore, {
       agentId: args.agentId,
-      deploymentConfig: {
-        region: "us-east-1",
-        agentName: `agent-${args.agentId}`,
-        description: "Freemium tier deployment",
-        enableMonitoring: true,
-        enableAutoScaling: false,
-      },
+      code: agent.generatedCode,
+      dependencies,
+      environmentVariables,
     });
+
+    if (!result.success) {
+      throw new Error(result.error || "AgentCore deployment failed");
+    }
 
     // Increment usage counter
     await ctx.runMutation(api.deploymentRouter.incrementUsage, {
@@ -101,7 +121,7 @@ async function deployTier1(ctx: any, args: any, userId: string): Promise<any> {
       success: true,
       tier: "freemium",
       result,
-      message: "Agent deployed to platform infrastructure",
+      message: "Agent deployed to AgentCore sandbox",
       upgradePrompt: `You have ${limit - testsThisMonth - 1} free tests remaining. Upgrade to deploy to your own AWS account!`,
     };
   } catch (error) {
@@ -115,7 +135,7 @@ async function deployTier1(ctx: any, args: any, userId: string): Promise<any> {
 }
 
 // Tier 2: Deploy to USER's Fargate (Personal AWS Account)
-async function deployTier2(ctx: any, args: any, userId: string): Promise<any> {
+async function deployTier2(ctx: any, args: any, _userId: string): Promise<any> {
   try {
     const result: any = await ctx.runAction(
       api.awsCrossAccount.deployToUserAccount,
@@ -143,7 +163,7 @@ async function deployTier2(ctx: any, args: any, userId: string): Promise<any> {
 }
 
 // Tier 3: Deploy to ENTERPRISE AWS (via SSO)
-async function deployTier3(ctx: any, args: any, userId: string): Promise<any> {
+async function deployTier3(_ctx: any, _args: any, _userId: string): Promise<any> {
   try {
     // TODO: Implement enterprise SSO deployment
     // This would use AWS SSO credentials instead of AssumeRole
@@ -227,5 +247,120 @@ export const getDeploymentHistory = query({
       .take(args.limit || 20);
 
     return deployments;
+  },
+});
+
+
+// Monitor AgentCore sandbox health
+export const monitorAgentCoreHealth = action({
+  args: {
+    deploymentId: v.id("deployments"),
+  },
+  handler: async (ctx, args): Promise<any> => {
+    try {
+      // Get deployment details
+      const deployment = await ctx.runQuery(api.deployments.get, {
+        id: args.deploymentId,
+      });
+
+      if (!deployment) {
+        throw new Error("Deployment not found");
+      }
+
+      if (!deployment.agentCoreRuntimeId) {
+        throw new Error("Not an AgentCore deployment");
+      }
+
+      // Check sandbox health
+      const healthResult = await ctx.runAction(
+        api.agentcoreDeployment.getAgentCoreSandboxHealth,
+        {
+          sandboxId: deployment.agentCoreRuntimeId,
+        }
+      );
+
+      // Update deployment health status
+      if (healthResult.success) {
+        await ctx.runMutation(api.deploymentRouter.updateHealthStatus, {
+          deploymentId: args.deploymentId,
+          healthStatus: healthResult.status,
+          lastHealthCheck: Date.now(),
+        });
+      }
+
+      return healthResult;
+    } catch (error: any) {
+      return {
+        success: false,
+        status: "error",
+        error: error.message || String(error),
+      };
+    }
+  },
+});
+
+// Update deployment health status
+export const updateHealthStatus = mutation({
+  args: {
+    deploymentId: v.id("deployments"),
+    healthStatus: v.string(),
+    lastHealthCheck: v.number(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.deploymentId, {
+      healthStatus: args.healthStatus,
+      lastHealthCheck: args.lastHealthCheck,
+    });
+  },
+});
+
+
+// Delete deployment with AgentCore cleanup
+export const deleteDeploymentWithCleanup = action({
+  args: {
+    deploymentId: v.id("deployments"),
+  },
+  handler: async (ctx, args): Promise<any> => {
+    try {
+      // Delete deployment record and get metadata
+      const deleteResult = await ctx.runMutation(api.deployments.deleteDeployment, {
+        deploymentId: args.deploymentId,
+      });
+
+      // If it's an AgentCore deployment, clean up the sandbox
+      if (deleteResult.tier === "freemium" && deleteResult.agentCoreRuntimeId) {
+        const cleanupResult = await ctx.runAction(
+          api.agentcoreDeployment.deleteAgentCoreSandbox,
+          {
+            sandboxId: deleteResult.agentCoreRuntimeId,
+          }
+        );
+
+        // Log cleanup result but don't fail the deletion
+        if (!cleanupResult.success) {
+          console.warn(
+            `AgentCore sandbox cleanup failed for ${deleteResult.agentCoreRuntimeId}:`,
+            cleanupResult.error
+          );
+        }
+
+        return {
+          success: true,
+          message: "Deployment deleted",
+          cleanupResult,
+        };
+      }
+
+      return {
+        success: true,
+        message: "Deployment deleted",
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error.message || String(error),
+        message: "Failed to delete deployment",
+      };
+    }
   },
 });

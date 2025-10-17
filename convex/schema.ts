@@ -122,8 +122,14 @@ const applicationTables = {
     deploymentType: v.string(), // "aws", "ollama", "docker"
     createdBy: v.id("users"),
     isPublic: v.optional(v.boolean()),
+    
+    // MCP Tool Exposure
+    exposableAsMCPTool: v.optional(v.boolean()),
+    mcpToolName: v.optional(v.string()),
+    mcpInputSchema: v.optional(v.any()),
   }).index("by_user", ["createdBy"])
-    .index("by_public", ["isPublic"]),
+    .index("by_public", ["isPublic"])
+    .index("by_mcp_tool_name", ["mcpToolName"]),
 
   templates: defineTable({
     name: v.string(),
@@ -248,6 +254,58 @@ const applicationTables = {
     .index("by_user", ["userId", "generatedAt"])
     .index("by_expiry", ["urlExpiresAt"]),
 
+  // MCP Server Configuration
+  mcpServers: defineTable({
+    // Identity
+    name: v.string(),
+    userId: v.id("users"),
+
+    // Server Configuration
+    command: v.string(),
+    args: v.array(v.string()),
+    env: v.optional(v.object({})),
+    disabled: v.boolean(),
+    timeout: v.optional(v.number()), // Timeout in milliseconds
+
+    // Connection Status
+    status: v.string(), // "connected" | "disconnected" | "error" | "unknown"
+    lastConnected: v.optional(v.number()),
+    lastError: v.optional(v.string()),
+
+    // Tool Discovery
+    availableTools: v.optional(v.array(v.object({
+      name: v.string(),
+      description: v.optional(v.string()),
+      inputSchema: v.optional(v.any()),
+    }))),
+
+    // Timestamps
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_name", ["name"])
+    .index("by_status", ["status"])
+    .index("by_user_and_name", ["userId", "name"]),
+
+  // Architecture Diagrams
+  diagrams: defineTable({
+    // Identity
+    deploymentId: v.id("deployments"),
+    userId: v.id("users"),
+
+    // Diagram Content
+    format: v.string(), // "svg" | "png" | "mermaid"
+    content: v.string(), // The actual diagram content (SVG markup, PNG base64, or Mermaid code)
+
+    // Metadata
+    generatedAt: v.number(),
+    resourceCount: v.optional(v.number()), // Number of AWS resources in the diagram
+    diagramType: v.optional(v.string()), // "architecture" | "network" | "security"
+  })
+    .index("by_deployment", ["deploymentId"])
+    .index("by_user", ["userId", "generatedAt"])
+    .index("by_deployment_and_format", ["deploymentId", "format"]),
 
 };
 

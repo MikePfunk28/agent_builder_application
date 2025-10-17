@@ -2,43 +2,211 @@ import React, { useState, useEffect } from 'react';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
-import { motion, AnimatePresence } from 'framer-motion';
+
 import { 
-  Rocket, 
-  Settings, 
   CheckCircle, 
   XCircle, 
-  Clock, 
-  AlertTriangle,
-  ExternalLink,
   RefreshCw,
-  Trash2,
-  Eye,
-  Copy,
-  Download,
   Play,
-  Pause,
-  Square,
-  BarChart3,
-  Globe,
-  Shield,
   Zap,
-  Database,
-  Monitor,
-  Activity
+  Activity,
+  Network
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { DiagramViewer } from './DiagramViewer';
 
 interface DeploymentPanelProps {
   agentId: Id<"agents">;
   agent: any;
 }
 
+interface DeploymentCardProps {
+  deployment: any;
+  onViewDiagram: (id: Id<"deployments">) => void;
+}
+
+function DeploymentCard({ deployment, onViewDiagram }: DeploymentCardProps) {
+  const [testInput, setTestInput] = useState('');
+  const [testResult, setTestResult] = useState<any>(null);
+  const [isTesting, setIsTesting] = useState(false);
+  const [showTestPanel, setShowTestPanel] = useState(false);
+  
+  const invokeAgentCore = useMutation(api.agentcoreDeployment.invokeAgentCoreSandbox as any);
+  
+  const isAgentCore = deployment.tier === 'freemium' && deployment.agentCoreRuntimeId;
+  
+  const handleTestAgent = () => {
+    if (!testInput.trim() || !deployment.agentCoreRuntimeId) return;
+    
+    setIsTesting(true);
+    setTestResult(null);
+    
+    void (async () => {
+      try {
+        const result = await invokeAgentCore({
+          sandboxId: deployment.agentCoreRuntimeId,
+          input: testInput,
+        });
+        
+        setTestResult(result);
+        
+        if (result.success) {
+          toast.success('Agent invoked successfully');
+        } else {
+          toast.error(result.error || 'Agent invocation failed');
+        }
+      } catch (error: any) {
+        toast.error(error.message || 'Failed to invoke agent');
+        setTestResult({ success: false, error: error.message });
+      } finally {
+        setIsTesting(false);
+      }
+    })();
+  };
+  
+  return (
+    <div className="p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+      <div className="flex items-center justify-between">
+        <div className="flex-1">
+          <div className="text-sm font-medium text-gray-900">
+            {deployment.config?.agentName || deployment.agentName || 'Unnamed Agent'}
+          </div>
+          <div className="text-xs text-gray-500">
+            {deployment.config?.region || deployment.region || 'us-east-1'} • {new Date(deployment.createdAt || deployment.startedAt).toLocaleDateString()}
+          </div>
+          
+          {/* AgentCore-specific info */}
+          {isAgentCore && (
+            <div className="mt-2 space-y-1">
+              <div className="flex items-center text-xs text-gray-600">
+                <Zap className="w-3 h-3 mr-1 text-purple-500" />
+                <span className="font-medium">AgentCore Sandbox</span>
+              </div>
+              <div className="text-xs text-gray-500 font-mono">
+                ID: {deployment.agentCoreRuntimeId?.substring(0, 20)}...
+              </div>
+              {deployment.healthStatus && (
+                <div className="flex items-center text-xs">
+                  <Activity className={`w-3 h-3 mr-1 ${
+                    deployment.healthStatus === 'healthy' ? 'text-green-500' :
+                    deployment.healthStatus === 'error' ? 'text-red-500' :
+                    'text-yellow-500'
+                  }`} />
+                  <span className="capitalize">{deployment.healthStatus}</span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+        
+        <div className="flex items-center gap-2">
+          {/* Test Agent button for AgentCore deployments */}
+          {isAgentCore && deployment.status === 'ACTIVE' && (
+            <button
+              onClick={() => setShowTestPanel(!showTestPanel)}
+              className="p-2 text-purple-600 hover:bg-purple-50 rounded-md transition-colors"
+              title="Test Agent"
+            >
+              <Play className="w-4 h-4" />
+            </button>
+          )}
+          
+          <button
+            onClick={() => onViewDiagram(deployment._id)}
+            className="p-2 text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
+            title="View Architecture Diagram"
+          >
+            <Network className="w-4 h-4" />
+          </button>
+          
+          <div className={`px-2 py-1 rounded-full text-xs font-medium ${
+            deployment.status === 'COMPLETED' || deployment.status === 'ACTIVE' ? 'bg-green-100 text-green-800' :
+            deployment.status === 'FAILED' ? 'bg-red-100 text-red-800' :
+            'bg-yellow-100 text-yellow-800'
+          }`}>
+            {deployment.status}
+          </div>
+        </div>
+      </div>
+      
+      {/* Test Panel */}
+      {showTestPanel && isAgentCore && (
+        <div className="mt-3 pt-3 border-t border-gray-200">
+          <div className="space-y-2">
+            <label className="block text-xs font-medium text-gray-700">
+              Test Input
+            </label>
+            <textarea
+              value={testInput}
+              onChange={(e) => setTestInput(e.target.value)}
+              placeholder="Enter test input for the agent..."
+              rows={3}
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+            />
+            
+            <button
+              onClick={handleTestAgent}
+              disabled={isTesting || !testInput.trim()}
+              className="w-full bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white text-sm font-medium py-2 px-4 rounded-md transition-colors duration-200 flex items-center justify-center"
+            >
+              {isTesting ? (
+                <>
+                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                  Testing...
+                </>
+              ) : (
+                <>
+                  <Play className="w-4 h-4 mr-2" />
+                  Test Agent
+                </>
+              )}
+            </button>
+            
+            {/* Test Result */}
+            {testResult && (
+              <div className={`mt-3 p-3 rounded-md text-sm ${
+                testResult.success ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'
+              }`}>
+                <div className="font-medium mb-2 flex items-center">
+                  {testResult.success ? (
+                    <>
+                      <CheckCircle className="w-4 h-4 mr-1 text-green-600" />
+                      <span className="text-green-800">Success</span>
+                    </>
+                  ) : (
+                    <>
+                      <XCircle className="w-4 h-4 mr-1 text-red-600" />
+                      <span className="text-red-800">Error</span>
+                    </>
+                  )}
+                  {testResult.executionTime && (
+                    <span className="ml-auto text-xs text-gray-600">
+                      {testResult.executionTime}ms
+                    </span>
+                  )}
+                </div>
+                
+                <div className={`text-xs font-mono whitespace-pre-wrap ${
+                  testResult.success ? 'text-green-700' : 'text-red-700'
+                }`}>
+                  {testResult.success 
+                    ? JSON.stringify(testResult.result, null, 2)
+                    : testResult.error
+                  }
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function DeploymentPanel({ agentId, agent }: DeploymentPanelProps) {
-  const [activeTab, setActiveTab] = useState<'deploy' | 'history' | 'monitoring'>('deploy');
   const [isDeploying, setIsDeploying] = useState(false);
-  const [selectedDeployment, setSelectedDeployment] = useState<Id<"deployments"> | null>(null);
-  const [showAdvancedConfig, setShowAdvancedConfig] = useState(false);
+  const [showDiagramModal, setShowDiagramModal] = useState(false);
+  const [diagramDeploymentId, setDiagramDeploymentId] = useState<Id<"deployments"> | null>(null);
   
   const [deploymentConfig, setDeploymentConfig] = useState({
     region: 'us-east-1',
@@ -57,17 +225,12 @@ export function DeploymentPanel({ agentId, agent }: DeploymentPanelProps) {
     enableSSL: true,
   });
 
-  const deployToAWS = useMutation(api.awsDeployment.deployToAWS);
-  const cancelDeployment = useMutation(api.awsDeployment.cancelDeployment);
+  const deployToAWS = useMutation(api.awsDeployment.deployToAWS as any);
   const userDeployments = useQuery(api.awsDeployment.listUserDeployments, { limit: 10 });
-  const activeDeployment = useQuery(
-    selectedDeployment ? api.awsDeployment.getDeploymentWithLogs : undefined,
-    selectedDeployment ? { deploymentId: selectedDeployment } : "skip"
-  );
 
   // Auto-refresh active deployments
   useEffect(() => {
-    if (userDeployments?.some(d => d.isActive)) {
+    if (userDeployments?.some((d: any) => d.isActive)) {
       const interval = setInterval(() => {
         // Trigger re-fetch by updating a dummy state
       }, 2000);
@@ -75,73 +238,25 @@ export function DeploymentPanel({ agentId, agent }: DeploymentPanelProps) {
     }
   }, [userDeployments]);
 
-  const handleDeploy = async () => {
+  const handleDeploy = () => {
     if (!agentId) return;
 
     setIsDeploying(true);
-    try {
-      const result = await deployToAWS({
-        agentId,
-        deploymentConfig,
-      });
+    void (async () => {
+      try {
+        await deployToAWS({
+          agentId,
+          deploymentConfig,
+        });
 
-      toast.success('Deployment started successfully!');
-      setSelectedDeployment(result.deploymentId);
-      setActiveTab('history');
-    } catch (error: any) {
-      console.error('Deployment failed:', error);
-      toast.error(error.message || 'Deployment failed');
-    } finally {
-      setIsDeploying(false);
-    }
-  };
-
-  const handleCancelDeployment = async (deploymentId: Id<"deployments">) => {
-    try {
-      await cancelDeployment({ deploymentId });
-      toast.success('Deployment cancelled');
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to cancel deployment');
-    }
-  };
-
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    toast.success('Copied to clipboard');
-  };
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'COMPLETED':
-        return <CheckCircle className="w-5 h-5 text-green-500" />;
-      case 'FAILED':
-        return <XCircle className="w-5 h-5 text-red-500" />;
-      case 'CANCELLED':
-        return <Square className="w-5 h-5 text-gray-500" />;
-      case 'PREPARING':
-      case 'BUILDING':
-      case 'DEPLOYING':
-        return <RefreshCw className="w-5 h-5 text-blue-500 animate-spin" />;
-      default:
-        return <Clock className="w-5 h-5 text-yellow-500" />;
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'COMPLETED':
-        return 'text-green-600 bg-green-50 border-green-200';
-      case 'FAILED':
-        return 'text-red-600 bg-red-50 border-red-200';
-      case 'CANCELLED':
-        return 'text-gray-600 bg-gray-50 border-gray-200';
-      case 'PREPARING':
-      case 'BUILDING':
-      case 'DEPLOYING':
-        return 'text-blue-600 bg-blue-50 border-blue-200';
-      default:
-        return 'text-yellow-600 bg-yellow-50 border-yellow-200';
-    }
+        toast.success('Deployment started successfully!');
+      } catch (error: any) {
+        console.error('Deployment failed:', error);
+        toast.error(error.message || 'Deployment failed');
+      } finally {
+        setIsDeploying(false);
+      }
+    })();
   };
 
   const regions = [
@@ -281,25 +396,31 @@ export function DeploymentPanel({ agentId, agent }: DeploymentPanelProps) {
         <div className="mt-6 pt-6 border-t border-gray-200">
           <h4 className="text-sm font-medium text-gray-900 mb-3">Recent Deployments</h4>
           <div className="space-y-2">
-            {userDeployments.map((deployment) => (
-              <div key={deployment._id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                <div>
-                  <div className="text-sm font-medium text-gray-900">
-                    {deployment.config.agentName}
-                  </div>
-                  <div className="text-xs text-gray-500">
-                    {deployment.config.region} • {new Date(deployment.createdAt).toLocaleDateString()}
-                  </div>
-                </div>
-                <div className={`px-2 py-1 rounded-full text-xs font-medium ${
-                  deployment.status === 'COMPLETED' ? 'bg-green-100 text-green-800' :
-                  deployment.status === 'FAILED' ? 'bg-red-100 text-red-800' :
-                  'bg-yellow-100 text-yellow-800'
-                }`}>
-                  {deployment.status}
-                </div>
-              </div>
+            {userDeployments.map((deployment: any) => (
+              <DeploymentCard
+                key={deployment._id}
+                deployment={deployment}
+                onViewDiagram={(id) => {
+                  setDiagramDeploymentId(id);
+                  setShowDiagramModal(true);
+                }}
+              />
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Diagram Modal */}
+      {showDiagramModal && diagramDeploymentId && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] overflow-auto">
+            <DiagramViewer
+              deploymentId={diagramDeploymentId}
+              onClose={() => {
+                setShowDiagramModal(false);
+                setDiagramDeploymentId(null);
+              }}
+            />
           </div>
         </div>
       )}

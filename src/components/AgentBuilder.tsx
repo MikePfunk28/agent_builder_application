@@ -21,6 +21,8 @@ import { ModelSelector } from "./ModelSelector";
 import { ToolSelector } from "./ToolSelector";
 import { CodePreview } from "./CodePreview";
 import { AgentTester } from "./AgentTester";
+import { AgentMCPConfig } from "./AgentMCPConfig";
+import { AgentMCPTester } from "./AgentMCPTester";
 
 interface Tool {
   name: string;
@@ -37,6 +39,9 @@ interface AgentConfig {
   systemPrompt: string;
   tools: Tool[];
   deploymentType: string;
+  exposableAsMCPTool?: boolean;
+  mcpToolName?: string;
+  mcpInputSchema?: any;
 }
 
 const steps = [
@@ -56,6 +61,9 @@ export function AgentBuilder() {
     systemPrompt: "",
     tools: [],
     deploymentType: "docker",
+    exposableAsMCPTool: false,
+    mcpToolName: "",
+    mcpInputSchema: undefined,
   });
   const [generatedCode, setGeneratedCode] = useState<string>("");
   const [dockerConfig, setDockerConfig] = useState<string>("");
@@ -95,7 +103,7 @@ export function AgentBuilder() {
       });
 
       setGeneratedCode(result.generatedCode);
-      setDockerConfig(result.dockerConfig || "");
+      setDockerConfig(""); // Docker config not returned by generator
       setRequirementsTxt(result.requirementsTxt || "");
       toast.success("Agent generated successfully!");
     } catch (error) {
@@ -123,6 +131,9 @@ export function AgentBuilder() {
         dockerConfig,
         deploymentType: config.deploymentType,
         isPublic: false,
+        exposableAsMCPTool: config.exposableAsMCPTool,
+        mcpToolName: config.mcpToolName,
+        mcpInputSchema: config.mcpInputSchema,
       });
 
       setSavedAgentId(agentId);
@@ -385,6 +396,19 @@ function DeployStep({
   onSave: () => void;
   onDownload: () => void;
 }) {
+  const handleMCPConfigChange = (mcpConfig: {
+    exposableAsMCPTool: boolean;
+    mcpToolName?: string;
+    mcpInputSchema?: any;
+  }) => {
+    setConfig({
+      ...config,
+      exposableAsMCPTool: mcpConfig.exposableAsMCPTool,
+      mcpToolName: mcpConfig.mcpToolName,
+      mcpInputSchema: mcpConfig.mcpInputSchema,
+    });
+  };
+
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-bold text-green-400 mb-6">Deployment Configuration</h2>
@@ -404,6 +428,23 @@ function DeployStep({
           <option value="local">Local Development</option>
         </select>
       </div>
+
+      {/* MCP Tool Configuration */}
+      <AgentMCPConfig
+        exposableAsMCPTool={config.exposableAsMCPTool}
+        mcpToolName={config.mcpToolName}
+        mcpInputSchema={config.mcpInputSchema}
+        agentName={config.name}
+        onConfigChange={handleMCPConfigChange}
+      />
+
+      {/* MCP Testing - Show if agent is exposable and saved */}
+      {config.exposableAsMCPTool && config.mcpToolName && generatedCode && (
+        <AgentMCPTester
+          mcpToolName={config.mcpToolName}
+          mcpInputSchema={config.mcpInputSchema}
+        />
+      )}
 
       <div className="flex gap-4">
         <button
