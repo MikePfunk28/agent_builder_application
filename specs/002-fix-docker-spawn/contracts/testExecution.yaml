@@ -1,0 +1,436 @@
+openapi: 3.0.3
+info:
+  title: Test Execution API
+  description: API for managing containerized agent test lifecycle
+  version: 1.0.0
+  contact:
+    name: Agent Builder Team
+
+servers:
+  - url: https://resolute-kudu-325.convex.cloud
+    description: Convex Cloud API
+
+tags:
+  - name: Tests
+    description: Test execution management
+  - name: Logs
+    description: Real-time log streaming
+  - name: Queue
+    description: Queue status and management
+
+paths:
+  /api/testExecution/submitTest:
+    post:
+      summary: Submit new agent test
+      description: Creates a test execution record and queues it for processing
+      operationId: submitTest
+      tags:
+        - Tests
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - agentId
+                - testQuery
+              properties:
+                agentId:
+                  type: string
+                  description: ID of agent to test
+                  example: "j97dh2k3m6n8p9q0r1s2t3u4"
+                testQuery:
+                  type: string
+                  description: Test query/prompt for agent
+                  minLength: 1
+                  maxLength: 2000
+                  example: "What is the capital of France?"
+                timeout:
+                  type: integer
+                  description: Max execution time in milliseconds
+                  minimum: 10000
+                  maximum: 600000
+                  default: 180000
+                  example: 180000
+                priority:
+                  type: integer
+                  description: Queue priority (1=high, 2=normal, 3=low)
+                  minimum: 1
+                  maximum: 3
+                  default: 2
+                  example: 2
+      responses:
+        '200':
+          description: Test submitted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  testId:
+                    type: string
+                    description: Unique test execution ID
+                    example: "k08ei3l4n7o9p0q1r2s3t4u5"
+                  status:
+                    type: string
+                    enum: [QUEUED]
+                    example: "QUEUED"
+                  queuePosition:
+                    type: integer
+                    description: Position in queue (1-indexed)
+                    example: 3
+                  estimatedWaitTime:
+                    type: integer
+                    description: Estimated wait time in seconds
+                    example: 45
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Agent not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/testExecution/getTestById:
+    get:
+      summary: Get test execution details
+      description: Retrieve complete test execution record including logs and results
+      operationId: getTestById
+      tags:
+        - Tests
+      parameters:
+        - name: testId
+          in: query
+          required: true
+          description: Test execution ID
+          schema:
+            type: string
+            example: "k08ei3l4n7o9p0q1r2s3t4u5"
+      responses:
+        '200':
+          description: Test execution details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestExecution'
+        '404':
+          description: Test not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/testExecution/getUserTests:
+    get:
+      summary: List user's test history
+      description: Retrieve all tests submitted by authenticated user
+      operationId: getUserTests
+      tags:
+        - Tests
+      parameters:
+        - name: limit
+          in: query
+          description: Max number of results
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+            example: 20
+        - name: status
+          in: query
+          description: Filter by status
+          schema:
+            type: string
+            enum: [CREATED, QUEUED, BUILDING, RUNNING, COMPLETED, FAILED, ABANDONED, ARCHIVED]
+            example: "COMPLETED"
+      responses:
+        '200':
+          description: List of test executions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tests:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TestExecution'
+                  hasMore:
+                    type: boolean
+                    description: More results available
+                    example: false
+
+  /api/testExecution/cancelTest:
+    post:
+      summary: Cancel running test
+      description: Stops ECS task and marks test as FAILED
+      operationId: cancelTest
+      tags:
+        - Tests
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - testId
+              properties:
+                testId:
+                  type: string
+                  description: Test execution ID to cancel
+                  example: "k08ei3l4n7o9p0q1r2s3t4u5"
+      responses:
+        '200':
+          description: Test cancelled successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Test cancelled and ECS task stopped"
+        '400':
+          description: Test cannot be cancelled (already completed)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/testExecution/retryTest:
+    post:
+      summary: Retry failed test
+      description: Creates new test execution with same configuration
+      operationId: retryTest
+      tags:
+        - Tests
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - testId
+              properties:
+                testId:
+                  type: string
+                  description: Original test ID to retry
+                  example: "k08ei3l4n7o9p0q1r2s3t4u5"
+                modifyQuery:
+                  type: string
+                  description: Optional new test query (empty = use original)
+                  example: "What is the capital of Spain?"
+      responses:
+        '200':
+          description: New test created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  newTestId:
+                    type: string
+                    description: ID of new test execution
+                    example: "l19fj4m5o8p0q1r2s3t4u5v6"
+                  originalTestId:
+                    type: string
+                    description: ID of original test
+                    example: "k08ei3l4n7o9p0q1r2s3t4u5"
+
+  /api/testExecution/getTestLogs:
+    get:
+      summary: Get test execution logs
+      description: Retrieve real-time logs (Convex reactive query)
+      operationId: getTestLogs
+      tags:
+        - Logs
+      parameters:
+        - name: testId
+          in: query
+          required: true
+          description: Test execution ID
+          schema:
+            type: string
+            example: "k08ei3l4n7o9p0q1r2s3t4u5"
+        - name: afterIndex
+          in: query
+          description: Return logs after this index (for incremental updates)
+          schema:
+            type: integer
+            minimum: 0
+            example: 42
+      responses:
+        '200':
+          description: Log lines
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  logs:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                      - "📦 Creating build context..."
+                      - "🔍 Analyzing Dockerfile..."
+                      - "⬇️  Pulling base image python:3.11-slim..."
+                  totalLines:
+                    type: integer
+                    description: Total log lines available
+                    example: 45
+                  status:
+                    type: string
+                    description: Current test status
+                    example: "RUNNING"
+
+  /api/testExecution/getQueueStatus:
+    get:
+      summary: Get queue statistics
+      description: Retrieve current queue length and wait times
+      operationId: getQueueStatus
+      tags:
+        - Queue
+      responses:
+        '200':
+          description: Queue status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pendingCount:
+                    type: integer
+                    description: Tests waiting in queue
+                    example: 5
+                  runningCount:
+                    type: integer
+                    description: Tests currently executing
+                    example: 7
+                  capacity:
+                    type: integer
+                    description: Max concurrent executions
+                    example: 10
+                  avgWaitTime:
+                    type: integer
+                    description: Average wait time in seconds (last 10 tests)
+                    example: 38
+                  oldestPendingAge:
+                    type: integer
+                    description: Age of oldest pending test in seconds
+                    example: 62
+
+components:
+  schemas:
+    TestExecution:
+      type: object
+      properties:
+        _id:
+          type: string
+          description: Unique test ID
+          example: "k08ei3l4n7o9p0q1r2s3t4u5"
+        agentId:
+          type: string
+          description: Agent being tested
+          example: "j97dh2k3m6n8p9q0r1s2t3u4"
+        userId:
+          type: string
+          description: User who submitted test
+          example: "i86cg1j2k5m7n8o9p0q1r2s3"
+        testQuery:
+          type: string
+          description: Test query/prompt
+          example: "What is the capital of France?"
+        status:
+          type: string
+          enum: [CREATED, QUEUED, BUILDING, RUNNING, COMPLETED, FAILED, ABANDONED, ARCHIVED]
+          example: "COMPLETED"
+        phase:
+          type: string
+          enum: [queued, building, running, completed]
+          example: "completed"
+        logs:
+          type: array
+          items:
+            type: string
+          example:
+            - "🚀 Starting container..."
+            - "✅ Agent initialized successfully"
+            - "🎉 TEST COMPLETED SUCCESSFULLY"
+        success:
+          type: boolean
+          nullable: true
+          example: true
+        response:
+          type: string
+          nullable: true
+          description: Agent's response to test query
+          example: "The capital of France is Paris."
+        error:
+          type: string
+          nullable: true
+          description: Error message if test failed
+          example: null
+        metrics:
+          type: object
+          nullable: true
+          properties:
+            executionTime:
+              type: integer
+              description: Total execution time in milliseconds
+              example: 2847
+            buildTime:
+              type: integer
+              description: Docker build time in milliseconds
+              example: 15234
+            queueWaitTime:
+              type: integer
+              description: Time spent in queue (ms)
+              example: 3521
+            memoryUsed:
+              type: integer
+              description: Memory consumed in MB
+              example: 187
+            cpuUsed:
+              type: number
+              description: CPU utilization percentage
+              example: 42.7
+        submittedAt:
+          type: integer
+          description: Submission timestamp (Unix ms)
+          example: 1729800000000
+        completedAt:
+          type: integer
+          nullable: true
+          description: Completion timestamp (Unix ms)
+          example: 1729800023512
+        deploymentPackageUrl:
+          type: string
+          nullable: true
+          format: uri
+          description: S3 pre-signed URL for deployment package
+          example: "https://agent-deployments.s3.amazonaws.com/..."
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error message
+          example: "Invalid testQuery: must be 1-2000 characters"
+        code:
+          type: string
+          description: Error code
+          example: "VALIDATION_ERROR"

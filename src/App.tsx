@@ -5,11 +5,14 @@ import { SignOutButton } from "./SignOutButton";
 import { Toaster } from "sonner";
 import { AgentBuilder } from "./components/AgentBuilder";
 import { AgentDashboard } from "./components/AgentDashboard";
+import { MCPManagementPanel } from "./components/MCPManagementPanel";
+import { ErrorLogsPanel } from "./components/ErrorLogsPanel";
+import { AuditLogsPanel } from "./components/AuditLogsPanel";
 import { useState } from "react";
-import { Bot, Home, Settings } from "lucide-react";
+import { Bot, Home, Server, AlertCircle, FileText } from "lucide-react";
 
 export default function App() {
-  const [currentView, setCurrentView] = useState<"dashboard" | "builder" | "settings">("dashboard");
+  const [currentView, setCurrentView] = useState<"dashboard" | "builder" | "mcp" | "errors" | "audit" | "settings">("dashboard");
 
   return (
     <div className="min-h-screen bg-black text-green-400">
@@ -45,6 +48,39 @@ export default function App() {
               >
                 <Bot className="w-4 h-4" />
                 Builder
+              </button>
+              <button
+                onClick={() => setCurrentView("mcp")}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
+                  currentView === "mcp" 
+                    ? "bg-green-900/30 text-green-400" 
+                    : "text-green-600 hover:text-green-400"
+                }`}
+              >
+                <Server className="w-4 h-4" />
+                MCP Servers
+              </button>
+              <button
+                onClick={() => setCurrentView("errors")}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
+                  currentView === "errors" 
+                    ? "bg-green-900/30 text-green-400" 
+                    : "text-green-600 hover:text-green-400"
+                }`}
+              >
+                <AlertCircle className="w-4 h-4" />
+                Errors
+              </button>
+              <button
+                onClick={() => setCurrentView("audit")}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
+                  currentView === "audit" 
+                    ? "bg-green-900/30 text-green-400" 
+                    : "text-green-600 hover:text-green-400"
+                }`}
+              >
+                <FileText className="w-4 h-4" />
+                Audit
               </button>
               <SignOutButton />
             </nav>
@@ -90,6 +126,12 @@ function Content({ currentView }: { currentView: string }) {
   switch (currentView) {
     case "builder":
       return <AgentBuilder />;
+    case "mcp":
+      return <MCPManagementPanel />;
+    case "errors":
+      return <ErrorLogsPanel />;
+    case "audit":
+      return <AuditLogsPanel />;
     case "dashboard":
     default:
       return <AgentDashboard />;

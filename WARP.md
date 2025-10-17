@@ -161,3 +161,11 @@ Then if possible could we somehow run a docker container both as a sandbox for t
 
 ## Agent Decorator - Expand the decorator's functionality
 Also remember to add to the @agent decorator, preprocess, and postprocess, maybe we could even add hooks you could call, or would that not make sense.  Then for a spell checking agent, file reading is important, maybe language detection, also maybe a grammar tool is needed, so you define a module for lang detection, and for grammar so it doesnt make mistakes on that and use the @tool decorator.  However that will mean we will need to use an agent to have that intelligent conversation with the user, in which case, we need the conversation manager for sliding context window, and use interleaved reasoning with claude.
+
+
+ one later feature I want to add is being able to deploy your agent to aws with the       
+  push of a button.  However remember to plan everything first and make sure the docker    
+   sandbox is working and the ability to test the user created agent inside of that        
+  docker container.  So it is then connected to the ollama model, the agentcore and        
+  strandsagents tools, or bedrock if it is a bedrock model and all the tools work, and     
+  it responds.

@@ -1,0 +1,25 @@
+# Core agent runtime (AWS Bedrock AgentCore)
+strands-agents-tools>=0.2.11
+bedrock-agentcore>=0.0.25
+bedrock-agentcore-starter-toolkit>=0.1.25
+
+# AWS SDKs for Bedrock, S3, ECS, and cross-account deployments
+boto3>=1.35.0
+botocore>=1.35.0
+
+# Authentication utilities
+PyJWT>=2.8.0
+
+# Local container orchestration for Ollama tests
+docker>=6.0.0
+
+# Diagram tooling used by docs/diagram.py
+graphviz>=0.20.1
+matplotlib>=3.7.0
+networkx>=3.1
+diagrams>=0.24.0
+
+# Runtime helpers pulled in transitively; keep pinned explicitly
+python-dotenv>=1.0.0
+uvicorn>=0.23.0
+watchdog>=6.0.0

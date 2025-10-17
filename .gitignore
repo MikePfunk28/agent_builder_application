@@ -12,18 +12,27 @@ dist
 dist-ssr
 *.local
 
-# Environment files
+# Environment files (contain secrets)
 .env
+.env.*
 .env.local
 .env.development
 .env.production
 .env.test
+.env.aws
+
+# AWS Configuration files (contain secrets and account IDs)
+aws-config*.json
+.aws/
+deploy-to-aws.sh
 
 # JWT keys and secrets
 *jwt*.txt
 *jwt*.pem
 *.key
 *.pem
+*secret*
+*Secret*
 
 # Editor directories and files
 .vscode/*
@@ -36,8 +45,17 @@ dist-ssr
 *.sln
 *.sw?
 
-# Ignored for the template, you probably want to remove it:
+# AI Assistant directories (may contain PII or sensitive context)
+.cursor/*
+.claude/*
+.claude-flow/*
+.specify/*
+.kiro/*
+
+# Package lock files
 package-lock.json
-.cursor/rules/convex_rules.mdc
-.env
-.env
+
+# Temporary and local files
+*.local
+example_requirements.txt
+

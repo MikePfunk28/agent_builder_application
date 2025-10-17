@@ -30,6 +30,8 @@ pip install 'strands-agents-tools[rss]'
 use_computer
 
 pip install 'strands-agents-tools[use_computer]'
+
+
 Available Tools¶
 RAG & Memory¶
 retrieve: Semantically retrieve data from Amazon Bedrock Knowledge Bases for RAG, memory, and other purposes

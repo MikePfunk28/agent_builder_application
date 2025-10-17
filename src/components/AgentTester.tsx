@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useAction } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { toast } from "sonner";
+import type { Id } from "../../convex/_generated/dataModel";
 import { DockerSetupGuide } from "./DockerSetupGuide";
+import { OllamaSetupGuide } from "./OllamaSetupGuide";
 import { 
   Play, 
   Square, 
@@ -36,6 +38,7 @@ import {
 } from "lucide-react";
 
 interface AgentTesterProps {
+  agentId: Id<"agents">;
   agentCode: string;
   requirements: string;
   dockerfile: string;
@@ -63,18 +66,29 @@ interface TestResult {
   testEnvironment?: string;
 }
 
-export function AgentTester({ agentCode, requirements, dockerfile, agentName, modelId }: AgentTesterProps) {
+export function AgentTester({ agentId, agentCode, requirements, dockerfile, agentName, modelId }: AgentTesterProps) {
   const [testQuery, setTestQuery] = useState("Hello! Can you tell me about your capabilities and process this test message?");
-  const [isRunning, setIsRunning] = useState(false);
+  const [currentTestId, setCurrentTestId] = useState<Id<"testExecutions"> | null>(null);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
-  const [currentLogs, setCurrentLogs] = useState<string[]>([]);
-  const [testHistory, setTestHistory] = useState<any[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [showDiagram, setShowDiagram] = useState(false);
   const [showSetupGuide, setShowSetupGuide] = useState(false);
+  const [showOllamaGuide, setShowOllamaGuide] = useState(false);
 
-  const executeTest = useAction(api.realAgentTesting.executeRealAgentTest);
-  const getHistory = useAction(api.dockerService.getTestHistory);
+  const submitTest = useMutation(api.testExecution.submitTest);
+  const cancelTest = useMutation(api.testExecution.cancelTest);
+
+  // Poll test status while running
+  const testStatus = useQuery(
+    api.testExecution.getTestById,
+    currentTestId ? { testId: currentTestId } : "skip"
+  );
+
+  // Get test history
+  const testHistoryData = useQuery(api.testExecution.getUserTests, { limit: 10 });
+
+  const isRunning = testStatus?.status === "RUNNING" || testStatus?.status === "QUEUED" || testStatus?.status === "BUILDING";
+  const currentLogs = testStatus?.logs || [];
 
   const handleTest = async () => {
     if (!testQuery.trim()) {
@@ -82,83 +96,77 @@ export function AgentTester({ agentCode, requirements, dockerfile, agentName, mo
       return;
     }
 
-    setIsRunning(true);
     setTestResult(null);
-    setCurrentLogs([]);
 
     try {
-      // Real-time log streaming simulation
-      const logMessages = [
-        "🔧 Setting up test environment...",
-        "📁 Creating temporary directory...",
-        "📝 Writing agent files...",
-        "🐳 Preparing Docker container...",
-        "📦 Building container image...",
-        "⬇️  Pulling base image python:3.11-slim...",
-        "📋 Installing system dependencies...",
-        "🐍 Installing Python packages...",
-        "🔍 Validating agent code...",
-        "🚀 Starting agent container...",
-        "🤖 Initializing agent...",
-        "📊 Checking agent status...",
-        "📝 Processing test query...",
-        "🧠 Agent thinking...",
-        "💭 Generating response...",
-      ];
-
-      // Stream logs with realistic delays
-      let logIndex = 0;
-      const logInterval = setInterval(() => {
-        if (logIndex < logMessages.length && isRunning) {
-          setCurrentLogs(prev => [...prev, logMessages[logIndex]]);
-          logIndex++;
-        }
-      }, 600);
-
-      // Execute the real test
-      const result = await executeTest({
-        agentCode,
-        requirements,
-        dockerfile,
+      // Submit test to queue
+      const result = await submitTest({
+        agentId,
         testQuery,
-        modelId,
-        timeout: 120000,
+        timeout: 180000, // 3 minutes
+        priority: 2, // Normal priority
       });
 
-      clearInterval(logInterval);
-      
-      // Add final logs from result
-      if (result.logs) {
-        setCurrentLogs(prev => [...prev, ...result.logs]);
-      }
+      setCurrentTestId(result.testId);
+      toast.success(`Test queued! Position: ${result.queuePosition}`);
 
-      setTestResult(result as TestResult);
-      
-      if (result.success) {
-        toast.success("🎉 Agent test completed successfully!");
-        setCurrentLogs(prev => [...prev, "✅ Test completed successfully!", "🧹 Cleaning up resources..."]);
-      } else {
-        toast.error(`❌ Test failed: ${result.error}`);
-        setCurrentLogs(prev => [...prev, `❌ Test failed: ${result.error}`, "🧹 Cleaning up resources..."]);
-      }
-
-    } catch (error) {
-      toast.error("Failed to execute test");
+    } catch (error: any) {
+      toast.error(`Failed to submit test: ${error.message}`);
       setTestResult({
         success: false,
-        error: `Test execution error: ${error}`,
+        error: `Test submission error: ${error.message}`,
         logs: [],
         stage: 'service'
       });
-    } finally {
-      setIsRunning(false);
     }
   };
 
-  const handleStop = () => {
-    setIsRunning(false);
-    setCurrentLogs(prev => [...prev, "🛑 Test stopped by user", "🧹 Cleaning up resources..."]);
-    toast.info("Test stopped");
+  // Update test result when test completes
+  useEffect(() => {
+    if (testStatus) {
+      if (testStatus.status === "COMPLETED") {
+        setTestResult({
+          success: testStatus.success || false,
+          output: testStatus.response,
+          error: testStatus.error,
+          logs: testStatus.logs,
+          stage: 'completed',
+          metrics: testStatus.executionTime ? {
+            executionTime: testStatus.executionTime,
+            memoryUsed: testStatus.memoryUsed || 0,
+            buildTime: testStatus.buildTime || 0,
+          } : undefined,
+          modelUsed: modelId,
+          testEnvironment: 'ECS Fargate'
+        });
+        if (testStatus.success) {
+          toast.success("🎉 Agent test completed successfully!");
+        } else {
+          toast.error(`❌ Test failed: ${testStatus.error}`);
+        }
+      } else if (testStatus.status === "FAILED") {
+        setTestResult({
+          success: false,
+          error: testStatus.error,
+          logs: testStatus.logs,
+          stage: testStatus.errorStage as any || 'runtime',
+          modelUsed: modelId,
+          testEnvironment: 'ECS Fargate'
+        });
+        toast.error(`❌ Test failed: ${testStatus.error}`);
+      }
+    }
+  }, [testStatus, modelId]);
+
+  const handleStop = async () => {
+    if (!currentTestId) return;
+
+    try {
+      await cancelTest({ testId: currentTestId });
+      toast.info("Test cancellation requested");
+    } catch (error: any) {
+      toast.error(`Failed to cancel test: ${error.message}`);
+    }
   };
 
   const copyLogs = () => {
@@ -192,14 +200,8 @@ export function AgentTester({ agentCode, requirements, dockerfile, agentName, mo
     URL.revokeObjectURL(url);
   };
 
-  const loadHistory = async () => {
-    try {
-      const history = await getHistory({ agentId: "dummy" as any });
-      setTestHistory(history);
-      setShowHistory(true);
-    } catch (error) {
-      toast.error("Failed to load test history");
-    }
+  const loadHistory = () => {
+    setShowHistory(true);
   };
 
   const quickTestQueries = [
@@ -221,13 +223,23 @@ export function AgentTester({ agentCode, requirements, dockerfile, agentName, mo
           </p>
         </div>
         <div className="flex gap-2">
-          <button
-            onClick={() => setShowSetupGuide(true)}
-            className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            <HelpCircle className="w-4 h-4" />
-            Setup Guide
-          </button>
+          {modelId.includes(':') ? (
+            <button
+              onClick={() => setShowOllamaGuide(true)}
+              className="flex items-center gap-2 px-3 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
+            >
+              <HelpCircle className="w-4 h-4" />
+              Ollama Setup
+            </button>
+          ) : (
+            <button
+              onClick={() => setShowSetupGuide(true)}
+              className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <HelpCircle className="w-4 h-4" />
+              AWS Setup
+            </button>
+          )}
           {testResult?.diagram && (
             <button
               onClick={() => setShowDiagram(true)}
@@ -520,11 +532,19 @@ export function AgentTester({ agentCode, requirements, dockerfile, agentName, mo
         </div>
       )}
 
-      {/* Docker Setup Guide Modal */}
+      {/* Setup Guide Modals */}
       {showSetupGuide && (
         <DockerSetupGuide 
           modelId={modelId}
           onClose={() => setShowSetupGuide(false)}
+        />
+      )}
+
+      {showOllamaGuide && (
+        <OllamaSetupGuide
+          isOpen={showOllamaGuide}
+          onClose={() => setShowOllamaGuide(false)}
+          modelId={modelId}
         />
       )}
 
@@ -538,11 +558,12 @@ export function AgentTester({ agentCode, requirements, dockerfile, agentName, mo
 
       {/* Test History Modal */}
       {showHistory && (
-        <TestHistoryModal 
-          history={testHistory}
+        <TestHistoryModal
+          history={testHistoryData?.tests || []}
           onClose={() => setShowHistory(false)}
           onSelectTest={(test) => {
-            setTestQuery(test.query);
+            setTestQuery(test.testQuery);
+            setCurrentTestId(test._id);
             setShowHistory(false);
           }}
         />
@@ -695,33 +716,44 @@ function TestHistoryModal({
         <div className="space-y-3">
           {history.map((test) => (
             <div
-              key={test.id}
+              key={test._id}
               className="bg-black border border-green-900/30 rounded-lg p-4 hover:border-green-700/50 cursor-pointer transition-colors"
               onClick={() => onSelectTest(test)}
             >
               <div className="flex items-start justify-between mb-2">
                 <div className="flex items-center gap-2">
-                  {test.success ? (
+                  {test.status === "COMPLETED" && test.success ? (
                     <CheckCircle className="w-4 h-4 text-green-400" />
-                  ) : (
+                  ) : test.status === "FAILED" || test.status === "COMPLETED" && !test.success ? (
                     <XCircle className="w-4 h-4 text-red-400" />
+                  ) : (
+                    <Clock className="w-4 h-4 text-yellow-400" />
                   )}
                   <span className="text-sm text-green-600">
-                    {new Date(test.timestamp).toLocaleString()}
+                    {new Date(test.submittedAt).toLocaleString()}
                   </span>
                 </div>
-                <span className="text-xs text-green-600">
-                  {test.executionTime.toFixed(2)}s
-                </span>
+                {test.executionTime && (
+                  <span className="text-xs text-green-600">
+                    {(test.executionTime / 1000).toFixed(2)}s
+                  </span>
+                )}
               </div>
-              
+
               <p className="text-green-400 text-sm mb-2 line-clamp-2">
-                <strong>Query:</strong> {test.query}
+                <strong>Query:</strong> {test.testQuery}
               </p>
-              
-              <p className="text-green-300 text-xs line-clamp-2">
-                <strong>Response:</strong> {test.response}
-              </p>
+
+              {test.response && (
+                <p className="text-green-300 text-xs line-clamp-2">
+                  <strong>Response:</strong> {test.response}
+                </p>
+              )}
+              {test.error && (
+                <p className="text-red-300 text-xs line-clamp-2">
+                  <strong>Error:</strong> {test.error}
+                </p>
+              )}
             </div>
           ))}
         </div>
