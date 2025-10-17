@@ -11,6 +11,19 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
     GitHub,
     Google,
     Password,
+    {
+      id: "cognito",
+      name: "AWS Cognito",
+      type: "oidc",
+      issuer: process.env.COGNITO_ISSUER_URL,
+      clientId: process.env.COGNITO_CLIENT_ID,
+      clientSecret: process.env.COGNITO_CLIENT_SECRET,
+      authorization: {
+        params: {
+          scope: "openid profile email",
+        },
+      },
+    },
   ],
 });
 

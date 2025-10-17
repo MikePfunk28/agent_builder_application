@@ -53,3 +53,26 @@ specs/004-TODO-Features/OVERVIEW.md
 .claude/settings.local.json
 example_requirements.txt
 AWS-SETUP-COMPLETE.md
+.kiro/specs/mcp-integration-and-cognito-fix/tasks.md
+.kiro/settings/mcp.json
+docs/aws-setup.md
+scripts/check-cognito-config.ps1
+scripts/fix-cognito-callbacks.ps1
+.kiro/specs/mcp-integration-and-cognito-fix/requirements.md
+.kiro/specs/mcp-integration-and-cognito-fix/design.md
+.gitignore
+
+
+✅ Completed:
+
+Cognito OIDC provider added to Convex Auth
+Environment variables set in both dev and prod deployments
+Cognito callback URLs configured correctly in AWS
+OAuth debug panel created
+Error handling added to sign-in form
+Deployed to production
+Callback URLs configured in Cognito:
+
+https://ai-forge.mikepfunk.com/api/auth/callback/cognito
+https://resolute-kudu-325.convex.site/api/auth/callback/cognito
+You can now test Cognito authentication on your production site. For GitHub and Google OAuth, you'll need to manually add their callback URLs in their respective consoles.

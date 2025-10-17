@@ -2,7 +2,7 @@ export default {
   providers: [
     // This is the default provider for Convex email/passwordless auth
     {
-      domain: process.env.CONVEX_SITE_URL,
+      domain: process.env.SITE_URL,
       applicationID: "convex",
     },
     // GitHub OAuth

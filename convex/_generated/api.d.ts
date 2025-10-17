@@ -12,6 +12,7 @@ import type * as agentCoreTester from "../agentCoreTester.js";
 import type * as agentcoreDeployment from "../agentcoreDeployment.js";
 import type * as agents from "../agents.js";
 import type * as auth from "../auth.js";
+import type * as authDebug from "../authDebug.js";
 import type * as awsCrossAccount from "../awsCrossAccount.js";
 import type * as awsDeployment from "../awsDeployment.js";
 import type * as cdkGenerator from "../cdkGenerator.js";
@@ -59,6 +60,7 @@ declare const fullApi: ApiFromModules<{
   agentcoreDeployment: typeof agentcoreDeployment;
   agents: typeof agents;
   auth: typeof auth;
+  authDebug: typeof authDebug;
   awsCrossAccount: typeof awsCrossAccount;
   awsDeployment: typeof awsDeployment;
   cdkGenerator: typeof cdkGenerator;
