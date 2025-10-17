@@ -13,6 +13,7 @@ import type * as agentcoreDeployment from "../agentcoreDeployment.js";
 import type * as agents from "../agents.js";
 import type * as auth from "../auth.js";
 import type * as authDebug from "../authDebug.js";
+import type * as authErrorHandler from "../authErrorHandler.js";
 import type * as awsCrossAccount from "../awsCrossAccount.js";
 import type * as awsDeployment from "../awsDeployment.js";
 import type * as awsDiagramGenerator from "../awsDiagramGenerator.js";
@@ -26,6 +27,7 @@ import type * as deploymentPackageGenerator from "../deploymentPackageGenerator.
 import type * as deploymentRouter from "../deploymentRouter.js";
 import type * as deployments from "../deployments.js";
 import type * as dockerService from "../dockerService.js";
+import type * as errorLogging from "../errorLogging.js";
 import type * as http from "../http.js";
 import type * as lib_aws_cloudwatchClient from "../lib/aws/cloudwatchClient.js";
 import type * as lib_aws_ecsClient from "../lib/aws/ecsClient.js";
@@ -64,6 +66,7 @@ declare const fullApi: ApiFromModules<{
   agents: typeof agents;
   auth: typeof auth;
   authDebug: typeof authDebug;
+  authErrorHandler: typeof authErrorHandler;
   awsCrossAccount: typeof awsCrossAccount;
   awsDeployment: typeof awsDeployment;
   awsDiagramGenerator: typeof awsDiagramGenerator;
@@ -77,6 +80,7 @@ declare const fullApi: ApiFromModules<{
   deploymentRouter: typeof deploymentRouter;
   deployments: typeof deployments;
   dockerService: typeof dockerService;
+  errorLogging: typeof errorLogging;
   http: typeof http;
   "lib/aws/cloudwatchClient": typeof lib_aws_cloudwatchClient;
   "lib/aws/ecsClient": typeof lib_aws_ecsClient;

@@ -307,6 +307,54 @@ const applicationTables = {
     .index("by_user", ["userId", "generatedAt"])
     .index("by_deployment_and_format", ["deploymentId", "format"]),
 
+  // Error Logs
+  errorLogs: defineTable({
+    category: v.string(), // "oauth" | "mcp" | "agent" | "deployment" | "general"
+    severity: v.string(), // "info" | "warning" | "error" | "critical"
+    message: v.string(),
+    details: v.optional(v.any()),
+    userId: v.optional(v.id("users")),
+    stackTrace: v.optional(v.string()),
+    metadata: v.optional(v.object({
+      provider: v.optional(v.string()),
+      serverName: v.optional(v.string()),
+      agentId: v.optional(v.string()),
+      deploymentId: v.optional(v.string()),
+      requestId: v.optional(v.string()),
+    })),
+    timestamp: v.number(),
+    resolved: v.boolean(),
+    resolvedAt: v.optional(v.number()),
+    resolution: v.optional(v.string()),
+  })
+    .index("by_category", ["category", "timestamp"])
+    .index("by_severity", ["severity", "timestamp"])
+    .index("by_user", ["userId", "timestamp"])
+    .index("by_resolved", ["resolved", "timestamp"]),
+
+  // Audit Logs
+  auditLogs: defineTable({
+    eventType: v.string(), // "oauth_login" | "mcp_invocation" | "agent_invocation" | "deployment_created"
+    userId: v.optional(v.id("users")),
+    action: v.string(),
+    resource: v.optional(v.string()),
+    resourceId: v.optional(v.string()),
+    success: v.boolean(),
+    details: v.optional(v.any()),
+    metadata: v.optional(v.object({
+      provider: v.optional(v.string()),
+      serverName: v.optional(v.string()),
+      toolName: v.optional(v.string()),
+      agentId: v.optional(v.string()),
+      ipAddress: v.optional(v.string()),
+      userAgent: v.optional(v.string()),
+    })),
+    timestamp: v.number(),
+  })
+    .index("by_event_type", ["eventType", "timestamp"])
+    .index("by_user", ["userId", "timestamp"])
+    .index("by_resource", ["resource", "resourceId"]),
+
 };
 
 export default defineSchema({

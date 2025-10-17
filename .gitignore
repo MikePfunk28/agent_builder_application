@@ -12,25 +12,27 @@ dist
 dist-ssr
 *.local
 
-# Environment files
+# Environment files (contain secrets)
 .env
+.env.*
 .env.local
 .env.development
 .env.production
 .env.test
 .env.aws
 
-# AWS Configuration files (contain secrets)
+# AWS Configuration files (contain secrets and account IDs)
 aws-config*.json
 .aws/
 deploy-to-aws.sh
-AWS-SETUP-COMPLETE.md
 
 # JWT keys and secrets
 *jwt*.txt
 *jwt*.pem
 *.key
 *.pem
+*secret*
+*Secret*
 
 # Editor directories and files
 .vscode/*
@@ -43,36 +45,17 @@ AWS-SETUP-COMPLETE.md
 *.sln
 *.sw?
 
-# Ignored for the template, you probably want to remove it:
+# AI Assistant directories (may contain PII or sensitive context)
+.cursor/*
+.claude/*
+.claude-flow/*
+.specify/*
+.kiro/*
+
+# Package lock files
 package-lock.json
-.cursor/rules/convex_rules.mdc
-.env
-.env
-specs/004-TODO-Features/outline.md
-specs/004-TODO-Features/OVERVIEW.md
-.claude/settings.local.json
+
+# Temporary and local files
+*.local
 example_requirements.txt
-AWS-SETUP-COMPLETE.md
-.kiro/specs/mcp-integration-and-cognito-fix/tasks.md
-.kiro/settings/mcp.json
-docs/aws-setup.md
-scripts/check-cognito-config.ps1
-scripts/fix-cognito-callbacks.ps1
-.kiro/specs/mcp-integration-and-cognito-fix/requirements.md
-.kiro/specs/mcp-integration-and-cognito-fix/design.md
-.gitignore
 
-
-✅ Completed:
-
-Cognito OIDC provider added to Convex Auth
-Environment variables set in both dev and prod deployments
-Cognito callback URLs configured correctly in AWS
-OAuth debug panel created
-Error handling added to sign-in form
-Deployed to production
-Callback URLs configured in Cognito:
-
-https://ai-forge.mikepfunk.com/api/auth/callback/cognito
-https://resolute-kudu-325.convex.site/api/auth/callback/cognito
-You can now test Cognito authentication on your production site. For GitHub and Google OAuth, you'll need to manually add their callback URLs in their respective consoles.

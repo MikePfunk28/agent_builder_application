@@ -76,6 +76,20 @@ export const invokeMCPTool = action({
       });
 
       if (!server) {
+        // Log error
+        await ctx.runMutation(api.errorLogging.logError, {
+          category: "mcp",
+          severity: "error",
+          message: `MCP server "${args.serverName}" not found`,
+          details: {
+            serverName: args.serverName,
+            toolName: args.toolName,
+          },
+          metadata: {
+            serverName: args.serverName,
+          },
+        });
+
         return {
           success: false,
           error: `MCP server "${args.serverName}" not found. Please configure the server first.`,
@@ -83,6 +97,20 @@ export const invokeMCPTool = action({
       }
 
       if (server.disabled) {
+        // Log warning
+        await ctx.runMutation(api.errorLogging.logError, {
+          category: "mcp",
+          severity: "warning",
+          message: `Attempted to invoke disabled MCP server "${args.serverName}"`,
+          details: {
+            serverName: args.serverName,
+            toolName: args.toolName,
+          },
+          metadata: {
+            serverName: args.serverName,
+          },
+        });
+
         return {
           success: false,
           error: `MCP server "${args.serverName}" is disabled. Enable it in the MCP management panel.`,
@@ -110,6 +138,47 @@ export const invokeMCPTool = action({
           status: "connected",
           lastConnected: Date.now(),
         });
+
+        // Log successful invocation
+        await ctx.runMutation(api.errorLogging.logAuditEvent, {
+          eventType: "mcp_invocation",
+          action: `invoke_${args.toolName}`,
+          resource: "mcp_tool",
+          resourceId: `${args.serverName}/${args.toolName}`,
+          success: true,
+          details: {
+            serverName: args.serverName,
+            toolName: args.toolName,
+            executionTime,
+          },
+          metadata: {
+            serverName: args.serverName,
+            toolName: args.toolName,
+          },
+        });
+      } else {
+        // Log failed invocation
+        await ctx.runMutation(api.errorLogging.logError, {
+          category: "mcp",
+          severity: "error",
+          message: `MCP tool invocation failed: ${args.serverName}/${args.toolName}`,
+          details: {
+            serverName: args.serverName,
+            toolName: args.toolName,
+            error: result.error,
+            executionTime,
+          },
+          metadata: {
+            serverName: args.serverName,
+          },
+        });
+
+        // Update server status on failure
+        await ctx.runMutation(api.mcpConfig.updateMCPServerStatus, {
+          serverId: server._id,
+          status: "error",
+          lastError: result.error,
+        });
       }
 
       return {
@@ -119,6 +188,23 @@ export const invokeMCPTool = action({
     } catch (error: any) {
       const executionTime = Date.now() - startTime;
       
+      // Log exception
+      await ctx.runMutation(api.errorLogging.logError, {
+        category: "mcp",
+        severity: "critical",
+        message: `MCP tool invocation exception: ${args.serverName}/${args.toolName}`,
+        details: {
+          serverName: args.serverName,
+          toolName: args.toolName,
+          error: error.message || String(error),
+          executionTime,
+        },
+        stackTrace: error.stack,
+        metadata: {
+          serverName: args.serverName,
+        },
+      });
+
       return {
         success: false,
         error: `Failed to invoke MCP tool: ${error.message || String(error)}`,

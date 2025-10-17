@@ -26,10 +26,24 @@ export const deployToAgentCore = action({
     environmentVariables: v.object({}),
   },
   handler: async (ctx, args): Promise<any> => {
+    const startTime = Date.now();
+
     try {
       // Get authenticated user
       const userId = await ctx.runQuery(api.deploymentRouter.getUserTier);
       if (!userId) {
+        await ctx.runMutation(api.errorLogging.logError, {
+          category: "deployment",
+          severity: "error",
+          message: "AgentCore deployment attempted without authentication",
+          details: {
+            agentId: args.agentId,
+          },
+          metadata: {
+            agentId: args.agentId,
+          },
+        });
+
         throw new Error("Not authenticated");
       }
 
@@ -46,6 +60,20 @@ export const deployToAgentCore = action({
       });
 
       if (!sandboxResult.success) {
+        await ctx.runMutation(api.errorLogging.logError, {
+          category: "deployment",
+          severity: "error",
+          message: "Failed to create AgentCore sandbox",
+          details: {
+            agentId: args.agentId,
+            error: sandboxResult.error,
+            executionTime: Date.now() - startTime,
+          },
+          metadata: {
+            agentId: args.agentId,
+          },
+        });
+
         throw new Error(
           `Failed to create AgentCore sandbox: ${sandboxResult.error}`
         );
@@ -53,6 +81,19 @@ export const deployToAgentCore = action({
 
       const sandbox = (sandboxResult as any).result;
       if (!sandbox) {
+        await ctx.runMutation(api.errorLogging.logError, {
+          category: "deployment",
+          severity: "error",
+          message: "AgentCore sandbox creation returned no result",
+          details: {
+            agentId: args.agentId,
+            sandboxResult,
+          },
+          metadata: {
+            agentId: args.agentId,
+          },
+        });
+
         throw new Error("Failed to get sandbox from result");
       }
 
@@ -73,6 +114,23 @@ export const deployToAgentCore = action({
         sandbox.runtimeId
       );
 
+      // Log successful deployment
+      await ctx.runMutation(api.errorLogging.logAuditEvent, {
+        eventType: "deployment_created",
+        action: "deploy_agentcore",
+        resource: "deployment",
+        resourceId: deploymentId,
+        success: true,
+        details: {
+          agentId: args.agentId,
+          sandboxId: sandbox.sandboxId || sandbox.id,
+          executionTime: Date.now() - startTime,
+        },
+        metadata: {
+          agentId: args.agentId,
+        },
+      });
+
       return {
         success: true,
         deploymentId,
@@ -81,6 +139,22 @@ export const deployToAgentCore = action({
         message: "Agent deployed to AgentCore sandbox successfully",
       };
     } catch (error: any) {
+      // Log deployment failure
+      await ctx.runMutation(api.errorLogging.logError, {
+        category: "deployment",
+        severity: "critical",
+        message: "AgentCore deployment failed with exception",
+        details: {
+          agentId: args.agentId,
+          error: error.message || String(error),
+          executionTime: Date.now() - startTime,
+        },
+        stackTrace: error.stack,
+        metadata: {
+          agentId: args.agentId,
+        },
+      });
+
       return {
         success: false,
         error: error.message || String(error),

@@ -128,6 +128,9 @@ export const submitTest = mutation({
     // Update test status to QUEUED
     await ctx.db.patch(testId, { status: "QUEUED" });
 
+    // Trigger queue processor immediately (on-demand processing to save costs)
+    await ctx.scheduler.runAfter(0, internal.queueProcessor.processQueue);
+
     // Get queue position
     const queuePosition = await getQueuePosition(ctx, testId);
 
@@ -316,6 +319,9 @@ export const retryTest = mutation({
     });
 
     await ctx.db.patch(newTestId, { status: "QUEUED" });
+
+    // Trigger queue processor immediately (on-demand processing)
+    await ctx.scheduler.runAfter(0, internal.queueProcessor.processQueue);
 
     return {
       newTestId,

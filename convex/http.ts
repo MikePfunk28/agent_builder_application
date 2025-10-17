@@ -70,11 +70,33 @@ http.route({
   path: "/mcp/tools/call",
   method: "POST",
   handler: httpAction(async (ctx, _request) => {
+    const startTime = Date.now();
+    let agentId: string | undefined;
+    let agentName: string | undefined;
+
     try {
       const body = await _request.json();
       const { name, arguments: args } = body;
 
+      // Extract client info for audit logging
+      const userAgent = _request.headers.get("User-Agent") || "unknown";
+      const ipAddress = _request.headers.get("X-Forwarded-For") || 
+                        _request.headers.get("X-Real-IP") || 
+                        "unknown";
+
       if (!name) {
+        // Log invalid request
+        await ctx.runMutation(api.errorLogging.logError, {
+          category: "agent",
+          severity: "warning",
+          message: "Agent MCP invocation missing required field: name",
+          details: {
+            body,
+            userAgent,
+            ipAddress,
+          },
+        });
+
         return new Response(
           JSON.stringify({ 
             error: "Missing required field: name" 
@@ -86,10 +108,27 @@ http.route({
         );
       }
 
+      agentName = name;
+
       // Find agent by MCP tool name
       const agent: any = await ctx.runQuery(api.agents.getByMCPToolName, { name });
 
       if (!agent) {
+        // Log agent not found
+        await ctx.runMutation(api.errorLogging.logError, {
+          category: "agent",
+          severity: "warning",
+          message: `Agent MCP invocation failed: agent not found`,
+          details: {
+            agentName: name,
+            userAgent,
+            ipAddress,
+          },
+          metadata: {
+            agentId: name,
+          },
+        });
+
         return new Response(
           JSON.stringify({ 
             error: "Agent not found",
@@ -102,7 +141,25 @@ http.route({
         );
       }
 
+      agentId = agent._id;
+
       if (!agent.exposableAsMCPTool) {
+        // Log unauthorized access attempt
+        await ctx.runMutation(api.errorLogging.logError, {
+          category: "agent",
+          severity: "warning",
+          message: `Agent MCP invocation failed: agent not exposable`,
+          details: {
+            agentId: agent._id,
+            agentName: name,
+            userAgent,
+            ipAddress,
+          },
+          metadata: {
+            agentId: agent._id,
+          },
+        });
+
         return new Response(
           JSON.stringify({ 
             error: "Agent not exposable",
@@ -116,11 +173,31 @@ http.route({
       }
 
       // Execute agent with provided arguments
-      // Note: This assumes there's an agent execution action available
-      // We'll need to create or reference the appropriate execution method
       const result = await ctx.runAction(api.testExecution.executeAgent, {
         agentId: agent._id,
         input: args?.input || JSON.stringify(args),
+      });
+
+      const executionTime = Date.now() - startTime;
+
+      // Log successful invocation
+      await ctx.runMutation(api.errorLogging.logAuditEvent, {
+        eventType: "agent_invocation",
+        action: "invoke_agent_via_mcp",
+        resource: "agent",
+        resourceId: agent._id,
+        success: !result.error,
+        details: {
+          agentId: agent._id,
+          agentName: name,
+          executionTime,
+          hasError: !!result.error,
+        },
+        metadata: {
+          agentId: agent._id,
+          userAgent,
+          ipAddress,
+        },
       });
 
       // Return result in MCP protocol format
@@ -140,6 +217,25 @@ http.route({
         }
       );
     } catch (error: any) {
+      const executionTime = Date.now() - startTime;
+
+      // Log exception
+      await ctx.runMutation(api.errorLogging.logError, {
+        category: "agent",
+        severity: "critical",
+        message: "Agent MCP invocation failed with exception",
+        details: {
+          agentId,
+          agentName,
+          error: error.message || String(error),
+          executionTime,
+        },
+        stackTrace: error.stack,
+        metadata: {
+          agentId,
+        },
+      });
+
       return new Response(
         JSON.stringify({ 
           error: "Failed to execute agent",

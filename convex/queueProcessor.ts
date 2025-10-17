@@ -12,12 +12,26 @@ import { v } from "convex/values";
 const MAX_CONCURRENT_TESTS = parseInt(process.env.MAX_CONCURRENT_TESTS || "10");
 
 /**
- * Main queue processor - runs every 5 seconds
+ * Main queue processor - triggered on-demand when tests are submitted
+ * Also runs periodically as a backup (if enabled in crons.ts)
+ * 
+ * Cost optimization: Exits silently when queue is empty (no logs, minimal operations)
  */
 export const processQueue = internalAction({
   args: {},
   handler: async (ctx) => {
     try {
+      // Quick check: is there anything in the queue? (fast query, no logging)
+      const nextTests = await ctx.runQuery(internal.queueProcessor.queryNextPendingTests, {
+        limit: 1,
+      });
+
+      // If queue is empty, exit silently (no logs, no wasted operations)
+      if (nextTests.length === 0) {
+        return;
+      }
+
+      // Only log when there's actual work to do
       console.log("🔄 Processing test queue...");
 
       // Check current capacity
@@ -32,20 +46,15 @@ export const processQueue = internalAction({
       const availableSlots = MAX_CONCURRENT_TESTS - runningCount;
       console.log(`📊 Available slots: ${availableSlots}`);
 
-      // Get next pending tests (ordered by priority and creation time)
-      const nextTests = await ctx.runQuery(internal.queueProcessor.queryNextPendingTests, {
+      // Get all pending tests we can process
+      const allNextTests = await ctx.runQuery(internal.queueProcessor.queryNextPendingTests, {
         limit: availableSlots,
       });
 
-      if (nextTests.length === 0) {
-        console.log("✅ Queue empty");
-        return;
-      }
-
-      console.log(`🚀 Starting ${nextTests.length} test(s)...`);
+      console.log(`🚀 Starting ${allNextTests.length} test(s)...`);
 
       // Process each test
-      for (const queueEntry of nextTests) {
+      for (const queueEntry of allNextTests) {
         try {
           // Claim the test atomically
           const claimed = await ctx.runMutation(internal.queueProcessor.claimTest, {
