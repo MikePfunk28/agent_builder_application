@@ -132,4 +132,5 @@ docs/
 specs/
 CORRECTED-REVIEW.md
 REPOSITORY_CLEANUP_SUMMARY.md
+CLEANUP_VERIFICATION.md
 scripts/verify-oauth-config.sh
