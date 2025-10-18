@@ -11,39 +11,59 @@ const providers: any[] = [
   Password,
 ];
 
-// GitHub OAuth - auto-detects AUTH_GITHUB_ID and AUTH_GITHUB_SECRET
+// GitHub OAuth with custom profile handler
 if (process.env.AUTH_GITHUB_ID && process.env.AUTH_GITHUB_SECRET) {
-  providers.push(GitHub);
+  providers.push(
+    GitHub({
+      profile(profile) {
+        return {
+          id: profile.id.toString(),
+          name: profile.name ?? profile.login,
+          email: profile.email,
+          image: profile.avatar_url,
+          login: profile.login, // GitHub username - custom field
+        };
+      },
+    })
+  );
 }
 
-// Google OAuth - needs to check GOOGLE_CLIENT_ID since that's what's set
-// Convex Auth expects AUTH_GOOGLE_ID and AUTH_GOOGLE_SECRET by default
-// But we can configure it explicitly
-if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+// Google OAuth with custom profile handler
+if (process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET) {
+  providers.push(
+    Google({
+      profile(profile) {
+        return {
+          id: profile.sub,
+          name: profile.name,
+          email: profile.email,
+          image: profile.picture,
+          locale: profile.locale, // User's locale preference - custom field
+        };
+      },
+    })
+  );
+} else if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
   providers.push(
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      profile(profile: any) {
+        return {
+          id: profile.sub,
+          name: profile.name,
+          email: profile.email,
+          image: profile.picture,
+          locale: profile.locale, // User's locale preference - custom field
+        };
+      },
     } as any)
   );
 }
 
-// AWS Cognito OAuth - OIDC provider
-if (process.env.COGNITO_ISSUER_URL && process.env.COGNITO_CLIENT_ID && process.env.COGNITO_CLIENT_SECRET) {
-  providers.push({
-    id: "cognito",
-    name: "AWS Cognito",
-    type: "oidc",
-    issuer: process.env.COGNITO_ISSUER_URL,
-    clientId: process.env.COGNITO_CLIENT_ID,
-    clientSecret: process.env.COGNITO_CLIENT_SECRET,
-    authorization: {
-      params: {
-        scope: "openid profile email",
-      },
-    },
-  } as any);
-}
+// AWS Cognito OAuth - OIDC provider (Convex pattern)
+// Note: Cognito requires clientSecret to be set in Convex environment
+// The domain and applicationID are configured in auth.config.ts
 
 export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
   providers,

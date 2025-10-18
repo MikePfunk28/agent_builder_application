@@ -50,7 +50,7 @@ git push origin main
 
 ### Environment Variables
 ```
-VITE_CONVEX_URL = https://resolute-kudu-325.convex.cloud
+VITE_CONVEX_URL = https://api.mikepfunk.com
 SITE_URL = https://ai-forge.mikepfunk.com
 ```
 Set for: ✓ Production ✓ Preview

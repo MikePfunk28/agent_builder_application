@@ -41,7 +41,7 @@ deploy-to-aws.sh
 .DS_Store
 *.suo
 *.ntvs*
-*.njsproj
+*.njsproj*
 *.sln
 *.sw?
 
@@ -58,4 +58,76 @@ package-lock.json
 # Temporary and local files
 *.local
 example_requirements.txt
+secrets_del_after.md
 
+# Documentation files (keep for reference but don't track)
+# AWS-specific documentation
+AWS-README.md
+AWS-SETUP-SUMMARY.md
+AMPLIFY_DEPLOYMENT.md
+amplify.yml
+CROSS-ACCOUNT-SETUP-CHECKLIST.md
+COST_OPTIMIZATION.md
+deploy-to-aws.sh
+
+# OAuth setup documentation (keep for reference)
+github-auth.md
+google-auth.md
+oauth.md
+OAUTH_FIX_COMPLETE.md
+OAUTH_FIX_GUIDE.md
+OAUTH_REQUIREMENTS.md
+convex/OAUTH_SETUP_GUIDE.md
+
+# Deployment documentation (keep for reference)
+CLOUDFLARE_DEPLOYMENT.md
+CLOUDFLARE_ENV_SETUP.md
+CLOUDFLARE_FIX.md
+CLOUDFLARE_SETUP.md
+COMPLETE-SETUP-GUIDE.md
+DEPLOY_NOW.md
+DEPLOYMENT_WORKFLOW.md
+DEPLOYMENT.md
+SETUP-GUIDE.md
+SIMPLE-SETUP.md
+
+# Session summaries and status files
+SESSION_SUMMARY.md
+FINAL-STATUS.md
+ACTION-ITEMS.md
+CONVEX_FILES_ANALYSIS.md
+CONVEX_ENV_VARS_SUMMARY.md
+CORRECTED-REVIEW.md
+REVIEW-FINDINGS.md
+SECURITY_GITIGNORE_UPDATE.md
+TASK_7_IMPLEMENTATION.md
+35-errors-5files.md
+
+# Verification scripts (keep for reference)
+scripts/verify-*.ps1
+scripts/verify-*.sh
+scripts/add-cloudflare-oauth-callbacks.md
+scripts/update-oauth-callbacks.md
+scripts/check-cognito-config.ps1
+scripts/fix-cognito-callbacks.ps1
+
+# Pre-commit checklists
+PRE-COMMIT-CHECKLIST.md
+
+# Quick reference guides (keep for reference)
+QUICK_DEPLOY.md
+
+# Python requirements (not needed for Cloudflare)
+requirements.txt
+requirements_complete.txt
+runtime.txt
+example_requirements.txt
+
+# CloudFormation templates (AWS-specific)
+cloudformation/
+
+# Docs directory (keep for reference but don't track)
+docs/
+
+# Specs directory (keep for reference but don't track)
+specs/

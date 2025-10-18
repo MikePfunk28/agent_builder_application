@@ -90,7 +90,7 @@ Fix authentication issues and deploy the Agent Builder application to production
 
 **Production Setup** (Cloudflare Pages):
 ```
-VITE_CONVEX_URL=https://resolute-kudu-325.convex.cloud
+VITE_CONVEX_URL=https://api.mikepfunk.com
 ```
 
 **Convex Backend** (Production):
@@ -107,8 +107,7 @@ CONVEX_OPENAI_BASE_URL=https://academic-mammoth-217.convex.site/openai-proxy
 ```
 CONVEX_DEPLOY_KEY=[project key]
 CONVEX_DEPLOYMENT=dev:unique-kookabura-922
-VITE_CONVEX_URL=https://unique-kookabura-922.convex.cloud
-```
+VITE_CONVEX_URL=https://api.mikepfunk.com
 
 ---
 
@@ -172,7 +171,7 @@ docs/
 
 ### ✅ What You SHOULD Have
 ```
-VITE_CONVEX_URL=https://resolute-kudu-325.convex.cloud
+VITE_CONVEX_URL=https://api.mikepfunk.com
 ```
 
 ### ❌ What You Should NOT Have
