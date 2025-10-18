@@ -60,74 +60,76 @@ package-lock.json
 example_requirements.txt
 secrets_del_after.md
 
-# Documentation files (keep for reference but don't track)
-# AWS-specific documentation
-AWS-README.md
-AWS-SETUP-SUMMARY.md
-AMPLIFY_DEPLOYMENT.md
-amplify.yml
-CROSS-ACCOUNT-SETUP-CHECKLIST.md
-COST_OPTIMIZATION.md
-deploy-to-aws.sh
+# ============================================================================
+# SENSITIVE DOCUMENTATION - NEVER COMMIT TO GIT OR DEPLOY TO PRODUCTION
+# ============================================================================
+# These files contain OAuth callback URLs, AWS account IDs, credentials,
+# and deployment information. Keep locally for reference only.
 
-# OAuth setup documentation (keep for reference)
+# OAuth setup documentation (contains callback URLs and client secrets)
 github-auth.md
 google-auth.md
 oauth.md
-OAUTH_FIX_COMPLETE.md
-OAUTH_FIX_GUIDE.md
-OAUTH_REQUIREMENTS.md
+OAUTH_*.md
+*OAUTH*.md
 convex/OAUTH_SETUP_GUIDE.md
 
-# Deployment documentation (keep for reference)
-CLOUDFLARE_DEPLOYMENT.md
-CLOUDFLARE_ENV_SETUP.md
-CLOUDFLARE_FIX.md
-CLOUDFLARE_SETUP.md
-COMPLETE-SETUP-GUIDE.md
-DEPLOY_NOW.md
-DEPLOYMENT_WORKFLOW.md
-DEPLOYMENT.md
-SETUP-GUIDE.md
-SIMPLE-SETUP.md
+# AWS-specific documentation (contains account IDs, ARNs, and credentials)
+AWS-*.md
+*AWS*.md
+AMPLIFY_*.md
+amplify.yml
+CROSS-ACCOUNT-*.md
+COST_OPTIMIZATION.md
+deploy-to-aws.sh
 
-# Session summaries and status files
-SESSION_SUMMARY.md
-FINAL-STATUS.md
-ACTION-ITEMS.md
-CONVEX_FILES_ANALYSIS.md
-CONVEX_ENV_VARS_SUMMARY.md
-CORRECTED-REVIEW.md
-REVIEW-FINDINGS.md
-SECURITY_GITIGNORE_UPDATE.md
-TASK_7_IMPLEMENTATION.md
-35-errors-5files.md
+# Cloudflare deployment documentation (contains deployment URLs and config)
+CLOUDFLARE_*.md
+*CLOUDFLARE*.md
 
-# Verification scripts (keep for reference)
-scripts/verify-*.ps1
-scripts/verify-*.sh
-scripts/add-cloudflare-oauth-callbacks.md
-scripts/update-oauth-callbacks.md
-scripts/check-cognito-config.ps1
-scripts/fix-cognito-callbacks.ps1
+# Deployment documentation (contains sensitive URLs and configuration)
+DEPLOY_*.md
+DEPLOYMENT*.md
+*DEPLOYMENT*.md
+SETUP-*.md
+*SETUP*.md
+COMPLETE-*.md
+SIMPLE-*.md
 
-# Pre-commit checklists
-PRE-COMMIT-CHECKLIST.md
+# Session summaries and status files (contains development history)
+SESSION_*.md
+FINAL-*.md
+ACTION-*.md
+CONVEX_*.md
+REVIEW-*.md
+SECURITY_*.md
+TASK_*.md
+*-errors-*.md
+CLEANUP_*.md
 
-# Quick reference guides (keep for reference)
-QUICK_DEPLOY.md
+# PowerShell scripts (contain hardcoded values and are not used by application)
+scripts/*.ps1
 
-# Python requirements (not needed for Cloudflare)
-requirements.txt
+# Script documentation (contains OAuth URLs and setup instructions)
+scripts/*.md
+
+# Pre-commit checklists and quick guides
+PRE-COMMIT-*.md
+QUICK_*.md
+WARP.md
+
+# Architecture and planning documents
+ARCHITECTURE_*.md
+architecture_diagram.py
+*.gv
+agent_builder_architecture*
+
+# Python requirements (not needed for Cloudflare frontend deployment)
 requirements_complete.txt
-runtime.txt
-example_requirements.txt
 
-# CloudFormation templates (AWS-specific)
-cloudformation/
-
-# Docs directory (keep for reference but don't track)
+# Documentation directories (keep for reference but don't track)
 docs/
-
-# Specs directory (keep for reference but don't track)
 specs/
+CORRECTED-REVIEW.md
+REPOSITORY_CLEANUP_SUMMARY.md
+scripts/verify-oauth-config.sh
