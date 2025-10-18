@@ -106,11 +106,21 @@ const applicationTables = {
     // OAuth provider-specific fields
     locale: v.optional(v.string()), // Google: user's locale (e.g., "en-US")
     login: v.optional(v.string()), // GitHub: username
-    authProvider: v.optional(v.string()), // "github" | "google" | "aws" | "password"
+    authProvider: v.optional(v.string()), // "github" | "google" | "cognito" | "password"
     
     // Auth metadata
     lastSignIn: v.optional(v.number()),
     signInCount: v.optional(v.number()),
+    
+    // AWS Federated Identity (for Cognito users)
+    awsIdentityId: v.optional(v.string()), // Cognito Identity Pool ID
+    awsCredentials: v.optional(v.object({
+      accessKeyId: v.string(),
+      secretKey: v.string(),
+      sessionToken: v.string(),
+      expiration: v.number(),
+    })),
+    awsCredentialsUpdatedAt: v.optional(v.number()),
   })
     .index("by_user_id", ["userId"])
     .index("by_tier", ["tier"])

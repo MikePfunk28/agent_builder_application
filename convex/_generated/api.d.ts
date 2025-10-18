@@ -17,6 +17,7 @@ import type * as authErrorHandler from "../authErrorHandler.js";
 import type * as awsCrossAccount from "../awsCrossAccount.js";
 import type * as awsDeployment from "../awsDeployment.js";
 import type * as awsDiagramGenerator from "../awsDiagramGenerator.js";
+import type * as awsFederatedIdentity from "../awsFederatedIdentity.js";
 import type * as cdkGenerator from "../cdkGenerator.js";
 import type * as cloudFormationGenerator from "../cloudFormationGenerator.js";
 import type * as codeGenerator from "../codeGenerator.js";
@@ -70,6 +71,7 @@ declare const fullApi: ApiFromModules<{
   awsCrossAccount: typeof awsCrossAccount;
   awsDeployment: typeof awsDeployment;
   awsDiagramGenerator: typeof awsDiagramGenerator;
+  awsFederatedIdentity: typeof awsFederatedIdentity;
   cdkGenerator: typeof cdkGenerator;
   cloudFormationGenerator: typeof cloudFormationGenerator;
   codeGenerator: typeof codeGenerator;

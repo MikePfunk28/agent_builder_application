@@ -61,9 +61,36 @@ if (process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET) {
   );
 }
 
-// AWS Cognito OAuth - OIDC provider (Convex pattern)
-// Note: Cognito requires clientSecret to be set in Convex environment
-// The domain and applicationID are configured in auth.config.ts
+// AWS Cognito OAuth - OIDC provider for AWS Federated Identity
+// When users sign in with Cognito, they can exchange their ID token for AWS credentials
+// This enables deployment to their own AWS accounts
+if (process.env.COGNITO_CLIENT_ID && process.env.COGNITO_CLIENT_SECRET && process.env.COGNITO_ISSUER_URL) {
+  const Cognito = {
+    id: "cognito",
+    name: "AWS Cognito",
+    type: "oidc",
+    issuer: process.env.COGNITO_ISSUER_URL,
+    clientId: process.env.COGNITO_CLIENT_ID,
+    clientSecret: process.env.COGNITO_CLIENT_SECRET,
+    authorization: {
+      params: {
+        scope: "openid email profile aws.cognito.signin.user.admin",
+      },
+    },
+    profile(profile: any) {
+      return {
+        id: profile.sub,
+        name: profile.name ?? profile.email,
+        email: profile.email,
+        image: profile.picture,
+        cognitoUsername: profile["cognito:username"],
+        // Store the ID token for AWS credential exchange
+        cognitoIdToken: profile.id_token,
+      };
+    },
+  };
+  providers.push(Cognito as any);
+}
 
 export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
   providers,
