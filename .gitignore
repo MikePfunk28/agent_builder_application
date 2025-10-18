@@ -46,11 +46,11 @@ deploy-to-aws.sh
 *.sw?
 
 # AI Assistant directories (may contain PII or sensitive context)
-.cursor/*
-.claude/*
-.claude-flow/*
-.specify/*
-.kiro/*
+.cursor/
+.claude/
+.claude-flow/
+.specify/
+.kiro/
 
 # Package lock files
 package-lock.json
@@ -66,71 +66,29 @@ secrets_del_after.md
 # These files contain OAuth callback URLs, AWS account IDs, credentials,
 # and deployment information. Keep locally for reference only.
 
-# OAuth setup documentation (contains callback URLs and client secrets)
-github-auth.md
-google-auth.md
-oauth.md
-OAUTH_*.md
-*OAUTH*.md
-convex/OAUTH_SETUP_GUIDE.md
+# ============================================================================
+# DOCUMENTATION FILES - NEVER COMMIT (Contains OAuth URLs, AWS credentials)
+# ============================================================================
+# All markdown files except README.md and cloudformation/README.md
+*.md
+!README.md
+!cloudformation/README.md
 
-# AWS-specific documentation (contains account IDs, ARNs, and credentials)
-AWS-*.md
-*AWS*.md
-AMPLIFY_*.md
-amplify.yml
-CROSS-ACCOUNT-*.md
-COST_OPTIMIZATION.md
-deploy-to-aws.sh
-
-# Cloudflare deployment documentation (contains deployment URLs and config)
-CLOUDFLARE_*.md
-*CLOUDFLARE*.md
-
-# Deployment documentation (contains sensitive URLs and configuration)
-DEPLOY_*.md
-DEPLOYMENT*.md
-*DEPLOYMENT*.md
-SETUP-*.md
-*SETUP*.md
-COMPLETE-*.md
-SIMPLE-*.md
-
-# Session summaries and status files (contains development history)
-SESSION_*.md
-FINAL-*.md
-ACTION-*.md
-CONVEX_*.md
-REVIEW-*.md
-SECURITY_*.md
-TASK_*.md
-*-errors-*.md
-CLEANUP_*.md
-
-# PowerShell scripts (contain hardcoded values and are not used by application)
+# PowerShell scripts (contain hardcoded values)
 scripts/*.ps1
 
-# Script documentation (contains OAuth URLs and setup instructions)
-scripts/*.md
+# Shell scripts with sensitive configuration
+scripts/*.sh
 
-# Pre-commit checklists and quick guides
-PRE-COMMIT-*.md
-QUICK_*.md
-WARP.md
+# Python requirements (not needed for Cloudflare)
+requirements_complete.txt
 
-# Architecture and planning documents
-ARCHITECTURE_*.md
+# Architecture diagrams
 architecture_diagram.py
 *.gv
 agent_builder_architecture*
 
-# Python requirements (not needed for Cloudflare frontend deployment)
-requirements_complete.txt
-
-# Documentation directories (keep for reference but don't track)
+# Documentation directories
 docs/
 specs/
-CORRECTED-REVIEW.md
-REPOSITORY_CLEANUP_SUMMARY.md
-CLEANUP_VERIFICATION.md
-scripts/verify-oauth-config.sh
+amplify.yml
