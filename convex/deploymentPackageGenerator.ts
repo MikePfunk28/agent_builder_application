@@ -10,6 +10,7 @@
 import { action, internalAction } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
+import { getAuthUserId } from "@convex-dev/auth/server";
 
 /**
  * Generate deployment package for a successful test
@@ -25,8 +26,9 @@ export const generatePackage = action({
     })),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
+    // CRITICAL: Use Convex user document ID, not OAuth provider ID
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
       throw new Error("Not authenticated");
     }
 
@@ -38,7 +40,8 @@ export const generatePackage = action({
       throw new Error("Test not found");
     }
 
-    if (test.userId !== identity.subject) {
+    // Use Convex user document ID for access control
+    if (test.userId !== userId) {
       throw new Error("Not authorized");
     }
 
@@ -49,9 +52,10 @@ export const generatePackage = action({
     // Skip existing package check for now - always generate new package
 
     // Schedule package generation (this is an async action)
+    // Pass Convex user ID, not OAuth provider ID
     await ctx.scheduler.runAfter(0, internal.deploymentPackageGenerator.generatePackageAction, {
       testId: args.testId,
-      userId: identity.subject,
+      userId: userId,
       customization: args.customization || {},
     });
 
@@ -69,7 +73,7 @@ export const generatePackage = action({
 export const generatePackageAction = internalAction({
   args: {
     testId: v.id("testExecutions"),
-    userId: v.string(),
+    userId: v.id("users"), // Use Convex user document ID type, not string
     customization: v.object({
       includeLocalTesting: v.optional(v.boolean()),
       cdkLanguage: v.optional(v.string()),
@@ -138,6 +142,190 @@ interface PackageFile {
   content: string;
 }
 
+/**
+ * Generate mcp.json configuration file
+ * This file configures MCP servers that the agent can use as tools
+ */
+function generateMCPConfigFile(agent: any): string {
+  const mcpConfig = {
+    mcpServers: {} as Record<string, any>
+  };
+
+  // Extract MCP servers from agent configuration
+  if (agent.mcpServers && Array.isArray(agent.mcpServers)) {
+    for (const server of agent.mcpServers) {
+      mcpConfig.mcpServers[server.name] = {
+        command: server.command,
+        args: server.args || [],
+        env: server.env || {},
+        disabled: server.disabled || false,
+      };
+    }
+  }
+
+  // If no MCP servers configured, provide a helpful example
+  if (Object.keys(mcpConfig.mcpServers).length === 0) {
+    mcpConfig.mcpServers = {
+      "example-server": {
+        command: "uvx",
+        args: ["mcp-server-example"],
+        env: {},
+        disabled: true,
+      }
+    };
+  }
+
+  return JSON.stringify(mcpConfig, null, 2);
+}
+
+/**
+ * Generate cloudformation.yaml infrastructure template
+ * Uses the comprehensive CloudFormation generator for production-ready deployment
+ */
+function generateCloudFormationFile(agent: any, customization: any): string {
+  // Build CloudFormation template using simplified approach
+  // Note: Full production template available via api.cloudFormationGenerator.generateCloudFormationTemplate
+
+  const agentName = (agent.name || "agent").replace(/[^a-zA-Z0-9-]/g, '-').toLowerCase();
+  const model = agent.model || "anthropic.claude-3-5-sonnet-20241022-v2:0";
+  const region = customization.awsRegion || "us-east-1";
+  const environment = customization.environment || "prod";
+
+  return `AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  AWS Bedrock AgentCore deployment for ${agent.name || 'AI Agent'}
+  Generated: ${new Date().toISOString()}
+
+Parameters:
+  AgentName:
+    Type: String
+    Default: ${agentName}
+    Description: Name of the agent
+
+  Environment:
+    Type: String
+    Default: ${environment}
+    AllowedValues: [dev, staging, prod]
+    Description: Deployment environment
+
+  ModelId:
+    Type: String
+    Default: ${model}
+    Description: AI model identifier
+
+Resources:
+  # ============================================================================
+  # IAM Roles for AgentCore
+  # ============================================================================
+  AgentCoreTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '\${AgentName}-\${Environment}-task-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonBedrockFullAccess
+      Policies:
+        - PolicyName: AgentCoreTaskPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub 'arn:aws:logs:\${AWS::Region}:\${AWS::AccountId}:log-group:/aws/agentcore/\${AgentName}-\${Environment}*'
+
+  AgentCoreExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '\${AgentName}-\${Environment}-execution-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+  # ============================================================================
+  # CloudWatch Log Group
+  # ============================================================================
+  AgentCoreLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/agentcore/\${AgentName}-\${Environment}'
+      RetentionInDays: 30
+
+  # ============================================================================
+  # Secrets Manager (for API keys and credentials)
+  # ============================================================================
+  AgentCoreSecrets:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub '\${AgentName}-\${Environment}-secrets'
+      Description: Secrets for AgentCore agent
+      SecretString: !Sub |
+        {
+          "MODEL_ID": "\${ModelId}",
+          "AWS_REGION": "\${AWS::Region}",
+          "ENVIRONMENT": "\${Environment}",
+          "AGENT_NAME": "\${AgentName}"
+        }
+
+Outputs:
+  TaskRoleArn:
+    Description: IAM role ARN for AgentCore tasks
+    Value: !GetAtt AgentCoreTaskRole.Arn
+    Export:
+      Name: !Sub '\${AWS::StackName}-task-role-arn'
+
+  ExecutionRoleArn:
+    Description: IAM role ARN for AgentCore execution
+    Value: !GetAtt AgentCoreExecutionRole.Arn
+    Export:
+      Name: !Sub '\${AWS::StackName}-execution-role-arn'
+
+  LogGroupName:
+    Description: CloudWatch log group name
+    Value: !Ref AgentCoreLogGroup
+    Export:
+      Name: !Sub '\${AWS::StackName}-log-group'
+
+  SecretsArn:
+    Description: Secrets Manager secret ARN
+    Value: !Ref AgentCoreSecrets
+    Export:
+      Name: !Sub '\${AWS::StackName}-secrets-arn'
+
+# ==============================================================================
+# NOTES FOR PRODUCTION DEPLOYMENT
+# ==============================================================================
+# This is a simplified CloudFormation template for quick deployment.
+# For a production-ready template with VPC, ECS Fargate, Load Balancer,
+# Auto-scaling, and comprehensive monitoring, use the full template generator:
+#
+# await ctx.runAction(api.cloudFormationGenerator.generateCloudFormationTemplate, {
+#   agentName: "${agentName}",
+#   model: "${model}",
+#   tools: [],
+#   region: "${region}",
+#   environment: "${environment}",
+#   vpcConfig: { createVpc: true, vpcCidr: "10.0.0.0/16" },
+#   monitoring: { enableXRay: true, enableCloudWatch: true, logRetentionDays: 30 },
+#   scaling: { minCapacity: 0, maxCapacity: 10, targetCpuUtilization: 70 },
+# });
+`;
+}
+
 async function generatePackageFiles(
   test: any,
   agent: any,
@@ -145,22 +333,42 @@ async function generatePackageFiles(
 ): Promise<PackageFile[]> {
   const files: PackageFile[] = [];
 
-  // agent.py
+  // ============================================================================
+  // REQUIRED 4-FILE BUNDLE (AWS Bedrock AgentCore Deployment)
+  // ============================================================================
+
+  // 1. agent.py - Generated agent code
   files.push({
     path: "agent.py",
     content: test.agentCode,
   });
 
+  // 2. mcp.json - MCP server configuration
+  files.push({
+    path: "mcp.json",
+    content: generateMCPConfigFile(agent),
+  });
+
+  // 3. Dockerfile - Container configuration
+  files.push({
+    path: "Dockerfile",
+    content: test.dockerfile,
+  });
+
+  // 4. cloudformation.yaml - AWS infrastructure template
+  files.push({
+    path: "cloudformation.yaml",
+    content: generateCloudFormationFile(agent, customization),
+  });
+
+  // ============================================================================
+  // ADDITIONAL SUPPORT FILES
+  // ============================================================================
+
   // requirements.txt
   files.push({
     path: "requirements.txt",
     content: test.requirements,
-  });
-
-  // Dockerfile
-  files.push({
-    path: "Dockerfile",
-    content: test.dockerfile,
   });
 
   // README.md

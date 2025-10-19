@@ -1,12 +1,13 @@
 /**
  * AWS AgentCore Deployment Service
- * 
+ *
  * Handles deployment of agents to user's AWS accounts using AgentCore Runtime
  */
 
 import { action, internalAction, mutation, query, internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
+import { getAuthUserId } from "@convex-dev/auth/server";
 
 /**
  * Deploy agent - Routes to correct tier (Tier 1/2/3)
@@ -24,29 +25,29 @@ export const deployToAWS = action({
     }),
   },
   handler: async (ctx, args): Promise<any> => {
-    // Authentication check
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
+    // CRITICAL: Use Convex user document ID, not OAuth provider ID
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
       throw new Error("Not authenticated");
     }
 
     // Get agent
-    const agent: any = await ctx.runQuery(internal.agents.getInternal, { 
-      id: args.agentId 
+    const agent: any = await ctx.runQuery(internal.agents.getInternal, {
+      id: args.agentId
     });
-    
+
     if (!agent) {
       throw new Error("Agent not found");
     }
 
-    // Verify ownership
-    if (agent.createdBy !== identity.subject) {
+    // Verify ownership using Convex user document ID
+    if (agent.createdBy !== userId) {
       throw new Error("Not authorized to deploy this agent");
     }
 
-    // Get user tier
+    // Get user tier using Convex user document ID
     const user = await ctx.runQuery(internal.awsDeployment.getUserTierInternal, {
-      userId: identity.subject,
+      userId: userId,
     });
 
     const tier = user?.tier || "freemium";
@@ -58,19 +59,19 @@ export const deployToAWS = action({
       if (testsThisMonth >= 10) {
         throw new Error("Free tier limit reached (10 tests/month). Upgrade to deploy to your own AWS account!");
       }
-      
-      // Deploy to YOUR Fargate
-      return await deployTier1(ctx, args, identity.subject);
+
+      // Deploy to YOUR Fargate - pass Convex user ID
+      return await deployTier1(ctx, args, userId);
     } else if (tier === "personal") {
-      // Tier 2: Deploy to USER's AWS account
-      return await deployTier2(ctx, args, identity.subject);
+      // Tier 2: Deploy to USER's AWS account - pass Convex user ID
+      return await deployTier2(ctx, args, userId);
     } else if (tier === "enterprise") {
       // Tier 3: Enterprise SSO (not implemented yet)
       throw new Error("Enterprise tier not yet implemented");
     }
 
-    // Fallback to Tier 1
-    return await deployTier1(ctx, args, identity.subject);
+    // Fallback to Tier 1 - pass Convex user ID
+    return await deployTier1(ctx, args, userId);
   },
 });
 
@@ -292,13 +293,13 @@ export const addDeploymentLog = mutation({
 export const getDeploymentWithLogs = query({
   args: { deploymentId: v.id("deployments") },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
       return null;
     }
 
     const deployment = await ctx.db.get(args.deploymentId);
-    if (!deployment || deployment.userId !== identity.subject) {
+    if (!deployment || deployment.userId !== userId) {
       return null;
     }
 
@@ -336,21 +337,14 @@ export const listUserDeployments = query({
     agentId: v.optional(v.id("agents")),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
       return [];
     }
 
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_user_id", (q) => q.eq("userId", identity.subject))
-      .first();
-
-    if (!user) return [];
-
     const baseQuery = ctx.db
       .query("deployments")
-      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .withIndex("by_user", (q) => q.eq("userId", userId))
       .order("desc");
 
     const deployments = args.limit 
@@ -390,13 +384,13 @@ export const listUserDeployments = query({
 export const cancelDeployment = mutation({
   args: { deploymentId: v.id("deployments") },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
       throw new Error("Not authenticated");
     }
 
     const deployment = await ctx.db.get(args.deploymentId);
-    if (!deployment || deployment.userId !== identity.subject) {
+    if (!deployment || deployment.userId !== userId) {
       throw new Error("Deployment not found or not authorized");
     }
 
@@ -442,13 +436,13 @@ function formatDuration(milliseconds: number): string {
 export const getDeployment = query({
   args: { deploymentId: v.id("deployments") },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
       return null;
     }
 
     const deployment = await ctx.db.get(args.deploymentId);
-    if (!deployment || deployment.userId !== identity.subject) {
+    if (!deployment || deployment.userId !== userId) {
       return null;
     }
 
@@ -462,8 +456,8 @@ export const getDeployment = query({
 export const getUserDeployments = query({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
       return [];
     }
 
@@ -471,7 +465,7 @@ export const getUserDeployments = query({
 
     return await ctx.db
       .query("deployments")
-      .withIndex("by_user", (q) => q.eq("userId", identity.subject as any))
+      .withIndex("by_user", (q) => q.eq("userId", userId))
       .order("desc")
       .take(limit);
   },
@@ -664,10 +658,8 @@ export const createDeploymentInternal = internalMutation({
     }),
   },
   handler: async (ctx, args) => {
-    // Find user by userId string
     const user = await ctx.db
       .query("users")
-      .withIndex("by_user_id", (q) => q.eq("userId", args.userId as string))
       .first();
 
     return await ctx.db.insert("deployments", {
@@ -940,12 +932,9 @@ async function deployTier2(ctx: any, args: any, userId: string): Promise<any> {
  * Get user tier (internal)
  */
 export const getUserTierInternal = internalQuery({
-  args: { userId: v.string() },
+  args: { userId: v.id("users") },
   handler: async (ctx, args) => {
-    return await ctx.db
-      .query("users")
-      .withIndex("by_user_id", (q) => q.eq("userId", args.userId))
-      .first();
+    return await ctx.db.get(args.userId);
   },
 });
 
@@ -953,18 +942,11 @@ export const getUserTierInternal = internalQuery({
  * Get user AWS account (internal)
  */
 export const getUserAWSAccountInternal = internalQuery({
-  args: { userId: v.string() },
+  args: { userId: v.id("users") },
   handler: async (ctx, args) => {
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_user_id", (q) => q.eq("userId", args.userId))
-      .first();
-    
-    if (!user) return null;
-
     return await ctx.db
       .query("userAWSAccounts")
-      .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+      .withIndex("by_user_id", (q) => q.eq("userId", args.userId))
       .first();
   },
 });
@@ -973,16 +955,13 @@ export const getUserAWSAccountInternal = internalQuery({
  * Increment usage counter (internal)
  */
 export const incrementUsageInternal = internalMutation({
-  args: { userId: v.string() },
+  args: { userId: v.id("users") },
   handler: async (ctx, args) => {
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_user_id", (q) => q.eq("userId", args.userId))
-      .first();
+    const user = await ctx.db.get(args.userId);
 
     if (!user) return;
 
-    await ctx.db.patch(user._id, {
+    await ctx.db.patch(args.userId, {
       testsThisMonth: (user.testsThisMonth || 0) + 1,
     });
   },
