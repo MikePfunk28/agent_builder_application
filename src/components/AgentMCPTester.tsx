@@ -35,8 +35,9 @@ export function AgentMCPTester({ mcpToolName, mcpInputSchema }: AgentMCPTesterPr
         arguments: parsedInput,
       };
 
-      // Call the MCP endpoint
-      const response = await fetch("/mcp/tools/call", {
+      // Call the MCP endpoint on Convex HTTP router
+      const convexSiteUrl = import.meta.env.VITE_CONVEX_SITE_URL || import.meta.env.CONVEX_SITE_URL || "https://resolute-kudu-325.convex.site";
+      const response = await fetch(`${convexSiteUrl}/mcp/tools/call`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

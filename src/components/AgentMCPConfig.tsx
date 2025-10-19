@@ -93,7 +93,9 @@ export function AgentMCPConfig({
     }
   };
 
-  const mcpEndpoint = `${window.location.origin}/mcp/tools/call`;
+  // Use Convex site URL for MCP endpoint
+  const convexSiteUrl = import.meta.env.VITE_CONVEX_SITE_URL || import.meta.env.CONVEX_SITE_URL || "https://resolute-kudu-325.convex.site";
+  const mcpEndpoint = `${convexSiteUrl}/mcp/tools/call`;
   
   const exampleConfig = `{
   "mcpServers": {

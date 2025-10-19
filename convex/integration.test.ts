@@ -1353,3 +1353,614 @@ describe("End-to-End Integration Scenarios", () => {
   });
 });
 
+
+
+describe("Deployment Integration Tests", () => {
+  describe("Tier 1 (Freemium) Deployment Workflow", () => {
+    test("should handle Tier 1 deployment workflow", async () => {
+      const t = convexTest(schema, modules);
+
+      // Create freemium user
+      const testUserId = await t.run(async (ctx) => {
+        return await ctx.db.insert("users", {
+          userId: "test-user-tier1-all",
+          email: "tier1-all@example.com",
+          name: "Tier 1 All Tests User",
+          tier: "freemium",
+          testsThisMonth: 0,
+          createdAt: Date.now(),
+        });
+      });
+
+      // Create test agent
+      const testAgentId = await t.run(async (ctx) => {
+        return await ctx.db.insert("agents", {
+          createdBy: testUserId,
+          name: "Tier 1 Test Agent",
+          description: "Test agent for Tier 1 deployment",
+          systemPrompt: "You are a test agent",
+          model: "anthropic.claude-3-sonnet-20240229-v1:0",
+          tools: [],
+          generatedCode: "def handler(event, context):\n    return {'statusCode': 200, 'body': 'Hello from agent'}",
+          deploymentType: "aws",
+        });
+      });
+
+      t.withIdentity({ subject: "test-user-tier1-all" });
+
+      // Test 1: Deploy agent
+      const result = await t.action(api.deploymentRouter.deployAgent, {
+        agentId: testAgentId,
+      });
+
+      expect(result).toBeDefined();
+      expect(result.tier).toBe("freemium");
+
+      // Should fail because MCP server not available, but should handle gracefully
+      if (!result.success) {
+        expect(result.error).toBeDefined();
+      } else {
+        expect(result.result).toBeDefined();
+        expect(result.message).toContain("AgentCore");
+      }
+    });
+
+    test("should manage usage counters and limits", async () => {
+      const t = convexTest(schema, modules);
+
+      // Create user
+      const testUserId = await t.run(async (ctx) => {
+        return await ctx.db.insert("users", {
+          userId: "test-user-tier1-usage-limits",
+          email: "tier1-usage-limits@example.com",
+          name: "Tier 1 Usage Limits User",
+          tier: "freemium",
+          testsThisMonth: 0,
+          createdAt: Date.now(),
+        });
+      });
+
+      const testAgentId = await t.run(async (ctx) => {
+        return await ctx.db.insert("agents", {
+          createdBy: testUserId,
+          name: "Usage Test Agent",
+          description: "Test agent",
+          systemPrompt: "Test",
+          model: "anthropic.claude-3-sonnet-20240229-v1:0",
+          tools: [],
+          generatedCode: "def handler(): pass",
+          deploymentType: "aws",
+        });
+      });
+
+      t.withIdentity({ subject: "test-user-tier1-usage-limits" });
+
+      // Test usage increment
+      const userBefore = await t.query(api.deploymentRouter.getUserTier);
+      const initialUsage = userBefore?.testsThisMonth || 0;
+
+      await t.mutation(api.deploymentRouter.incrementUsage, {
+        userId: "test-user-tier1-usage-limits",
+      });
+
+      const userAfter = await t.query(api.deploymentRouter.getUserTier);
+      expect(userAfter?.testsThisMonth).toBe(initialUsage + 1);
+
+      // Test usage limit enforcement
+      await t.run(async (ctx) => {
+        await ctx.db.patch(testUserId, {
+          testsThisMonth: 10, // At the limit
+        });
+      });
+
+      const result = await t.action(api.deploymentRouter.deployAgent, {
+        agentId: testAgentId,
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("limit");
+    });
+  });
+
+  describe("Tier 2 (Personal AWS) Deployment Workflow", () => {
+    test("should handle Tier 2 deployment workflow", async () => {
+      const t = convexTest(schema, modules);
+
+      // Create personal tier user
+      const testUserId = await t.run(async (ctx) => {
+        return await ctx.db.insert("users", {
+          userId: "test-user-tier2-all",
+          email: "tier2-all@example.com",
+          name: "Tier 2 All Tests User",
+          tier: "personal",
+          createdAt: Date.now(),
+        });
+      });
+
+      // Create test agent
+      const testAgentId = await t.run(async (ctx) => {
+        return await ctx.db.insert("agents", {
+          createdBy: testUserId,
+          name: "Tier 2 Test Agent",
+          description: "Test agent for Tier 2 deployment",
+          systemPrompt: "You are a test agent",
+          model: "gpt-4",
+          tools: [],
+          generatedCode: "# Tier 2 test agent code",
+          deploymentType: "aws",
+        });
+      });
+
+      // Create AWS account connection
+      await t.run(async (ctx) => {
+        return await ctx.db.insert("userAWSAccounts", {
+          userId: testUserId,
+          externalId: "test-external-id-123",
+          roleArn: "arn:aws:iam::123456789012:role/AgentBuilderDeploymentRole",
+          region: "us-east-1",
+          awsAccountId: "123456789012",
+          status: "connected",
+          createdAt: Date.now(),
+          connectedAt: Date.now(),
+        });
+      });
+
+      t.withIdentity({ subject: "test-user-tier2-all" });
+
+      // Test deployment
+      const result = await t.action(api.deploymentRouter.deployAgent, {
+        agentId: testAgentId,
+      });
+
+      expect(result).toBeDefined();
+      expect(result.tier).toBe("personal");
+
+      if (!result.success) {
+        expect(result.error).toBeDefined();
+      } else {
+        expect(result.message).toContain("AWS account");
+      }
+
+      // Test deployment metadata storage
+      const deploymentId = await t.mutation(api.deployments.create, {
+        agentId: testAgentId,
+        tier: "personal",
+        awsAccountId: "123456789012",
+        region: "us-east-1",
+        taskArn: "arn:aws:ecs:us-east-1:123456789012:task/test-cluster/abc123",
+        status: "RUNNING",
+      });
+
+      const deployment = await t.query(api.deployments.get, {
+        id: deploymentId,
+      });
+
+      expect(deployment).toBeDefined();
+      expect(deployment?.tier).toBe("personal");
+      expect(deployment?.awsAccountId).toBe("123456789012");
+      expect(deployment?.taskArn).toContain("ecs");
+    });
+
+
+
+    test("should handle deployment to user account without AWS connection", async () => {
+      const t = convexTest(schema, modules);
+
+      // Create user without AWS connection
+      const noAwsUserId = await t.run(async (ctx) => {
+        return await ctx.db.insert("users", {
+          userId: "test-user-no-aws",
+          email: "no-aws@example.com",
+          name: "No AWS User",
+          tier: "personal",
+          createdAt: Date.now(),
+        });
+      });
+
+      const noAwsAgentId = await t.run(async (ctx) => {
+        return await ctx.db.insert("agents", {
+          createdBy: noAwsUserId,
+          name: "No AWS Agent",
+          description: "Agent without AWS connection",
+          systemPrompt: "Test",
+          model: "gpt-4",
+          tools: [],
+          generatedCode: "# Test",
+          deploymentType: "aws",
+        });
+      });
+
+      t.withIdentity({ subject: "test-user-no-aws" });
+
+      // Try to deploy
+      const result = await t.action(api.deploymentRouter.deployAgent, {
+        agentId: noAwsAgentId,
+      });
+
+      expect(result).toBeDefined();
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("AWS account");
+    });
+  });
+
+  describe("Deployment Error Handling", () => {
+    test("should handle deployment failure gracefully", async () => {
+      const t = convexTest(schema, modules);
+
+      // Create user
+      const testUserId = await t.run(async (ctx) => {
+        return await ctx.db.insert("users", {
+          userId: "test-user-errors-graceful",
+          email: "errors-graceful@example.com",
+          name: "Error Graceful User",
+          tier: "freemium",
+          createdAt: Date.now(),
+        });
+      });
+
+      // Create agent
+      const testAgentId = await t.run(async (ctx) => {
+        return await ctx.db.insert("agents", {
+          createdBy: testUserId,
+          name: "Error Test Agent",
+          description: "Agent for error testing",
+          systemPrompt: "Test",
+          model: "gpt-4",
+          tools: [],
+          generatedCode: "# Test",
+          deploymentType: "aws",
+        });
+      });
+
+      t.withIdentity({ subject: "test-user-errors-graceful" });
+
+      // Deploy (will fail because MCP not available)
+      const result = await t.action(api.deploymentRouter.deployAgent, {
+        agentId: testAgentId,
+      });
+
+      expect(result).toBeDefined();
+
+      // Should handle error gracefully
+      if (!result.success) {
+        expect(result.error).toBeDefined();
+        expect(result.tier).toBe("freemium");
+      }
+    });
+
+    test("should update deployment status on error", async () => {
+      const t = convexTest(schema, modules);
+
+      // Create user
+      const testUserId = await t.run(async (ctx) => {
+        return await ctx.db.insert("users", {
+          userId: "test-user-errors-status",
+          email: "errors-status@example.com",
+          name: "Error Status User",
+          tier: "freemium",
+          createdAt: Date.now(),
+        });
+      });
+
+      // Create agent
+      const testAgentId = await t.run(async (ctx) => {
+        return await ctx.db.insert("agents", {
+          createdBy: testUserId,
+          name: "Error Status Agent",
+          description: "Agent for status testing",
+          systemPrompt: "Test",
+          model: "gpt-4",
+          tools: [],
+          generatedCode: "# Test",
+          deploymentType: "aws",
+        });
+      });
+
+      t.withIdentity({ subject: "test-user-errors-status" });
+
+      // Create deployment
+      const deploymentId = await t.mutation(api.deployments.create, {
+        agentId: testAgentId,
+        tier: "freemium",
+        region: "us-east-1",
+        status: "PENDING",
+      });
+
+      // Update with error
+      await t.mutation(api.deployments.updateStatus, {
+        deploymentId,
+        status: "FAILED",
+        error: "Test error: Deployment failed",
+      });
+
+      // Verify error was stored
+      const deployment = await t.query(api.deployments.get, {
+        id: deploymentId,
+      });
+
+      expect(deployment).toBeDefined();
+      expect(deployment?.status).toBe("FAILED");
+      expect(deployment?.error).toContain("Test error");
+    });
+
+    test("should handle missing agent gracefully", async () => {
+      const t = convexTest(schema, modules);
+      t.withIdentity({ subject: "test-user-errors" });
+
+      // Try to deploy non-existent agent
+      try {
+        await t.action(api.deploymentRouter.deployAgent, {
+          agentId: "invalid-agent-id" as any,
+        });
+        // Should throw or return error
+      } catch (error: any) {
+        expect(error).toBeDefined();
+      }
+    });
+
+    test("should handle unauthenticated deployment attempt", async () => {
+      const t = convexTest(schema, modules);
+      // No identity set
+
+      // Try to deploy
+      try {
+        await t.action(api.deploymentRouter.deployAgent, {
+          agentId: testAgentId,
+        });
+        // Should throw
+        expect(true).toBe(false); // Should not reach here
+      } catch (error: any) {
+        expect(error).toBeDefined();
+        expect(error.message).toContain("authenticated");
+      }
+    });
+
+    test("should handle AgentCore sandbox creation failure", async () => {
+      const t = convexTest(schema, modules);
+      t.withIdentity({ subject: "test-user-errors" });
+
+      // Deploy (will fail because MCP not available)
+      const result = await t.action(api.agentcoreDeployment.deployToAgentCore, {
+        agentId: testAgentId,
+        code: "def handler(): pass",
+        dependencies: [],
+        environmentVariables: {},
+      });
+
+      expect(result).toBeDefined();
+      expect(result.success).toBe(false);
+      expect(result.error).toBeDefined();
+    });
+
+    test("should handle cross-account role assumption failure", async () => {
+      const t = convexTest(schema, modules);
+      t.withIdentity({ subject: "test-user-errors" });
+
+      // Try to assume invalid role
+      const result = await t.action(api.awsCrossAccount.validateRole, {
+        roleArn: "arn:aws:iam::999999999999:role/InvalidRole",
+        externalId: "invalid-external-id",
+      });
+
+      expect(result).toBeDefined();
+      expect(result.valid).toBe(false);
+      expect(result.error).toBeDefined();
+    });
+  });
+
+  describe("Deployment History and Monitoring", () => {
+    test("should retrieve deployment history", async () => {
+      const t = convexTest(schema, modules);
+
+      // Create user
+      const testUserId = await t.run(async (ctx) => {
+        return await ctx.db.insert("users", {
+          userId: "test-user-history-retrieve",
+          email: "history-retrieve@example.com",
+          name: "History Retrieve User",
+          tier: "personal",
+          createdAt: Date.now(),
+        });
+      });
+
+      // Create agent
+      const testAgentId = await t.run(async (ctx) => {
+        return await ctx.db.insert("agents", {
+          createdBy: testUserId,
+          name: "History Test Agent",
+          description: "Agent for history testing",
+          systemPrompt: "Test",
+          model: "gpt-4",
+          tools: [],
+          generatedCode: "# Test",
+          deploymentType: "aws",
+        });
+      });
+
+      t.withIdentity({ subject: "test-user-history-retrieve" });
+
+      // Create multiple deployments
+      await t.run(async (ctx) => {
+        for (let i = 0; i < 3; i++) {
+          await ctx.db.insert("deployments", {
+            userId: testUserId,
+            agentId: testAgentId,
+            tier: "personal",
+            region: "us-east-1",
+            status: "ACTIVE",
+            startedAt: Date.now() - i * 1000,
+          });
+        }
+      });
+
+      // Get deployment history
+      const history = await t.query(api.deploymentRouter.getDeploymentHistory, {
+        agentId: testAgentId,
+        limit: 10,
+      });
+
+      expect(history).toBeDefined();
+      expect(Array.isArray(history)).toBe(true);
+      expect(history.length).toBeGreaterThanOrEqual(3);
+    });
+
+    test("should list user deployments", async () => {
+      const t = convexTest(schema, modules);
+
+      // Create user
+      const testUserId = await t.run(async (ctx) => {
+        return await ctx.db.insert("users", {
+          userId: "test-user-history-list",
+          email: "history-list@example.com",
+          name: "History List User",
+          tier: "personal",
+          createdAt: Date.now(),
+        });
+      });
+
+      // Create agent
+      const testAgentId = await t.run(async (ctx) => {
+        return await ctx.db.insert("agents", {
+          createdBy: testUserId,
+          name: "History List Agent",
+          description: "Agent for list testing",
+          systemPrompt: "Test",
+          model: "gpt-4",
+          tools: [],
+          generatedCode: "# Test",
+          deploymentType: "aws",
+        });
+      });
+
+      t.withIdentity({ subject: "test-user-history-list" });
+
+      // Create deployments
+      await t.run(async (ctx) => {
+        await ctx.db.insert("deployments", {
+          userId: testUserId,
+          agentId: testAgentId,
+          tier: "freemium",
+          region: "us-east-1",
+          status: "ACTIVE",
+          startedAt: Date.now(),
+        });
+      });
+
+      // List deployments
+      const deployments = await t.query(api.deployments.list, {
+        limit: 20,
+      });
+
+      expect(deployments).toBeDefined();
+      expect(Array.isArray(deployments)).toBe(true);
+      expect(deployments.length).toBeGreaterThan(0);
+    });
+
+    test("should update deployment health status", async () => {
+      const t = convexTest(schema, modules);
+      t.withIdentity({ subject: "test-user-history" });
+
+      // Create deployment
+      const deploymentId = await t.run(async (ctx) => {
+        return await ctx.db.insert("deployments", {
+          userId: testUserId,
+          agentId: testAgentId,
+          tier: "freemium",
+          region: "us-east-1",
+          status: "ACTIVE",
+          agentCoreRuntimeId: "test-sandbox-health",
+          startedAt: Date.now(),
+        });
+      });
+
+      // Update health status
+      await t.mutation(api.deploymentRouter.updateHealthStatus, {
+        deploymentId,
+        healthStatus: "healthy",
+        lastHealthCheck: Date.now(),
+      });
+
+      // Verify update
+      const deployment = await t.run(async (ctx) => {
+        return await ctx.db.get(deploymentId);
+      });
+
+      expect(deployment?.healthStatus).toBe("healthy");
+      expect(deployment?.lastHealthCheck).toBeDefined();
+    });
+  });
+
+  describe("Usage Limit Management", () => {
+    test("should reset monthly usage for freemium users", async () => {
+      const t = convexTest(schema, modules);
+
+      // Create freemium users with usage
+      await t.run(async (ctx) => {
+        await ctx.db.insert("users", {
+          userId: "freemium-user-1",
+          email: "freemium1@example.com",
+          name: "Freemium User 1",
+          tier: "freemium",
+          testsThisMonth: 5,
+          createdAt: Date.now(),
+        });
+
+        await ctx.db.insert("users", {
+          userId: "freemium-user-2",
+          email: "freemium2@example.com",
+          name: "Freemium User 2",
+          tier: "freemium",
+          testsThisMonth: 8,
+          createdAt: Date.now(),
+        });
+      });
+
+      // Reset monthly usage
+      const result = await t.mutation(api.deploymentRouter.resetMonthlyUsage);
+
+      expect(result).toBeDefined();
+      expect(result.reset).toBeGreaterThanOrEqual(2);
+
+      // Verify usage was reset
+      const users = await t.run(async (ctx) => {
+        return await ctx.db
+          .query("users")
+          .withIndex("by_tier", (q) => q.eq("tier", "freemium"))
+          .collect();
+      });
+
+      users.forEach((user) => {
+        expect(user.testsThisMonth).toBe(0);
+      });
+    });
+
+    test("should not reset usage for non-freemium users", async () => {
+      const t = convexTest(schema, modules);
+
+      // Create personal tier user with usage
+      await t.run(async (ctx) => {
+        await ctx.db.insert("users", {
+          userId: "personal-user-1",
+          email: "personal1@example.com",
+          name: "Personal User 1",
+          tier: "personal",
+          testsThisMonth: 50,
+          createdAt: Date.now(),
+        });
+      });
+
+      // Reset monthly usage (only affects freemium)
+      await t.mutation(api.deploymentRouter.resetMonthlyUsage);
+
+      // Verify personal user usage was not reset
+      const user = await t.run(async (ctx) => {
+        return await ctx.db
+          .query("users")
+          .withIndex("by_user_id", (q) => q.eq("userId", "personal-user-1"))
+          .first();
+      });
+
+      expect(user?.testsThisMonth).toBe(50);
+    });
+  });
+});

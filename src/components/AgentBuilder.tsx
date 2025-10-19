@@ -15,7 +15,8 @@ import {
   Trash2,
   Copy,
   Download,
-  TestTube
+  TestTube,
+  Network
 } from "lucide-react";
 import { ModelSelector } from "./ModelSelector";
 import { ToolSelector } from "./ToolSelector";
@@ -23,6 +24,7 @@ import { CodePreview } from "./CodePreview";
 import { AgentTester } from "./AgentTester";
 import { AgentMCPConfig } from "./AgentMCPConfig";
 import { AgentMCPTester } from "./AgentMCPTester";
+import { ArchitecturePreview } from "./ArchitecturePreview";
 
 interface Tool {
   name: string;
@@ -48,6 +50,7 @@ const steps = [
   { id: "basic", title: "Basic Info", icon: Bot },
   { id: "model", title: "Model & Prompt", icon: Settings },
   { id: "tools", title: "Tools", icon: Code },
+  { id: "architecture", title: "Architecture", icon: Network },
   { id: "test", title: "Test", icon: TestTube },
   { id: "deploy", title: "Deploy", icon: Rocket },
 ];
@@ -206,7 +209,8 @@ export function AgentBuilder() {
             {currentStep === 0 && <BasicInfoStep config={config} setConfig={setConfig} />}
             {currentStep === 1 && <ModelPromptStep config={config} setConfig={setConfig} />}
             {currentStep === 2 && <ToolsStep config={config} setConfig={setConfig} />}
-            {currentStep === 3 && (
+            {currentStep === 3 && <ArchitectureStep config={config} />}
+            {currentStep === 4 && (
               <TestStep
                 agentId={savedAgentId}
                 agentCode={generatedCode}
@@ -219,7 +223,7 @@ export function AgentBuilder() {
                 isGenerating={isGenerating}
               />
             )}
-            {currentStep === 4 && (
+            {currentStep === 5 && (
               <DeployStep 
                 config={config} 
                 setConfig={setConfig}
@@ -489,6 +493,20 @@ function DeployStep({
           deploymentType={config.deploymentType}
         />
       )}
+    </div>
+  );
+}
+
+function ArchitectureStep({ config }: { config: AgentConfig }) {
+  return (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold text-green-400 mb-6">Architecture Preview</h2>
+      <ArchitecturePreview
+        agentName={config.name}
+        model={config.model}
+        tools={config.tools}
+        deploymentType={config.deploymentType}
+      />
     </div>
   );
 }
