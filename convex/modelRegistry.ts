@@ -73,12 +73,26 @@ export const BEDROCK_MODELS: Record<string, ModelMetadata> = {
     description: "Latest Claude model with interleaved reasoning, best for complex tasks",
   },
 
+  "anthropic.claude-haiku-4-5-20250514-v1:0": {
+    id: "anthropic.claude-haiku-4-5-20250514-v1:0",
+    name: "Claude 4.5 Haiku",
+    provider: "bedrock",
+    providerDisplay: "Anthropic (Bedrock)",
+    capabilities: ["text", "vision", "reasoning"],
+    contextWindow: 200000,
+    maxOutput: 8192,
+    recommended: true,
+    category: "fast",
+    costPer1MTokens: { input: 1.0, output: 5.0 },
+    description: "Latest fast Claude model with reasoning, perfect for thinking agents and tool creation",
+  },
+
   // ============================================================================
   // CLAUDE 4.1 SERIES
   // ============================================================================
   "anthropic.claude-opus-4-1-20250805-v1:0": {
     id: "anthropic.claude-opus-4-1-20250805-v1:0",
-    name: "Claude 4.1 Opus",
+    name: "Claude 4.5 Opus",
     provider: "bedrock",
     providerDisplay: "Anthropic (Bedrock)",
     capabilities: ["text", "vision", "reasoning"],

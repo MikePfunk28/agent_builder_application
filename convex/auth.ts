@@ -5,66 +5,18 @@ import { Anonymous } from "@convex-dev/auth/providers/Anonymous";
 import { convexAuth, getAuthUserId } from "@convex-dev/auth/server";
 import { query } from "./_generated/server";
 
-// Build providers array conditionally based on environment variables
+// Build providers array with all authentication methods
 const providers: any[] = [
-  Anonymous,
-  Password,
+  Anonymous, // Continue as guest
+  Password,  // Email/password authentication
+  GitHub,    // GitHub OAuth
+  Google,    // Google OAuth
 ];
-
-// GitHub OAuth with custom profile handler
-if (process.env.AUTH_GITHUB_ID && process.env.AUTH_GITHUB_SECRET) {
-  providers.push(
-    GitHub({
-      profile(profile) {
-        return {
-          id: profile.id.toString(),
-          name: profile.name ?? profile.login,
-          email: profile.email,
-          image: profile.avatar_url,
-          login: profile.login, // GitHub username - custom field
-        };
-      },
-    })
-  );
-}
-
-// Google OAuth with custom profile handler
-if (process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET) {
-  providers.push(
-    Google({
-      profile(profile) {
-        return {
-          id: profile.sub,
-          name: profile.name,
-          email: profile.email,
-          image: profile.picture,
-          locale: profile.locale, // User's locale preference - custom field
-        };
-      },
-    })
-  );
-} else if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
-  providers.push(
-    Google({
-      clientId: process.env.GOOGLE_CLIENT_ID,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      profile(profile: any) {
-        return {
-          id: profile.sub,
-          name: profile.name,
-          email: profile.email,
-          image: profile.picture,
-          locale: profile.locale, // User's locale preference - custom field
-        };
-      },
-    } as any)
-  );
-}
 
 // AWS Cognito OAuth - OIDC provider for AWS Federated Identity
 // When users sign in with Cognito, they can exchange their ID token for AWS credentials
 // This enables deployment to their own AWS accounts
-if (process.env.COGNITO_CLIENT_ID && process.env.COGNITO_CLIENT_SECRET && process.env.COGNITO_ISSUER_URL) {
+if (process.env.COGNITO_ISSUER_URL && process.env.COGNITO_CLIENT_ID && process.env.COGNITO_CLIENT_SECRET) {
   const Cognito = {
     id: "cognito",
     name: "AWS Cognito",
@@ -84,8 +36,6 @@ if (process.env.COGNITO_CLIENT_ID && process.env.COGNITO_CLIENT_SECRET && proces
         email: profile.email,
         image: profile.picture,
         cognitoUsername: profile["cognito:username"],
-        // Store the ID token for AWS credential exchange
-        cognitoIdToken: profile.id_token,
       };
     },
   };

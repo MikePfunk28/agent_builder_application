@@ -22,8 +22,9 @@ export const listMCPServers = query({
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
     
+    // Return empty array if not authenticated (instead of throwing error)
     if (!identity) {
-      throw new Error("Not authenticated");
+      return [];
     }
 
     // Get user from auth
@@ -33,7 +34,7 @@ export const listMCPServers = query({
       .first();
 
     if (!user) {
-      throw new Error("User not found");
+      return [];
     }
 
     // Get all MCP servers for this user

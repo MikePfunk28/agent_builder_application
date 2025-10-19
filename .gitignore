@@ -74,7 +74,7 @@ secrets_del_after.md
 !README.md
 !cloudformation/README.md
 
-# PowerShell scripts (contain hardcoded values)
+# PowerShell scripts (contain hardcoded values and OAuth URLs)
 scripts/*.ps1
 
 # Shell scripts with sensitive configuration
@@ -82,13 +82,28 @@ scripts/*.sh
 
 # Python requirements (not needed for Cloudflare)
 requirements_complete.txt
+example_requirements.txt
 
 # Architecture diagrams
 architecture_diagram.py
 *.gv
 agent_builder_architecture*
 
-# Documentation directories
+# Documentation directories (contain OAuth URLs and AWS account IDs)
 docs/
 specs/
 amplify.yml
+
+# Kiro directories (contain sensitive specs and configuration)
+.kiro/
+.claude/
+.claude-flow/
+.cursor/
+.specify/
+
+# Test files (contain OAuth URLs and configuration details)
+tests/
+
+# Current logs and temporary files
+current_logs.txt
+*.local

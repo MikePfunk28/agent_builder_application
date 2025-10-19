@@ -43,6 +43,7 @@ export function MCPManagementPanel() {
   const [selectedServer, setSelectedServer] = useState<MCPServer | null>(null);
   const [testingServerId, setTestingServerId] = useState<Id<"mcpServers"> | null>(null);
 
+  // Query servers - will handle auth in the query itself
   const servers = useQuery(api.mcpConfig.listMCPServers) || [];
   const testConnection = useAction(api.mcpConfig.testMCPConnection);
   const deleteServer = useMutation(api.mcpConfig.deleteMCPServer);

@@ -265,52 +265,92 @@ function generateImports(tools: any[], deploymentType: string, modelId?: string)
 }
 
 function generateToolConfigs(tools: any[]): string {
-  return tools.map(tool => {
-    switch (tool.type) {
-      case "web_search":
-        return `
-class WebSearchTool:
-    def __init__(self):
-        self.session = requests.Session()
+  // Generate custom tool functions with @tool decorator
+  const customTools = tools
+    .filter(tool => !isBuiltInTool(tool.type))
+    .map(tool => generateCustomToolFunction(tool));
+  
+  if (customTools.length === 0) {
+    return "# All tools are built-in from strands-agents-tools";
+  }
+  
+  return customTools.join("\n\n");
+}
+
+/**
+ * Check if a tool is built-in to strands-agents-tools
+ */
+function isBuiltInTool(toolType: string): boolean {
+  const builtInTools = [
+    // RAG & Memory
+    "retrieve", "memory", "agent_core_memory", "mem0_memory",
+    // File Operations
+    "editor", "file_read", "file_write",
+    // Shell & System
+    "environment", "shell", "cron", "use_computer",
+    // Code Interpretation
+    "python_repl", "code_interpreter",
+    // Web & Network
+    "http_request", "slack", "browser", "agent_core_browser", "rss",
+    // Multi-modal
+    "vision", "image_gen", "audio_transcription", "text_to_speech",
+    // AWS Services
+    "bedrock_kb", "s3", "dynamodb", "lambda_invoke",
+    // Utilities
+    "search", "tavily_search", "calculator", "datetime",
+    // Agents & Workflows
+    "use_agent", "think", "use_llm", "workflow", "batch", "a2a_client"
+  ];
+  
+  return builtInTools.includes(toolType);
+}
+
+/**
+ * Generate a custom tool function with @tool decorator
+ */
+function generateCustomToolFunction(tool: any): string {
+  const functionName = tool.type.replace(/[^a-zA-Z0-9_]/g, '_');
+  const description = tool.config?.description || `Custom tool: ${tool.name}`;
+  
+  // Extract parameters from tool config
+  const params = tool.config?.parameters || [];
+  const paramSignature = params.length > 0
+    ? params.map((p: any) => `${p.name}: ${p.type || 'str'}`).join(', ')
+    : '**kwargs';
+  
+  // Generate parameter schema for @tool decorator
+  const paramSchema = params.length > 0
+    ? `{
+${params.map((p: any) => `        "${p.name}": {
+            "type": "${p.type || 'string'}",
+            "description": "${p.description || p.name}"${p.required ? ',\n            "required": True' : ''}
+        }`).join(',\n')}
+    }`
+    : '{}';
+  
+  return `@tool(
+    name="${tool.name}",
+    description="${description}",
+    parameters=${paramSchema}
+)
+async def ${functionName}(${paramSignature}) -> str:
+    """
+    ${description}
     
-    def search(self, query: str, max_results: int = 5):
-        """Search the web for information"""
-        # Implementation for web search
-        pass`;
-      
-      case "file_operations":
-        return `
-class FileOperationsTool:
-    def __init__(self, base_path: str = "./"):
-        self.base_path = base_path
-    
-    def read_file(self, filepath: str):
-        """Read contents of a file"""
-        with open(os.path.join(self.base_path, filepath), 'r') as f:
-            return f.read()
-    
-    def write_file(self, filepath: str, content: str):
-        """Write content to a file"""
-        with open(os.path.join(self.base_path, filepath), 'w') as f:
-            f.write(content)`;
-      
-      case "database":
-        return `
-class DatabaseTool:
-    def __init__(self, db_path: str = "agent.db"):
-        self.db_path = db_path
-    
-    def query(self, sql: str):
-        """Execute SQL query"""
-        conn = sqlite3.connect(self.db_path)
-        result = pd.read_sql_query(sql, conn)
-        conn.close()
-        return result`;
-      
-      default:
-        return `# ${tool.name} tool configuration`;
-    }
-  }).join("\n\n");
+    This is a custom tool function that can be invoked by the agent.
+    Implement your custom logic here.
+    """
+    try:
+        logger.info(f"Executing custom tool: ${tool.name}")
+        
+        # TODO: Implement custom tool logic here
+        # This is a placeholder implementation
+        result = f"Tool ${tool.name} executed with parameters: {locals()}"
+        
+        return result
+    except Exception as e:
+        logger.error(f"Error in custom tool ${tool.name}: {str(e)}")
+        raise`;
 }
 
 function generateAgentClass(name: string, model: string, systemPrompt: string, tools: any[]): string {
@@ -1248,16 +1288,16 @@ docker build -t ${agentName.toLowerCase().replace(/[^a-z0-9]/g, '-')} .
 # Using AWS credentials
 docker run -p 8000:8000 \\
   -e AWS_REGION=us-east-1 \\
-  -e AWS_ACCESS_KEY_ID=\$AWS_ACCESS_KEY_ID \\
-  -e AWS_SECRET_ACCESS_KEY=\$AWS_SECRET_ACCESS_KEY \\
+  -e AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID \\
+  -e AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY \\
   ${agentName.toLowerCase().replace(/[^a-z0-9]/g, '-')}
 
 # Optional: Add LangSmith monitoring
 docker run -p 8000:8000 \\
   -e AWS_REGION=us-east-1 \\
-  -e AWS_ACCESS_KEY_ID=\$AWS_ACCESS_KEY_ID \\
-  -e AWS_SECRET_ACCESS_KEY=\$AWS_SECRET_ACCESS_KEY \\
-  -e LANGSMITH_API_KEY=\$LANGSMITH_API_KEY \\
+  -e AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID \\
+  -e AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY \\
+  -e LANGSMITH_API_KEY=$LANGSMITH_API_KEY \\
   ${agentName.toLowerCase().replace(/[^a-z0-9]/g, '-')}
 \`\`\`
 
