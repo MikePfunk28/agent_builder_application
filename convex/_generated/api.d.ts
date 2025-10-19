@@ -21,6 +21,7 @@ import type * as awsFederatedIdentity from "../awsFederatedIdentity.js";
 import type * as cdkGenerator from "../cdkGenerator.js";
 import type * as cloudFormationGenerator from "../cloudFormationGenerator.js";
 import type * as codeGenerator from "../codeGenerator.js";
+import type * as constants from "../constants.js";
 import type * as containerOrchestrator from "../containerOrchestrator.js";
 import type * as crons from "../crons.js";
 import type * as debuggingAgent from "../debuggingAgent.js";
@@ -28,6 +29,7 @@ import type * as deploymentPackageGenerator from "../deploymentPackageGenerator.
 import type * as deploymentRouter from "../deploymentRouter.js";
 import type * as deployments from "../deployments.js";
 import type * as dockerService from "../dockerService.js";
+import type * as envValidator from "../envValidator.js";
 import type * as errorLogging from "../errorLogging.js";
 import type * as http from "../http.js";
 import type * as lib_aws_cloudwatchClient from "../lib/aws/cloudwatchClient.js";
@@ -37,6 +39,7 @@ import type * as lib_stateValidation from "../lib/stateValidation.js";
 import type * as maintenance from "../maintenance.js";
 import type * as mcpClient from "../mcpClient.js";
 import type * as mcpConfig from "../mcpConfig.js";
+import type * as metaTooling from "../metaTooling.js";
 import type * as modelRegistry from "../modelRegistry.js";
 import type * as packageMutations from "../packageMutations.js";
 import type * as queueProcessor from "../queueProcessor.js";
@@ -75,6 +78,7 @@ declare const fullApi: ApiFromModules<{
   cdkGenerator: typeof cdkGenerator;
   cloudFormationGenerator: typeof cloudFormationGenerator;
   codeGenerator: typeof codeGenerator;
+  constants: typeof constants;
   containerOrchestrator: typeof containerOrchestrator;
   crons: typeof crons;
   debuggingAgent: typeof debuggingAgent;
@@ -82,6 +86,7 @@ declare const fullApi: ApiFromModules<{
   deploymentRouter: typeof deploymentRouter;
   deployments: typeof deployments;
   dockerService: typeof dockerService;
+  envValidator: typeof envValidator;
   errorLogging: typeof errorLogging;
   http: typeof http;
   "lib/aws/cloudwatchClient": typeof lib_aws_cloudwatchClient;
@@ -91,6 +96,7 @@ declare const fullApi: ApiFromModules<{
   maintenance: typeof maintenance;
   mcpClient: typeof mcpClient;
   mcpConfig: typeof mcpConfig;
+  metaTooling: typeof metaTooling;
   modelRegistry: typeof modelRegistry;
   packageMutations: typeof packageMutations;
   queueProcessor: typeof queueProcessor;

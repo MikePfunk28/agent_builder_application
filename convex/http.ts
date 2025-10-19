@@ -2,6 +2,22 @@ import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
 import { auth } from "./auth";
 import { api } from "./_generated/api";
+import { validateEnvironment } from "./envValidator";
+
+// Validate environment variables at module load time
+// This ensures critical configuration is present before handling requests
+const envValidation = validateEnvironment();
+if (!envValidation.valid) {
+  console.error('❌ Environment validation failed:');
+  envValidation.missing.forEach(v => console.error(`  Missing: ${v}`));
+  // Note: We log but don't throw to allow development with minimal config
+  // Production deployments should set all required variables
+}
+
+if (envValidation.warnings.length > 0) {
+  console.warn('⚠️  Environment configuration warnings:');
+  envValidation.warnings.forEach(w => console.warn(`  ${w}`));
+}
 
 const http = httpRouter();
 

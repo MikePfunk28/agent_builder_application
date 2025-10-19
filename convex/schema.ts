@@ -93,7 +93,7 @@ const applicationTables = {
 
   // User Profiles with Tier Information
   users: defineTable({
-    userId: v.optional(v.string()), // From auth - optional for anonymous users
+    // DO NOT add userId field - use _id (Convex user document ID) instead
     email: v.optional(v.string()),
     name: v.optional(v.string()),
     image: v.optional(v.string()), // Profile picture URL
@@ -122,7 +122,6 @@ const applicationTables = {
     })),
     awsCredentialsUpdatedAt: v.optional(v.number()),
   })
-    .index("by_user_id", ["userId"])
     .index("by_tier", ["tier"])
     .index("by_email", ["email"])
     .index("by_auth_provider", ["authProvider"]),
@@ -185,6 +184,7 @@ const applicationTables = {
       baseUrl: v.optional(v.string()),
       modelId: v.optional(v.string()),
       region: v.optional(v.string()),
+      testEnvironment: v.optional(v.string()), // "docker" | "agentcore" | "fargate"
     }),
     timeout: v.number(),
     agentRuntimeArn: v.optional(v.string()), // For AgentCore testing
@@ -376,6 +376,49 @@ const applicationTables = {
     .index("by_event_type", ["eventType", "timestamp"])
     .index("by_user", ["userId", "timestamp"])
     .index("by_resource", ["resource", "resourceId"]),
+
+  // Dynamic Tools (Meta-tooling)
+  dynamicTools: defineTable({
+    // Identity
+    name: v.string(),
+    displayName: v.string(),
+    description: v.string(),
+    userId: v.id("users"),
+    agentId: v.optional(v.id("agents")), // Agent that created this tool
+    
+    // Tool Code
+    code: v.string(), // Python code with @tool decorator
+    validated: v.boolean(), // Whether code passed syntax validation
+    validationError: v.optional(v.string()),
+    
+    // Tool Metadata
+    parameters: v.any(), // JSON schema for tool parameters
+    returnType: v.optional(v.string()),
+    category: v.optional(v.string()),
+    
+    // Dependencies
+    pipPackages: v.optional(v.array(v.string())),
+    extrasPip: v.optional(v.string()),
+    
+    // Usage Tracking
+    invocationCount: v.number(),
+    lastInvokedAt: v.optional(v.number()),
+    successCount: v.number(),
+    errorCount: v.number(),
+    
+    // Timestamps
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    
+    // Status
+    isActive: v.boolean(),
+    isPublic: v.optional(v.boolean()),
+  })
+    .index("by_user", ["userId", "createdAt"])
+    .index("by_agent", ["agentId"])
+    .index("by_name", ["name"])
+    .index("by_active", ["isActive"])
+    .index("by_public", ["isPublic"]),
 
 };
 

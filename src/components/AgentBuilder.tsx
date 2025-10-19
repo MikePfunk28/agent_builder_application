@@ -11,7 +11,6 @@ import {
   Rocket,
   ChevronRight,
   ChevronLeft,
-  Plus,
   Trash2,
   Copy,
   Download,
@@ -89,62 +88,66 @@ export function AgentBuilder() {
     }
   };
 
-  const handleGenerate = async () => {
+  const handleGenerate = () => {
     if (!config.name || !config.systemPrompt) {
       toast.error("Please fill in all required fields");
       return;
     }
 
     setIsGenerating(true);
-    try {
-      const result = await generateAgent({
-        name: config.name,
-        model: config.model,
-        systemPrompt: config.systemPrompt,
-        tools: config.tools,
-        deploymentType: config.deploymentType,
-      });
+    void (async () => {
+      try {
+        const result = await generateAgent({
+          name: config.name,
+          model: config.model,
+          systemPrompt: config.systemPrompt,
+          tools: config.tools,
+          deploymentType: config.deploymentType,
+        });
 
-      setGeneratedCode(result.generatedCode);
-      setDockerConfig(""); // Docker config not returned by generator
-      setRequirementsTxt(result.requirementsTxt || "");
-      toast.success("Agent generated successfully!");
-    } catch (error) {
-      toast.error("Failed to generate agent");
-      console.error(error);
-    } finally {
-      setIsGenerating(false);
-    }
+        setGeneratedCode(result.generatedCode);
+        setDockerConfig(""); // Docker config not returned by generator
+        setRequirementsTxt(result.requirementsTxt || "");
+        toast.success("Agent generated successfully!");
+      } catch (error) {
+        toast.error("Failed to generate agent");
+        console.error(error);
+      } finally {
+        setIsGenerating(false);
+      }
+    })();
   };
 
-  const handleSave = async () => {
+  const handleSave = () => {
     if (!generatedCode) {
       toast.error("Please generate the agent first");
       return;
     }
 
-    try {
-      const agentId = await createAgent({
-        name: config.name,
-        description: config.description,
-        model: config.model,
-        systemPrompt: config.systemPrompt,
-        tools: config.tools,
-        generatedCode,
-        dockerConfig,
-        deploymentType: config.deploymentType,
-        isPublic: false,
-        exposableAsMCPTool: config.exposableAsMCPTool,
-        mcpToolName: config.mcpToolName,
-        mcpInputSchema: config.mcpInputSchema,
-      });
+    void (async () => {
+      try {
+        const agentId = await createAgent({
+          name: config.name,
+          description: config.description,
+          model: config.model,
+          systemPrompt: config.systemPrompt,
+          tools: config.tools,
+          generatedCode,
+          dockerConfig,
+          deploymentType: config.deploymentType,
+          isPublic: false,
+          exposableAsMCPTool: config.exposableAsMCPTool,
+          mcpToolName: config.mcpToolName,
+          mcpInputSchema: config.mcpInputSchema,
+        });
 
-      setSavedAgentId(agentId);
-      toast.success("Agent saved successfully!");
-    } catch (error) {
-      toast.error("Failed to save agent");
-      console.error(error);
-    }
+        setSavedAgentId(agentId);
+        toast.success("Agent saved successfully!");
+      } catch (error) {
+        toast.error("Failed to save agent");
+        console.error(error);
+      }
+    })();
   };
 
   const handleDownload = () => {
@@ -231,6 +234,7 @@ export function AgentBuilder() {
                 dockerConfig={dockerConfig}
                 requirementsTxt={requirementsTxt}
                 isGenerating={isGenerating}
+                savedAgentId={savedAgentId}
                 onGenerate={handleGenerate}
                 onSave={handleSave}
                 onDownload={handleDownload}
@@ -385,7 +389,8 @@ function DeployStep({
   generatedCode, 
   dockerConfig,
   requirementsTxt, 
-  isGenerating, 
+  isGenerating,
+  savedAgentId,
   onGenerate, 
   onSave, 
   onDownload 
@@ -396,10 +401,23 @@ function DeployStep({
   dockerConfig: string;
   requirementsTxt: string;
   isGenerating: boolean;
+  savedAgentId: Id<"agents"> | null;
   onGenerate: () => void;
   onSave: () => void;
   onDownload: () => void;
 }) {
+  const [showAWSDeployment, setShowAWSDeployment] = useState(false);
+  const [deploymentConfig, setDeploymentConfig] = useState({
+    region: 'us-east-1',
+    agentName: config.name.replace(/[^a-zA-Z0-9-]/g, '-').toLowerCase() || 'my-agent',
+    description: config.description || '',
+    enableMonitoring: true,
+    enableAutoScaling: true,
+  });
+  const [isDeploying, setIsDeploying] = useState(false);
+
+  const deployToAWS = useMutation(api.awsDeployment.deployToAWS as any);
+
   const handleMCPConfigChange = (mcpConfig: {
     exposableAsMCPTool: boolean;
     mcpToolName?: string;
@@ -411,6 +429,43 @@ function DeployStep({
       mcpToolName: mcpConfig.mcpToolName,
       mcpInputSchema: mcpConfig.mcpInputSchema,
     });
+  };
+
+  const handleDeployToAWS = () => {
+    if (!savedAgentId) {
+      toast.error("Please save the agent first");
+      return;
+    }
+
+    setIsDeploying(true);
+    void (async () => {
+      try {
+        await deployToAWS({
+          agentId: savedAgentId,
+          deploymentConfig,
+        });
+        toast.success("Deployment started successfully!");
+      } catch (error: any) {
+        console.error("Deployment failed:", error);
+        toast.error(error.message || "Deployment failed");
+      } finally {
+        setIsDeploying(false);
+      }
+    })();
+  };
+
+  const regions = [
+    { value: 'us-east-1', label: 'US East (N. Virginia)' },
+    { value: 'us-west-2', label: 'US West (Oregon)' },
+    { value: 'eu-central-1', label: 'Europe (Frankfurt)' },
+    { value: 'ap-southeast-2', label: 'Asia Pacific (Sydney)' },
+  ];
+
+  // Calculate estimated cost based on deployment type and tools
+  const calculateEstimatedCost = () => {
+    const baseCost = config.deploymentType === 'aws' ? 0.10 : 0.05;
+    const toolCost = config.tools.length * 0.02;
+    return (baseCost + toolCost).toFixed(2);
   };
 
   return (
@@ -432,6 +487,69 @@ function DeployStep({
           <option value="local">Local Development</option>
         </select>
       </div>
+
+      {/* Architecture Preview */}
+      {generatedCode && (
+        <div className="bg-gray-900/30 border border-green-900/30 rounded-lg p-4">
+          <h3 className="text-lg font-medium text-green-400 mb-3 flex items-center gap-2">
+            <Network className="w-5 h-5" />
+            Architecture Overview
+          </h3>
+          <div className="space-y-3 text-sm">
+            <div className="flex justify-between items-center">
+              <span className="text-green-300">Model:</span>
+              <span className="text-green-400 font-mono">{config.model}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-green-300">Tools:</span>
+              <span className="text-green-400">{config.tools.length} configured</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-green-300">Deployment:</span>
+              <span className="text-green-400 capitalize">{config.deploymentType}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-green-300">Estimated Cost:</span>
+              <span className="text-yellow-400 font-medium">${calculateEstimatedCost()}/hour</span>
+            </div>
+          </div>
+          
+          {/* Tool Dependencies */}
+          {config.tools.length > 0 && (
+            <div className="mt-4 pt-4 border-t border-green-900/30">
+              <h4 className="text-sm font-medium text-green-400 mb-2">Tool Dependencies</h4>
+              <div className="space-y-2">
+                {config.tools.map((tool, idx) => (
+                  <div key={idx} className="flex items-start gap-2 text-xs">
+                    <div className="w-2 h-2 rounded-full bg-green-500 mt-1" />
+                    <div>
+                      <div className="text-green-300 font-medium">{tool.name}</div>
+                      {tool.pipPackages && tool.pipPackages.length > 0 && (
+                        <div className="text-green-600">
+                          Requires: {tool.pipPackages.join(", ")}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* AWS Resources */}
+          {config.deploymentType === 'aws' && (
+            <div className="mt-4 pt-4 border-t border-green-900/30">
+              <h4 className="text-sm font-medium text-green-400 mb-2">AWS Resources Required</h4>
+              <div className="space-y-1 text-xs text-green-300">
+                <div>• AWS Bedrock AgentCore Sandbox</div>
+                <div>• CloudWatch Logs</div>
+                <div>• IAM Role for execution</div>
+                {config.tools.length > 0 && <div>• Lambda functions for tools</div>}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* MCP Tool Configuration */}
       <AgentMCPConfig
@@ -481,9 +599,135 @@ function DeployStep({
               <Download className="w-4 h-4" />
               Download
             </button>
+
+            {config.deploymentType === 'aws' && (
+              <button
+                onClick={() => setShowAWSDeployment(!showAWSDeployment)}
+                className="flex items-center gap-2 px-6 py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
+              >
+                <Rocket className="w-4 h-4" />
+                {showAWSDeployment ? 'Hide' : 'Deploy to AWS'}
+              </button>
+            )}
           </>
         )}
       </div>
+
+      {/* AWS Deployment Panel */}
+      {showAWSDeployment && generatedCode && config.deploymentType === 'aws' && (
+        <div className="bg-gray-900/30 border border-orange-900/30 rounded-lg p-6">
+          <h3 className="text-xl font-bold text-orange-400 mb-4">Deploy to AWS AgentCore</h3>
+          
+          <div className="space-y-4">
+            {/* Agent Name */}
+            <div>
+              <label className="block text-sm font-medium text-green-400 mb-2">
+                Agent Name
+              </label>
+              <input
+                type="text"
+                value={deploymentConfig.agentName}
+                onChange={(e) => setDeploymentConfig(prev => ({ ...prev, agentName: e.target.value }))}
+                className="w-full px-4 py-3 bg-black border border-green-900/30 rounded-lg text-green-400 focus:border-green-400 focus:ring-1 focus:ring-green-400 outline-none transition-colors"
+                placeholder="my-agent"
+              />
+              <p className="text-xs text-green-600 mt-1">
+                Must be lowercase, alphanumeric with hyphens only
+              </p>
+            </div>
+
+            {/* Region */}
+            <div>
+              <label className="block text-sm font-medium text-green-400 mb-2">
+                AWS Region
+              </label>
+              <select
+                value={deploymentConfig.region}
+                onChange={(e) => setDeploymentConfig(prev => ({ ...prev, region: e.target.value }))}
+                className="w-full px-4 py-3 bg-black border border-green-900/30 rounded-lg text-green-400 focus:border-green-400 focus:ring-1 focus:ring-green-400 outline-none transition-colors"
+              >
+                {regions.map(region => (
+                  <option key={region.value} value={region.value}>
+                    {region.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Description */}
+            <div>
+              <label className="block text-sm font-medium text-green-400 mb-2">
+                Description (Optional)
+              </label>
+              <textarea
+                value={deploymentConfig.description}
+                onChange={(e) => setDeploymentConfig(prev => ({ ...prev, description: e.target.value }))}
+                rows={2}
+                className="w-full px-4 py-3 bg-black border border-green-900/30 rounded-lg text-green-400 placeholder-green-600 focus:border-green-400 focus:ring-1 focus:ring-green-400 outline-none transition-colors resize-none"
+                placeholder="Describe what this agent does..."
+              />
+            </div>
+
+            {/* Options */}
+            <div className="space-y-2">
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={deploymentConfig.enableMonitoring}
+                  onChange={(e) => setDeploymentConfig(prev => ({ ...prev, enableMonitoring: e.target.checked }))}
+                  className="rounded border-green-900/30 text-green-600 focus:ring-green-400 bg-black"
+                />
+                <span className="ml-2 text-sm text-green-300">Enable monitoring and logging</span>
+              </label>
+              
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={deploymentConfig.enableAutoScaling}
+                  onChange={(e) => setDeploymentConfig(prev => ({ ...prev, enableAutoScaling: e.target.checked }))}
+                  className="rounded border-green-900/30 text-green-600 focus:ring-green-400 bg-black"
+                />
+                <span className="ml-2 text-sm text-green-300">Enable auto-scaling</span>
+              </label>
+            </div>
+
+            {/* Deploy Button */}
+            <button
+              onClick={handleDeployToAWS}
+              disabled={isDeploying || !deploymentConfig.agentName}
+              className="w-full bg-orange-600 hover:bg-orange-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-medium py-3 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center"
+            >
+              {isDeploying ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Deploying to AWS...
+                </>
+              ) : (
+                <>
+                  <Rocket className="w-4 h-4 mr-2" />
+                  Deploy to AWS AgentCore
+                </>
+              )}
+            </button>
+
+            {/* Cost Estimate */}
+            <div className="bg-blue-900/20 border border-blue-600/30 rounded-lg p-4">
+              <div className="flex items-start gap-3">
+                <div className="w-5 h-5 text-blue-400 mt-0.5">💰</div>
+                <div>
+                  <h4 className="text-sm font-medium text-blue-400">Estimated Cost</h4>
+                  <p className="text-sm text-blue-300 mt-1">
+                    ~${calculateEstimatedCost()}/hour when active + model usage costs
+                  </p>
+                  <p className="text-xs text-blue-400 mt-1">
+                    You only pay when your agent is processing requests
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {generatedCode && (
         <CodePreview 

@@ -1,9 +1,11 @@
+import { DEPLOYMENT_URLS } from "./constants";
+
 export default {
   providers: [
     {
       // IMPORTANT: Must match production Convex site URL for OAuth callbacks
-      // Production: https://resolute-kudu-325.convex.site
-      domain: process.env.CONVEX_SITE_URL || "https://resolute-kudu-325.convex.site",
+      // Uses centralized deployment URL constant
+      domain: DEPLOYMENT_URLS.PRODUCTION,
       applicationID: "convex",
     },
     // AWS Cognito - Custom OIDC Provider

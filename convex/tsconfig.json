@@ -11,6 +11,7 @@
     "jsx": "react-jsx",
     "skipLibCheck": true,
     "allowSyntheticDefaultImports": true,
+    "types": ["vitest/globals", "vite/client"],
 
     /* These compiler options are required by Convex */
     "target": "ESNext",
@@ -21,5 +22,5 @@
     "noEmit": true
   },
   "include": ["./**/*"],
-  "exclude": ["./_generated", "./**/*.test.ts"]
+  "exclude": ["./_generated"]
 }

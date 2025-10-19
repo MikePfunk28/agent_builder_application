@@ -80,17 +80,11 @@ export const connectAWSAccount = mutation({
     });
 
     // Upgrade user to Tier 2
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_user_id", (q) => q.eq("userId", userId))
-      .first();
-
-    if (user) {
-      await ctx.db.patch(user._id, {
-        tier: "personal",
-        upgradedAt: Date.now(),
-      });
-    }
+    // userId from getAuthUserId() is already the Convex user document ID
+    await ctx.db.patch(userId, {
+      tier: "personal",
+      upgradedAt: Date.now(),
+    });
 
     return {
       success: true,
@@ -148,16 +142,10 @@ export const disconnectAWSAccount = mutation({
     });
 
     // Downgrade user to Tier 1
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_user_id", (q) => q.eq("userId", userId))
-      .first();
-
-    if (user) {
-      await ctx.db.patch(user._id, {
-        tier: "freemium",
-      });
-    }
+    // userId from getAuthUserId() is already the Convex user document ID
+    await ctx.db.patch(userId, {
+      tier: "freemium",
+    });
 
     return { success: true };
   },

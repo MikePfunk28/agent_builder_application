@@ -4,12 +4,32 @@ import { api } from "./_generated/api";
 
 /**
  * MCP Client for invoking tools from configured MCP servers
- * 
+ *
  * This module provides a wrapper for communicating with MCP servers
  * using the Model Context Protocol. It handles connection management,
  * error handling, and retry logic.
  */
 
+/**
+ * MCP Tool Invocation Result using discriminated unions for type safety
+ *
+ * Success case always includes result and executionTime
+ * Failure case always includes error message
+ */
+export type MCPToolResult =
+  | {
+      success: true;
+      result: any;
+      executionTime: number;
+    }
+  | {
+      success: false;
+      error: string;
+    };
+
+/**
+ * @deprecated Use MCPToolResult instead
+ */
 interface MCPToolInvocationResult {
   success: boolean;
   result?: any;
@@ -181,10 +201,19 @@ export const invokeMCPTool = action({
         });
       }
 
-      return {
-        ...result,
-        executionTime,
-      };
+      // Return properly typed result with discriminated union
+      if (result.success) {
+        return {
+          success: true,
+          result: result.result,
+          executionTime,
+        };
+      } else {
+        return {
+          success: false,
+          error: result.error,
+        };
+      }
     } catch (error: any) {
       const executionTime = Date.now() - startTime;
       

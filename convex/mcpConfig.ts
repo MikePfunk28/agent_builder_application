@@ -1,6 +1,7 @@
 import { mutation, query, action } from "./_generated/server";
 import { v } from "convex/values";
 import { api } from "./_generated/api";
+import { getAuthUserId } from "@convex-dev/auth/server";
 
 /**
  * MCP Configuration Management
@@ -20,27 +21,17 @@ import { api } from "./_generated/api";
 export const listMCPServers = query({
   args: {},
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
+    const userId = await getAuthUserId(ctx);
     
     // Return empty array if not authenticated (instead of throwing error)
-    if (!identity) {
-      return [];
-    }
-
-    // Get user from auth
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_user_id", (q) => q.eq("userId", identity.subject))
-      .first();
-
-    if (!user) {
+    if (!userId) {
       return [];
     }
 
     // Get all MCP servers for this user
     const servers = await ctx.db
       .query("mcpServers")
-      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .withIndex("by_user", (q) => q.eq("userId", userId))
       .collect();
 
     return servers;
@@ -55,27 +46,17 @@ export const getMCPServerByName = query({
     serverName: v.string(),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
+    const userId = await getAuthUserId(ctx);
     
-    if (!identity) {
+    if (!userId) {
       throw new Error("Not authenticated");
-    }
-
-    // Get user from auth
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_user_id", (q) => q.eq("userId", identity.subject))
-      .first();
-
-    if (!user) {
-      throw new Error("User not found");
     }
 
     // Get server by name for this user
     const server = await ctx.db
       .query("mcpServers")
       .withIndex("by_user_and_name", (q) => 
-        q.eq("userId", user._id).eq("name", args.serverName)
+        q.eq("userId", userId).eq("name", args.serverName)
       )
       .first();
 
@@ -96,27 +77,17 @@ export const addMCPServer = mutation({
     timeout: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
+    const userId = await getAuthUserId(ctx);
     
-    if (!identity) {
+    if (!userId) {
       throw new Error("Not authenticated");
-    }
-
-    // Get user from auth
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_user_id", (q) => q.eq("userId", identity.subject))
-      .first();
-
-    if (!user) {
-      throw new Error("User not found");
     }
 
     // Check if server with this name already exists for this user
     const existingServer = await ctx.db
       .query("mcpServers")
       .withIndex("by_user_and_name", (q) => 
-        q.eq("userId", user._id).eq("name", args.name)
+        q.eq("userId", userId).eq("name", args.name)
       )
       .first();
 
@@ -134,7 +105,7 @@ export const addMCPServer = mutation({
     // Create new MCP server
     const serverId = await ctx.db.insert("mcpServers", {
       name: args.name,
-      userId: user._id,
+      userId,
       command: args.command,
       args: args.args,
       env: args.env,
@@ -165,20 +136,10 @@ export const updateMCPServer = mutation({
     }),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
+    const userId = await getAuthUserId(ctx);
     
-    if (!identity) {
+    if (!userId) {
       throw new Error("Not authenticated");
-    }
-
-    // Get user from auth
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_user_id", (q) => q.eq("userId", identity.subject))
-      .first();
-
-    if (!user) {
-      throw new Error("User not found");
     }
 
     // Get the server
@@ -189,7 +150,7 @@ export const updateMCPServer = mutation({
     }
 
     // Verify ownership
-    if (server.userId !== user._id) {
+    if (server.userId !== userId) {
       throw new Error("Not authorized to update this MCP server");
     }
 
@@ -198,7 +159,7 @@ export const updateMCPServer = mutation({
       const existingServer = await ctx.db
         .query("mcpServers")
         .withIndex("by_user_and_name", (q) => 
-          q.eq("userId", user._id).eq("name", args.updates.name!)
+          q.eq("userId", userId).eq("name", args.updates.name!)
         )
         .first();
 
@@ -232,20 +193,10 @@ export const deleteMCPServer = mutation({
     serverId: v.id("mcpServers"),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
+    const userId = await getAuthUserId(ctx);
     
-    if (!identity) {
+    if (!userId) {
       throw new Error("Not authenticated");
-    }
-
-    // Get user from auth
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_user_id", (q) => q.eq("userId", identity.subject))
-      .first();
-
-    if (!user) {
-      throw new Error("User not found");
     }
 
     // Get the server
@@ -256,7 +207,7 @@ export const deleteMCPServer = mutation({
     }
 
     // Verify ownership
-    if (server.userId !== user._id) {
+    if (server.userId !== userId) {
       throw new Error("Not authorized to delete this MCP server");
     }
 
@@ -357,20 +308,10 @@ export const getMCPServerById = query({
     serverId: v.id("mcpServers"),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
+    const userId = await getAuthUserId(ctx);
     
-    if (!identity) {
+    if (!userId) {
       throw new Error("Not authenticated");
-    }
-
-    // Get user from auth
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_user_id", (q) => q.eq("userId", identity.subject))
-      .first();
-
-    if (!user) {
-      throw new Error("User not found");
     }
 
     const server = await ctx.db.get(args.serverId);
@@ -380,7 +321,7 @@ export const getMCPServerById = query({
     }
 
     // Verify ownership
-    if (server.userId !== user._id) {
+    if (server.userId !== userId) {
       throw new Error("Not authorized to access this MCP server");
     }
 

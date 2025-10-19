@@ -829,8 +829,12 @@ describe("MCP Server Integration", () => {
       });
 
       expect(result).toBeDefined();
-      if ('executionTime' in result) {
+
+      // Discriminated union: success determines which fields are available
+      if (result.success) {
         expect(result.executionTime).toBeDefined();
+      } else {
+        expect(result.error).toBeDefined();
       }
     });
   });
@@ -1702,22 +1706,63 @@ describe("Deployment Integration Tests", () => {
       const t = convexTest(schema, modules);
       // No identity set
 
-      // Try to deploy
-      try {
-        await t.action(api.deploymentRouter.deployAgent, {
-          agentId: testAgentId,
+      // Create a test agent for this test
+      const testUserId = await t.run(async (ctx) => {
+        return await ctx.db.insert("users", {
+          userId: "test-user-unauth",
+          email: "unauth@example.com",
+          name: "Unauth Test User",
+          tier: "personal",
+          createdAt: Date.now(),
         });
-        // Should throw
-        expect(true).toBe(false); // Should not reach here
-      } catch (error: any) {
-        expect(error).toBeDefined();
-        expect(error.message).toContain("authenticated");
-      }
+      });
+
+      const testAgentId = await t.run(async (ctx) => {
+        return await ctx.db.insert("agents", {
+          createdBy: testUserId,
+          name: "Test Agent",
+          model: "gpt-4",
+          systemPrompt: "Test",
+          tools: [],
+          generatedCode: "# Test",
+          deploymentType: "aws",
+        });
+      });
+
+      // Try to deploy without authentication
+      await expect(
+        t.action(api.deploymentRouter.deployAgent, {
+          agentId: testAgentId,
+        })
+      ).rejects.toThrow(/authenticated/);
     });
 
     test("should handle AgentCore sandbox creation failure", async () => {
       const t = convexTest(schema, modules);
       t.withIdentity({ subject: "test-user-errors" });
+
+      // Create test user and agent
+      const testUserId = await t.run(async (ctx) => {
+        return await ctx.db.insert("users", {
+          userId: "test-user-errors",
+          email: "errors@example.com",
+          name: "Errors Test User",
+          tier: "personal",
+          createdAt: Date.now(),
+        });
+      });
+
+      const testAgentId = await t.run(async (ctx) => {
+        return await ctx.db.insert("agents", {
+          createdBy: testUserId,
+          name: "Test Agent",
+          model: "gpt-4",
+          systemPrompt: "Test",
+          tools: [],
+          generatedCode: "# Test",
+          deploymentType: "aws",
+        });
+      });
 
       // Deploy (will fail because MCP not available)
       const result = await t.action(api.agentcoreDeployment.deployToAgentCore, {
@@ -1858,6 +1903,30 @@ describe("Deployment Integration Tests", () => {
 
     test("should update deployment health status", async () => {
       const t = convexTest(schema, modules);
+
+      // Create user and agent for this test
+      const testUserId = await t.run(async (ctx) => {
+        return await ctx.db.insert("users", {
+          userId: "test-user-history",
+          email: "history@example.com",
+          name: "History User",
+          tier: "freemium",
+          createdAt: Date.now(),
+        });
+      });
+
+      const testAgentId = await t.run(async (ctx) => {
+        return await ctx.db.insert("agents", {
+          createdBy: testUserId,
+          name: "History Agent",
+          model: "gpt-4",
+          systemPrompt: "Test",
+          tools: [],
+          generatedCode: "# Test",
+          deploymentType: "aws",
+        });
+      });
+
       t.withIdentity({ subject: "test-user-history" });
 
       // Create deployment
@@ -1961,6 +2030,573 @@ describe("Deployment Integration Tests", () => {
       });
 
       expect(user?.testsThisMonth).toBe(50);
+    });
+  });
+});
+
+
+import {
+  TEST_CONSTANTS,
+  createTestUser,
+  generateTestAgent,
+  createAgent,
+  getAgent,
+  TestFixtures,
+  assertAgentHasDecorator,
+  assertCodeHasPreprocessing,
+  assertCodeHasPostprocessing,
+  assertCodeHasToolDecorator,
+  assertRequirementsContains,
+} from "./testHelpers.test";
+
+describe("Agent Builder Flow Tests", () => {
+  let testUserId: any;
+
+  beforeEach(async () => {
+    const t = convexTest(schema, modules);
+    testUserId = await createTestUser(t, TEST_CONSTANTS.USERS.AGENT_BUILDER, {
+      email: "agent-builder@example.com",
+      name: "Agent Builder Test User",
+    });
+  });
+
+  describe("Agent Creation via agents.create Mutation", () => {
+    test("should create agent with valid configuration", async () => {
+      const t = convexTest(schema, modules);
+      t.withIdentity({ subject: TEST_CONSTANTS.USERS.AGENT_BUILDER });
+
+      const config = TestFixtures.createBasicAgent({
+        name: "TestAgent",
+        tools: [TEST_CONSTANTS.TOOLS.SEARCH],
+        deploymentType: "aws",
+      });
+
+      const codeResult = await generateTestAgent(t, config);
+      expect(codeResult).toBeDefined();
+      expect(codeResult.generatedCode).toBeDefined();
+      expect(codeResult.requirementsTxt).toBeDefined();
+
+      const agentId = await createAgent(t, {
+        ...config,
+        description: "Test agent for builder flow",
+        generatedCode: codeResult.generatedCode,
+      });
+
+      expect(agentId).toBeDefined();
+
+      const agent = await getAgent(t, agentId);
+      expect(agent).toBeDefined();
+      expect(agent?.name).toBe("TestAgent");
+      expect(agent?.model).toBe(TEST_CONSTANTS.MODELS.CLAUDE_SONNET);
+      expect(agent?.createdBy).toBe(testUserId);
+    });
+
+    test("should reject agent creation without authentication", async () => {
+      const t = convexTest(schema, modules);
+      // No identity set
+
+      await expect(
+        t.mutation(api.agents.create, {
+          name: "UnauthorizedAgent",
+          model: TEST_CONSTANTS.MODELS.GPT_4,
+          systemPrompt: "Test",
+          tools: [],
+          generatedCode: "# Test",
+          deploymentType: "local",
+        })
+      ).rejects.toThrow(/authenticated/);
+    });
+
+    test("should create agent with multiple tools", async () => {
+      const t = convexTest(schema, modules);
+      t.withIdentity({ subject: TEST_CONSTANTS.USERS.AGENT_BUILDER });
+
+      const config = TestFixtures.createMultiToolAgent({
+        systemPrompt: "Agent with multiple tools",
+      });
+
+      const codeResult = await generateTestAgent(t, config);
+      const agentId = await createAgent(t, {
+        ...config,
+        description: "Agent with multiple tools",
+        generatedCode: codeResult.generatedCode,
+      });
+
+      const agent = await getAgent(t, agentId);
+      expect(agent?.tools).toHaveLength(3);
+      expect(agent?.tools.map((t: any) => t.name)).toContain("search");
+      expect(agent?.tools.map((t: any) => t.name)).toContain("calculator");
+      expect(agent?.tools.map((t: any) => t.name)).toContain("file_read");
+    });
+
+    test("should create agent with custom tool requiring pip packages", async () => {
+      const t = convexTest(schema, modules);
+      t.withIdentity({ subject: TEST_CONSTANTS.USERS.AGENT_BUILDER });
+
+      const customTool = {
+        name: "CustomDataProcessor",
+        type: "custom_data_processor",
+        config: {
+          description: "Processes data with pandas",
+          parameters: [
+            { name: "data", type: "str", description: "Input data", required: true },
+          ],
+        },
+        requiresPip: true,
+        pipPackages: ["pandas>=2.0.0", "numpy>=1.24.0"],
+      };
+
+      const config = TestFixtures.createCustomToolAgent(customTool, {
+        systemPrompt: "Agent with custom tool",
+      });
+
+      const codeResult = await generateTestAgent(t, config);
+      assertRequirementsContains(codeResult.requirementsTxt, [
+        "pandas>=2.0.0",
+        "numpy>=1.24.0",
+      ]);
+
+      const agentId = await createAgent(t, {
+        ...config,
+        generatedCode: codeResult.generatedCode,
+      });
+
+      const agent = await getAgent(t, agentId);
+      expect(agent?.tools[0].pipPackages).toContain("pandas>=2.0.0");
+    });
+  });
+
+  describe("@agent Decorator Verification", () => {
+    test("should verify @agent decorator in generated code", async () => {
+      const t = convexTest(schema, modules);
+      t.withIdentity({ subject: TEST_CONSTANTS.USERS.AGENT_BUILDER });
+
+      const config = TestFixtures.createBasicAgent({
+        name: "DecoratorTestAgent",
+        systemPrompt: "Test decorator",
+      });
+
+      const codeResult = await generateTestAgent(t, config);
+      const code = codeResult.generatedCode;
+
+      assertAgentHasDecorator(code, TEST_CONSTANTS.MODELS.CLAUDE_SONNET, "Test decorator");
+    });
+
+    test("should verify preprocessing hook in @agent decorator", async () => {
+      const t = convexTest(schema, modules);
+
+      const config = TestFixtures.createBasicAgent({
+        name: "PreprocessAgent",
+        systemPrompt: "Test preprocessing",
+      });
+
+      const codeResult = await generateTestAgent(t, config);
+      assertCodeHasPreprocessing(codeResult.generatedCode);
+      expect(codeResult.generatedCode).toContain("logger.info(f\"Pre-processing message:");
+    });
+
+    test("should verify postprocessing hook in @agent decorator", async () => {
+      const t = convexTest(schema, modules);
+
+      const config = TestFixtures.createBasicAgent({
+        name: "PostprocessAgent",
+        systemPrompt: "Test postprocessing",
+      });
+
+      const codeResult = await generateTestAgent(t, config);
+      assertCodeHasPostprocessing(codeResult.generatedCode);
+      expect(codeResult.generatedCode).toContain("logger.info(f\"Post-processing response:");
+    });
+
+    test("should verify tools are included in @agent decorator", async () => {
+      const t = convexTest(schema, modules);
+
+      const config = TestFixtures.createBasicAgent({
+        name: "ToolsDecoratorAgent",
+        systemPrompt: "Test tools in decorator",
+        tools: [TEST_CONSTANTS.TOOLS.SEARCH, TEST_CONSTANTS.TOOLS.CALCULATOR],
+      });
+
+      const codeResult = await generateTestAgent(t, config);
+      expect(codeResult.generatedCode).toContain("tools=[search, calculator]");
+    });
+
+    test("should verify memory and reasoning configuration in @agent decorator", async () => {
+      const t = convexTest(schema, modules);
+
+      const config = TestFixtures.createBasicAgent({
+        name: "MemoryAgent",
+        systemPrompt: "Test memory",
+      });
+
+      const codeResult = await generateTestAgent(t, config);
+      assertAgentHasDecorator(codeResult.generatedCode, TEST_CONSTANTS.MODELS.CLAUDE_SONNET);
+    });
+  });
+
+  describe("@tool Decorator Verification", () => {
+    test("should verify @tool decorator for custom tools", async () => {
+      const t = convexTest(schema, modules);
+
+      const customTool = TestFixtures.createCustomTool(
+        "CustomAnalyzer",
+        "Analyzes data",
+        [{ name: "data", type: "str", description: "Data to analyze", required: true }]
+      );
+
+      const config = TestFixtures.createCustomToolAgent(customTool, {
+        name: "ToolDecoratorAgent",
+        systemPrompt: "Test tool decorator",
+      });
+
+      const codeResult = await generateTestAgent(t, config);
+      assertCodeHasToolDecorator(codeResult.generatedCode, "CustomAnalyzer", "Analyzes data");
+    });
+
+    test("should verify tool parameter schema generation", async () => {
+      const t = convexTest(schema, modules);
+
+      const customTool = TestFixtures.createCustomTool(
+        "DataProcessor",
+        "Processes data",
+        [
+          { name: "input", type: "str", description: "Input data", required: true },
+          { name: "format", type: "str", description: "Output format", required: false },
+        ]
+      );
+
+      const config = TestFixtures.createCustomToolAgent(customTool, {
+        name: "SchemaAgent",
+        systemPrompt: "Test schema",
+      });
+
+      const codeResult = await generateTestAgent(t, config);
+      const code = codeResult.generatedCode;
+
+      expect(code).toContain('"input"');
+      expect(code).toContain('"type": "str"');
+      expect(code).toContain('"description": "Input data"');
+    });
+
+    test("should not generate @tool decorator for built-in tools", async () => {
+      const t = convexTest(schema, modules);
+
+      const config = TestFixtures.createBasicAgent({
+        name: "BuiltInAgent",
+        systemPrompt: "Test built-in tools",
+        tools: [TEST_CONSTANTS.TOOLS.SEARCH, TEST_CONSTANTS.TOOLS.CALCULATOR],
+      });
+
+      const codeResult = await generateTestAgent(t, config);
+      const code = codeResult.generatedCode;
+
+      // Verify built-in tools are imported, not defined with @tool
+      expect(code).toContain("from strandsagents.tools import (");
+      expect(code).toContain("search");
+      expect(code).toContain("calculator");
+
+      // Should not have custom @tool definitions for these
+      const toolDecorators = (code.match(/@tool\(/g) || []).length;
+      expect(toolDecorators).toBe(0);
+    });
+  });
+
+  describe("Requirements.txt Generation", () => {
+    test("should generate requirements.txt with base packages", async () => {
+      const t = convexTest(schema, modules);
+
+      const config = TestFixtures.createBasicAgent({
+        name: "RequirementsAgent",
+        systemPrompt: "Test requirements",
+      });
+
+      const codeResult = await generateTestAgent(t, config);
+      assertRequirementsContains(codeResult.requirementsTxt, [
+        "strands-agents>=1.0.0",
+        "strands-agents-tools>=1.0.0",
+        "opentelemetry-api>=1.0.0",
+        "opentelemetry-sdk>=1.0.0",
+      ]);
+    });
+
+    test("should include tool-specific packages in requirements", async () => {
+      const t = convexTest(schema, modules);
+
+      const config = TestFixtures.createBasicAgent({
+        name: "ToolPackagesAgent",
+        systemPrompt: "Test tool packages",
+        tools: [
+          { name: "Browser", type: "browser", config: {}, extrasPip: "browser" },
+          { name: "S3", type: "s3", config: {}, extrasPip: "aws" },
+        ],
+        deploymentType: "aws",
+      });
+
+      const codeResult = await generateTestAgent(t, config);
+      assertRequirementsContains(codeResult.requirementsTxt, [
+        "strands-agents-tools[browser]",
+        "strands-agents-tools[aws]",
+      ]);
+    });
+
+    test("should include custom pip packages from tools", async () => {
+      const t = convexTest(schema, modules);
+
+      const config = TestFixtures.createBasicAgent({
+        name: "CustomPackagesAgent",
+        systemPrompt: "Test custom packages",
+        tools: [
+          {
+            name: "CustomTool",
+            type: "custom",
+            config: {},
+            pipPackages: ["pandas>=2.0.0", "numpy>=1.24.0"],
+          },
+        ],
+      });
+
+      const codeResult = await generateTestAgent(t, config);
+      assertRequirementsContains(codeResult.requirementsTxt, [
+        "pandas>=2.0.0",
+        "numpy>=1.24.0",
+      ]);
+    });
+  });
+
+  describe("Environment Variable Inclusion", () => {
+    test("should include environment variables in container setup", async () => {
+      const t = convexTest(schema, modules);
+
+      const config = TestFixtures.createBasicAgent({
+        name: "EnvVarAgent",
+        systemPrompt: "Test env vars",
+        deploymentType: "docker",
+      });
+
+      const codeResult = await generateTestAgent(t, config);
+      const code = codeResult.generatedCode;
+
+      expect(code).toContain('"LOG_LEVEL": "INFO"');
+      expect(code).toContain('"AGENT_NAME": "EnvVarAgent"');
+    });
+
+    test("should include AWS environment variables for AWS deployment", async () => {
+      const t = convexTest(schema, modules);
+
+      const config = TestFixtures.createBasicAgent({
+        name: "AWSEnvAgent",
+        systemPrompt: "Test AWS env",
+        deploymentType: "aws",
+      });
+
+      const codeResult = await generateTestAgent(t, config);
+      const code = codeResult.generatedCode;
+
+      expect(code).toContain("import boto3");
+      expect(code).toContain("from botocore.config import Config");
+      expect(code).toContain('region_name=os.getenv("AWS_REGION"');
+    });
+  });
+
+  describe("Multiple Tool Combinations", () => {
+    test("should handle mix of built-in and custom tools", async () => {
+      const t = convexTest(schema, modules);
+
+      const customTool = TestFixtures.createCustomTool(
+        "CustomAnalyzer",
+        "Custom analysis tool",
+        [{ name: "data", type: "str", description: "Data", required: true }]
+      );
+
+      const config = TestFixtures.createBasicAgent({
+        name: "MixedToolsAgent",
+        systemPrompt: "Test mixed tools",
+        tools: [
+          TEST_CONSTANTS.TOOLS.SEARCH,
+          TEST_CONSTANTS.TOOLS.CALCULATOR,
+          customTool,
+        ],
+      });
+
+      const codeResult = await generateTestAgent(t, config);
+      const code = codeResult.generatedCode;
+
+      // Verify built-in tools are imported
+      expect(code).toContain("from strandsagents.tools import (");
+      expect(code).toContain("search");
+      expect(code).toContain("calculator");
+
+      // Verify custom tool has @tool decorator
+      assertCodeHasToolDecorator(code, "CustomAnalyzer");
+
+      // Verify all tools are in agent decorator
+      expect(code).toContain("tools=[search, calculator, custom_analyzer]");
+    });
+
+    test("should generate valid Python syntax for all tool combinations", async () => {
+      const t = convexTest(schema, modules);
+
+      const config = TestFixtures.createBasicAgent({
+        name: "MultiToolSyntaxAgent",
+        systemPrompt: "Test syntax",
+        tools: [
+          TEST_CONSTANTS.TOOLS.FILE_READ,
+          TEST_CONSTANTS.TOOLS.FILE_WRITE,
+          TEST_CONSTANTS.TOOLS.HTTP_REQUEST,
+          TEST_CONSTANTS.TOOLS.BROWSER,
+        ],
+      });
+
+      const codeResult = await generateTestAgent(t, config);
+      const code = codeResult.generatedCode;
+
+      // Basic syntax checks
+      expect(code).toContain("from strandsagents import agent, Agent, tool");
+      expect(code).toContain("@agent(");
+      expect(code).toContain("class MultiToolSyntaxAgentAgent(Agent):");
+      expect(code).toContain("async def run(self");
+
+      // Verify no syntax errors in imports
+      expect(code).toContain("from strandsagents.tools import (");
+      expect(code).toContain("file_read");
+      expect(code).toContain("file_write");
+      expect(code).toContain("http_request");
+      expect(code).toContain("browser");
+      expect(code).toContain(")");
+    });
+  });
+
+  describe("Complete Agent Builder Flow", () => {
+    let sharedAgentId: any;
+    let sharedCodeResult: any;
+
+    test("Step 1: should generate agent code with mixed tools", async () => {
+      const t = convexTest(schema, modules);
+      t.withIdentity({ subject: TEST_CONSTANTS.USERS.AGENT_BUILDER });
+
+      const customTool = TestFixtures.createCustomTool(
+        "CustomTool",
+        "Custom tool",
+        [{ name: "input", type: "str", description: "Input", required: true }]
+      );
+
+      const config = TestFixtures.createBasicAgent({
+        name: "CompleteFlowAgent",
+        systemPrompt: "You are a complete flow test agent",
+        tools: [TEST_CONSTANTS.TOOLS.SEARCH, customTool],
+        deploymentType: "aws",
+      });
+
+      sharedCodeResult = await generateTestAgent(t, config);
+      expect(sharedCodeResult.generatedCode).toBeDefined();
+      expect(sharedCodeResult.requirementsTxt).toBeDefined();
+    });
+
+    test("Step 2: should create agent from generated code", async () => {
+      const t = convexTest(schema, modules);
+      t.withIdentity({ subject: TEST_CONSTANTS.USERS.AGENT_BUILDER });
+
+      const customTool = TestFixtures.createCustomTool(
+        "CustomTool",
+        "Custom tool",
+        [{ name: "input", type: "str", description: "Input", required: true }]
+      );
+
+      const config = TestFixtures.createBasicAgent({
+        name: "CompleteFlowAgent",
+        systemPrompt: "You are a complete flow test agent",
+        tools: [TEST_CONSTANTS.TOOLS.SEARCH, customTool],
+        deploymentType: "aws",
+      });
+
+      const codeResult = await generateTestAgent(t, config);
+      sharedAgentId = await createAgent(t, {
+        ...config,
+        description: "Complete flow test agent",
+        generatedCode: codeResult.generatedCode,
+      });
+
+      expect(sharedAgentId).toBeDefined();
+    });
+
+    test("Step 3: should verify agent properties", async () => {
+      const t = convexTest(schema, modules);
+      t.withIdentity({ subject: TEST_CONSTANTS.USERS.AGENT_BUILDER });
+
+      // Create agent for this test
+      const customTool = TestFixtures.createCustomTool(
+        "CustomTool",
+        "Custom tool",
+        [{ name: "input", type: "str", description: "Input", required: true }]
+      );
+
+      const config = TestFixtures.createBasicAgent({
+        name: "CompleteFlowAgent",
+        systemPrompt: "You are a complete flow test agent",
+        tools: [TEST_CONSTANTS.TOOLS.SEARCH, customTool],
+        deploymentType: "aws",
+      });
+
+      const codeResult = await generateTestAgent(t, config);
+      const agentId = await createAgent(t, {
+        ...config,
+        description: "Complete flow test agent",
+        generatedCode: codeResult.generatedCode,
+      });
+
+      const agent = await getAgent(t, agentId);
+      expect(agent).toBeDefined();
+      expect(agent?.name).toBe("CompleteFlowAgent");
+      expect(agent?.generatedCode).toContain("@agent(");
+      expect(agent?.generatedCode).toContain("@tool(");
+      expect(agent?.tools).toHaveLength(2);
+    });
+
+    test("Step 4: should update agent description", async () => {
+      const t = convexTest(schema, modules);
+      t.withIdentity({ subject: TEST_CONSTANTS.USERS.AGENT_BUILDER });
+
+      // Create agent for this test
+      const config = TestFixtures.createBasicAgent({
+        name: "UpdateTestAgent",
+        deploymentType: "aws",
+      });
+
+      const codeResult = await generateTestAgent(t, config);
+      const agentId = await createAgent(t, {
+        ...config,
+        generatedCode: codeResult.generatedCode,
+      });
+
+      // Update agent
+      await t.mutation(api.agents.update, {
+        id: agentId,
+        description: "Updated description",
+      });
+
+      const updatedAgent = await getAgent(t, agentId);
+      expect(updatedAgent?.description).toBe("Updated description");
+    });
+
+    test("Step 5: should list user's agents", async () => {
+      const t = convexTest(schema, modules);
+      t.withIdentity({ subject: TEST_CONSTANTS.USERS.AGENT_BUILDER });
+
+      // Create an agent for this test
+      const config = TestFixtures.createBasicAgent({
+        name: "ListTestAgent",
+      });
+
+      const codeResult = await generateTestAgent(t, config);
+      const agentId = await createAgent(t, {
+        ...config,
+        generatedCode: codeResult.generatedCode,
+      });
+
+      // List agents
+      const userAgents = await t.query(api.agents.list);
+      expect(userAgents.length).toBeGreaterThan(0);
+      expect(userAgents.some((a: any) => a._id === agentId)).toBe(true);
     });
   });
 });

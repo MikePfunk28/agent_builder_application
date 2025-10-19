@@ -7,6 +7,32 @@ import { action } from "./_generated/server";
 import { v } from "convex/values";
 import { getModelConfig } from "./modelRegistry";
 
+/**
+ * Meta-tooling instructions added to agent system prompts
+ */
+const META_TOOLING_INSTRUCTIONS = `
+## Meta-Tooling Capability
+
+You have the ability to create new tools dynamically when you need functionality that is not currently available.
+
+### When to Use Meta-Tooling
+
+Use meta-tooling when you need a specific capability that is not provided by your existing tools.
+
+### How to Request a New Tool
+
+When you determine you need a new tool, describe what you need and the system will help you create it.
+
+### Tool Code Requirements
+
+Your tool code must:
+1. Use the @tool decorator from strandsagents
+2. Be syntactically valid Python
+3. Include proper error handling
+4. Have clear docstrings
+5. Return a string or JSON-serializable result
+`;
+
 export const generateAgent = action({
   args: {
     name: v.string(),
@@ -22,9 +48,21 @@ export const generateAgent = action({
       notSupportedOn: v.optional(v.array(v.string())),
     })),
     deploymentType: v.string(),
+    mcpServers: v.optional(v.array(v.object({
+      name: v.string(),
+      command: v.string(),
+      args: v.array(v.string()),
+      env: v.optional(v.any()),
+      disabled: v.optional(v.boolean()),
+    }))),
+    dynamicTools: v.optional(v.array(v.object({
+      name: v.string(),
+      code: v.string(),
+      parameters: v.any(),
+    }))),
   },
   handler: async (ctx, args) => {
-    const { name, model, systemPrompt, tools, deploymentType } = args;
+    const { name, model, systemPrompt, tools, deploymentType, mcpServers, dynamicTools } = args;
     const timestamp = new Date().toISOString();
     const className = name.replace(/[^a-zA-Z0-9]/g, '') + 'Agent';
     
@@ -36,15 +74,22 @@ export const generateAgent = action({
       systemPrompt,
       tools,
       deploymentType,
-      timestamp
+      timestamp,
+      dynamicTools
     });
     
     // Generate requirements.txt per Phase 7.2 spec (lines 1160-1178)
     const requirementsTxt = generateRequirementsTxt(tools);
     
+    // Generate MCP configuration if MCP servers are provided
+    const mcpConfig = mcpServers && mcpServers.length > 0 
+      ? generateMCPConfig(mcpServers)
+      : null;
+    
     return {
       generatedCode,
       requirementsTxt,
+      mcpConfig,
     };
   },
 });
@@ -353,9 +398,14 @@ async def ${functionName}(${paramSignature}) -> str:
         raise`;
 }
 
-function generateAgentClass(name: string, model: string, systemPrompt: string, tools: any[]): string {
+function generateAgentClass(name: string, model: string, systemPrompt: string, tools: any[], enableMetaTooling: boolean = true): string {
   const className = name.replace(/[^a-zA-Z0-9]/g, "") + "Agent";
   const toolList = tools.map(t => t.type).join(", ");
+  
+  // Add meta-tooling instructions to system prompt if enabled
+  const enhancedSystemPrompt = enableMetaTooling 
+    ? `${systemPrompt}\n\n${META_TOOLING_INSTRUCTIONS}`
+    : systemPrompt;
   
   return `
 # Pre-processing hook
@@ -414,7 +464,7 @@ async def postprocess_response(response: str, context: Optional[Dict[str, Any]] 
 
 @agent(
     model="${model}",
-    system_prompt="""${systemPrompt}""",
+    system_prompt="""${enhancedSystemPrompt}""",
     tools=[${toolList}],
     memory=True,
     reasoning="interleaved",
@@ -718,6 +768,46 @@ function generateRequirements(tools: any[], deploymentType: string): string {
 }
 
 /**
+ * Generate MCP configuration file (mcp.json)
+ * This file is used by the agent to connect to MCP servers
+ */
+function generateMCPConfig(mcpServers: any[]): string {
+  const config = {
+    mcpServers: {} as Record<string, any>
+  };
+  
+  for (const server of mcpServers) {
+    config.mcpServers[server.name] = {
+      command: server.command,
+      args: server.args,
+      env: server.env || {},
+      disabled: server.disabled || false,
+    };
+  }
+  
+  return JSON.stringify(config, null, 2);
+}
+
+/**
+ * Generate code for dynamic tools created via meta-tooling
+ */
+function generateDynamicToolsCode(dynamicTools: any[]): string {
+  if (!dynamicTools || dynamicTools.length === 0) {
+    return "";
+  }
+  
+  const toolsCode = dynamicTools.map(tool => {
+    // The tool code should already include the @tool decorator
+    return `# Dynamic Tool: ${tool.name}\n${tool.code}`;
+  }).join('\n\n');
+  
+  return `# These tools were dynamically created via meta-tooling
+# They are automatically loaded and available to the agent
+
+${toolsCode}`;
+}
+
+/**
  * Generate complete agent code following comprehensive_plan.md template (lines 959-1154)
  */
 function generateCompleteAgentCode(config: {
@@ -728,8 +818,9 @@ function generateCompleteAgentCode(config: {
   tools: any[];
   deploymentType: string;
   timestamp: string;
+  dynamicTools?: any[];
 }): string {
-  const { name, className, model, systemPrompt, tools, deploymentType, timestamp } = config;
+  const { name, className, model, systemPrompt, tools, deploymentType, timestamp, dynamicTools } = config;
   
   const header = `"""
 Generated Agent: ${name}
@@ -744,6 +835,11 @@ This agent was automatically generated by the Agent Builder Application.
   const imports = generateImports(tools, deploymentType, model);
   const toolConfigs = generateToolConfigs(tools);
   
+  // Generate dynamic tools code if provided
+  const dynamicToolsCode = dynamicTools && dynamicTools.length > 0
+    ? generateDynamicToolsCode(dynamicTools)
+    : "";
+  
   // Get model initialization code from model registry
   let modelInitCode = "";
   try {
@@ -754,7 +850,7 @@ This agent was automatically generated by the Agent Builder Application.
     modelInitCode = `# Model initialization\nmodel = "${model}"`;
   }
   
-  const agentClass = generateAgentClass(name, model, systemPrompt, tools);
+  const agentClass = generateAgentClass(name, model, systemPrompt, tools, true);
   const deploymentConfig = generateDeploymentConfig(deploymentType, tools, name);
 
   return `${header}
@@ -770,6 +866,11 @@ ${modelInitCode}
 # ============================================================================
 ${toolConfigs}
 
+${dynamicToolsCode ? `# ============================================================================
+# DYNAMIC TOOLS (Meta-tooling)
+# ============================================================================
+${dynamicToolsCode}
+` : ''}
 # ============================================================================
 # AGENT DEFINITION
 # ============================================================================

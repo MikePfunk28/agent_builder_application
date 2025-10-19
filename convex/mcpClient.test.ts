@@ -147,9 +147,14 @@ describe("MCP Client Retry Logic", () => {
 
     // Should fail with protocol not implemented error
     expect(result.success).toBe(false);
-    expect(result.error).toBeDefined();
-    if ('executionTime' in result) {
+
+    // Discriminated union: on failure, error is guaranteed to exist
+    if (result.success) {
       expect(result.executionTime).toBeDefined();
+    } else {
+      // Error should exist and indicate failure (authentication or not found)
+      expect(result.error).toBeDefined();
+      expect(typeof result.error).toBe('string');
     }
   });
 
@@ -194,8 +199,12 @@ describe("MCP Client Retry Logic", () => {
 
     // Should fail but respect the timeout
     expect(result.success).toBe(false);
-    if ('executionTime' in result) {
+
+    // No executionTime on failure (failure path doesn't include timing)
+    if (result.success) {
       expect(result.executionTime).toBeDefined();
+    } else {
+      expect(result.error).toBeDefined();
     }
   });
 });

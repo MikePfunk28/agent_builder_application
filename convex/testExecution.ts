@@ -8,6 +8,7 @@
 import { mutation, query, internalMutation, internalQuery, action } from "./_generated/server";
 import { v } from "convex/values";
 import { internal, api } from "./_generated/api";
+import { getAuthUserId } from "@convex-dev/auth/server";
 
 // Validation constants
 const MAX_QUERY_LENGTH = 2000;
@@ -29,9 +30,9 @@ export const submitTest = mutation({
     priority: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    // Authentication
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
+    // Authentication - use getAuthUserId for Convex user document ID
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
       throw new Error("Not authenticated");
     }
 
@@ -42,7 +43,6 @@ export const submitTest = mutation({
     }
 
     // Verify ownership or public access
-    const userId = identity.subject;
     const isOwner = agent.createdBy === userId;
     const isPublic = Boolean(agent.isPublic);
 
@@ -102,7 +102,7 @@ export const submitTest = mutation({
     // Create test execution record
     const testId = await ctx.db.insert("testExecutions", {
       agentId: args.agentId,
-      userId: identity.subject as any,
+      userId,
       testQuery: args.testQuery,
       agentCode: agent.generatedCode,
       requirements,
@@ -155,8 +155,8 @@ export const getTestById = query({
     }
 
     // Check authorization
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity || test.userId !== identity.subject) {
+    const userId = await getAuthUserId(ctx);
+    if (!userId || test.userId !== userId) {
       // Could also check if agent is public
       return null;
     }
@@ -184,8 +184,8 @@ export const getUserTests = query({
     status: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
       return { tests: [], hasMore: false };
     }
 
@@ -193,7 +193,7 @@ export const getUserTests = query({
 
     let query = ctx.db
       .query("testExecutions")
-      .withIndex("by_user", (q) => q.eq("userId", identity.subject as any))
+      .withIndex("by_user", (q) => q.eq("userId", userId))
       .order("desc");
 
     if (args.status) {
@@ -216,8 +216,8 @@ export const getUserTests = query({
 export const cancelTest = mutation({
   args: { testId: v.id("testExecutions") },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
       throw new Error("Not authenticated");
     }
 
@@ -226,7 +226,7 @@ export const cancelTest = mutation({
       throw new Error("Test not found");
     }
 
-    if (test.userId !== identity.subject) {
+    if (test.userId !== userId) {
       throw new Error("Not authorized");
     }
 
@@ -278,8 +278,8 @@ export const retryTest = mutation({
     modifyQuery: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
       throw new Error("Not authenticated");
     }
 
@@ -288,14 +288,14 @@ export const retryTest = mutation({
       throw new Error("Test not found");
     }
 
-    if (originalTest.userId !== identity.subject) {
+    if (originalTest.userId !== userId) {
       throw new Error("Not authorized");
     }
 
     // Create new test with same configuration
     const newTestId = await ctx.db.insert("testExecutions", {
       agentId: originalTest.agentId,
-      userId: identity.subject as any,
+      userId,
       testQuery: args.modifyQuery || originalTest.testQuery,
       agentCode: originalTest.agentCode,
       requirements: originalTest.requirements,
@@ -610,51 +610,68 @@ function extractModelConfig(model: string, deploymentType: string): {
     testEnvironment?: string;
   };
 } {
-  // Determine testing environment based on model ID and deployment type
-  const isOllamaModel = model.includes(':') || deploymentType === "ollama";
-  
-  if (isOllamaModel) {
-    return {
-      modelProvider: "ollama",
-      modelConfig: {
-        baseUrl: process.env.OLLAMA_BASE_URL || "http://host.docker.internal:11434",
-        modelId: model,
-        testEnvironment: "docker", // Local Docker testing with Ollama
-      },
-    };
-  } else if (deploymentType === "aws" || deploymentType === "bedrock" || model.startsWith("anthropic.") || model.startsWith("amazon.")) {
+  // Check deployment type first
+  if (deploymentType === "aws" || deploymentType === "bedrock") {
     return {
       modelProvider: "bedrock",
       modelConfig: {
         region: process.env.AWS_REGION || "us-east-1",
         modelId: model,
-        testEnvironment: "agentcore", // AgentCore sandbox testing
+        testEnvironment: "agentcore",
       },
     };
   }
-
-  // Default based on model format
-  if (model.includes(':')) {
-    // Ollama format (e.g., "llama3:8b", "qwen3:4b")
+  
+  if (deploymentType === "ollama") {
     return {
       modelProvider: "ollama",
       modelConfig: {
-        baseUrl: "http://host.docker.internal:11434",
+        baseUrl: process.env.OLLAMA_BASE_URL || "http://host.docker.internal:11434",
         modelId: model,
         testEnvironment: "docker",
       },
     };
-  } else {
-    // Bedrock format (e.g., "anthropic.claude-3-5-sonnet-20241022-v1:0")
+  }
+
+  // Determine based on model ID format
+  // Bedrock models: anthropic.*, amazon.*, ai21.*, cohere.*, meta.*, mistral.*
+  if (model.startsWith("anthropic.") || 
+      model.startsWith("amazon.") || 
+      model.startsWith("ai21.") ||
+      model.startsWith("cohere.") ||
+      model.startsWith("meta.") ||
+      model.startsWith("mistral.")) {
     return {
       modelProvider: "bedrock",
       modelConfig: {
-        region: "us-east-1",
+        region: process.env.AWS_REGION || "us-east-1",
         modelId: model,
         testEnvironment: "agentcore",
       },
     };
   }
+  
+  // Ollama models: contain colon (e.g., "llama3:8b", "qwen3:4b")
+  if (model.includes(':')) {
+    return {
+      modelProvider: "ollama",
+      modelConfig: {
+        baseUrl: process.env.OLLAMA_BASE_URL || "http://host.docker.internal:11434",
+        modelId: model,
+        testEnvironment: "docker",
+      },
+    };
+  }
+
+  // Default to bedrock for unknown formats
+  return {
+    modelProvider: "bedrock",
+    modelConfig: {
+      region: "us-east-1",
+      modelId: model,
+      testEnvironment: "agentcore",
+    },
+  };
 }
 
 async function getQueuePosition(ctx: any, testId: string): Promise<number> {
