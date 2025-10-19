@@ -5,5 +5,10 @@ export default defineConfig({
     environment: "node",
     include: ["convex/**/*.test.ts"],
     globals: true,
+    server: {
+      deps: {
+        inline: ["convex-test"],
+      },
+    },
   },
 });

@@ -15,10 +15,10 @@ export const getOAuthConfig = query({
       {
         id: "google",
         name: "Google",
-        configured: !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET),
+        configured: !!(process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET),
         envVars: {
-          clientId: process.env.GOOGLE_CLIENT_ID ? "✓ Set" : "✗ Missing",
-          clientSecret: process.env.GOOGLE_CLIENT_SECRET ? "✓ Set" : "✗ Missing",
+          clientId: process.env.AUTH_GOOGLE_ID ? "✓ Set" : "✗ Missing",
+          clientSecret: process.env.AUTH_GOOGLE_SECRET ? "✓ Set" : "✗ Missing",
         },
       },
       {

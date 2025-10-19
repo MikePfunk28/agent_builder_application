@@ -11,26 +11,61 @@ const providers: any[] = [
   Password,
 ];
 
-// GitHub OAuth - auto-detects AUTH_GITHUB_ID and AUTH_GITHUB_SECRET
+// GitHub OAuth with custom profile handler
 if (process.env.AUTH_GITHUB_ID && process.env.AUTH_GITHUB_SECRET) {
-  providers.push(GitHub);
+  providers.push(
+    GitHub({
+      profile(profile) {
+        return {
+          id: profile.id.toString(),
+          name: profile.name ?? profile.login,
+          email: profile.email,
+          image: profile.avatar_url,
+          login: profile.login, // GitHub username - custom field
+        };
+      },
+    })
+  );
 }
 
-// Google OAuth - needs to check GOOGLE_CLIENT_ID since that's what's set
-// Convex Auth expects AUTH_GOOGLE_ID and AUTH_GOOGLE_SECRET by default
-// But we can configure it explicitly
-if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+// Google OAuth with custom profile handler
+if (process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET) {
+  providers.push(
+    Google({
+      profile(profile) {
+        return {
+          id: profile.sub,
+          name: profile.name,
+          email: profile.email,
+          image: profile.picture,
+          locale: profile.locale, // User's locale preference - custom field
+        };
+      },
+    })
+  );
+} else if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
   providers.push(
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      profile(profile: any) {
+        return {
+          id: profile.sub,
+          name: profile.name,
+          email: profile.email,
+          image: profile.picture,
+          locale: profile.locale, // User's locale preference - custom field
+        };
+      },
     } as any)
   );
 }
 
-// AWS Cognito OAuth - OIDC provider
-if (process.env.COGNITO_ISSUER_URL && process.env.COGNITO_CLIENT_ID && process.env.COGNITO_CLIENT_SECRET) {
-  providers.push({
+// AWS Cognito OAuth - OIDC provider for AWS Federated Identity
+// When users sign in with Cognito, they can exchange their ID token for AWS credentials
+// This enables deployment to their own AWS accounts
+if (process.env.COGNITO_CLIENT_ID && process.env.COGNITO_CLIENT_SECRET && process.env.COGNITO_ISSUER_URL) {
+  const Cognito = {
     id: "cognito",
     name: "AWS Cognito",
     type: "oidc",
@@ -39,10 +74,22 @@ if (process.env.COGNITO_ISSUER_URL && process.env.COGNITO_CLIENT_ID && process.e
     clientSecret: process.env.COGNITO_CLIENT_SECRET,
     authorization: {
       params: {
-        scope: "openid profile email",
+        scope: "openid email profile aws.cognito.signin.user.admin",
       },
     },
-  } as any);
+    profile(profile: any) {
+      return {
+        id: profile.sub,
+        name: profile.name ?? profile.email,
+        email: profile.email,
+        image: profile.picture,
+        cognitoUsername: profile["cognito:username"],
+        // Store the ID token for AWS credential exchange
+        cognitoIdToken: profile.id_token,
+      };
+    },
+  };
+  providers.push(Cognito as any);
 }
 
 export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({

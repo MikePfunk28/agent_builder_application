@@ -96,14 +96,36 @@ const applicationTables = {
     userId: v.optional(v.string()), // From auth - optional for anonymous users
     email: v.optional(v.string()),
     name: v.optional(v.string()),
+    image: v.optional(v.string()), // Profile picture URL
     tier: v.optional(v.string()), // "freemium", "personal", "enterprise"
     testsThisMonth: v.optional(v.number()), // For freemium limits
     upgradedAt: v.optional(v.number()),
     createdAt: v.optional(v.number()),
     isAnonymous: v.optional(v.boolean()), // For anonymous users
+    
+    // OAuth provider-specific fields
+    locale: v.optional(v.string()), // Google: user's locale (e.g., "en-US")
+    login: v.optional(v.string()), // GitHub: username
+    authProvider: v.optional(v.string()), // "github" | "google" | "cognito" | "password"
+    
+    // Auth metadata
+    lastSignIn: v.optional(v.number()),
+    signInCount: v.optional(v.number()),
+    
+    // AWS Federated Identity (for Cognito users)
+    awsIdentityId: v.optional(v.string()), // Cognito Identity Pool ID
+    awsCredentials: v.optional(v.object({
+      accessKeyId: v.string(),
+      secretKey: v.string(),
+      sessionToken: v.string(),
+      expiration: v.number(),
+    })),
+    awsCredentialsUpdatedAt: v.optional(v.number()),
   })
     .index("by_user_id", ["userId"])
-    .index("by_tier", ["tier"]),
+    .index("by_tier", ["tier"])
+    .index("by_email", ["email"])
+    .index("by_auth_provider", ["authProvider"]),
 
   agents: defineTable({
     name: v.string(),

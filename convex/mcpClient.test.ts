@@ -13,9 +13,12 @@ import { expect, test, describe } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
 
+// Configure convex-test to find Convex functions
+const modules = import.meta.glob("./**/*.ts");
+
 describe("MCP Client", () => {
   test("invokeMCPTool returns error when server not found", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     
     // Create a test user
     const userId = await t.run(async (ctx) => {
@@ -42,7 +45,7 @@ describe("MCP Client", () => {
   });
 
   test("invokeMCPTool returns error when server is disabled", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     
     // Create a test user
     const userId = await t.run(async (ctx) => {
@@ -84,7 +87,7 @@ describe("MCP Client", () => {
   });
 
   test("testMCPServerConnection returns error for non-existent server", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     
     // Mock authentication
     t.withIdentity({ subject: "test-user-id" });
@@ -104,7 +107,7 @@ describe("MCP Client Retry Logic", () => {
     // This test validates that the retry logic is in place
     // The actual retry behavior is tested through the invokeMCPTool function
     
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     
     // Create a test user
     const userId = await t.run(async (ctx) => {
@@ -151,7 +154,7 @@ describe("MCP Client Retry Logic", () => {
   });
 
   test("timeout parameter is respected", async () => {
-    const t = convexTest(schema);
+    const t = convexTest(schema, modules);
     
     // Create a test user
     const userId = await t.run(async (ctx) => {
@@ -196,3 +199,4 @@ describe("MCP Client Retry Logic", () => {
     }
   });
 });
+

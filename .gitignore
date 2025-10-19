@@ -41,16 +41,16 @@ deploy-to-aws.sh
 .DS_Store
 *.suo
 *.ntvs*
-*.njsproj
+*.njsproj*
 *.sln
 *.sw?
 
 # AI Assistant directories (may contain PII or sensitive context)
-.cursor/*
-.claude/*
-.claude-flow/*
-.specify/*
-.kiro/*
+.cursor/
+.claude/
+.claude-flow/
+.specify/
+.kiro/
 
 # Package lock files
 package-lock.json
@@ -58,4 +58,37 @@ package-lock.json
 # Temporary and local files
 *.local
 example_requirements.txt
+secrets_del_after.md
 
+# ============================================================================
+# SENSITIVE DOCUMENTATION - NEVER COMMIT TO GIT OR DEPLOY TO PRODUCTION
+# ============================================================================
+# These files contain OAuth callback URLs, AWS account IDs, credentials,
+# and deployment information. Keep locally for reference only.
+
+# ============================================================================
+# DOCUMENTATION FILES - NEVER COMMIT (Contains OAuth URLs, AWS credentials)
+# ============================================================================
+# All markdown files except README.md and cloudformation/README.md
+*.md
+!README.md
+!cloudformation/README.md
+
+# PowerShell scripts (contain hardcoded values)
+scripts/*.ps1
+
+# Shell scripts with sensitive configuration
+scripts/*.sh
+
+# Python requirements (not needed for Cloudflare)
+requirements_complete.txt
+
+# Architecture diagrams
+architecture_diagram.py
+*.gv
+agent_builder_architecture*
+
+# Documentation directories
+docs/
+specs/
+amplify.yml
