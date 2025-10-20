@@ -1,9 +1,11 @@
 # ============================================================================
 # CORE AGENT RUNTIME (AWS Bedrock AgentCore)
 # ============================================================================
-strands-agents-tools>=0.2.11
-bedrock-agentcore>=0.0.25
-bedrock-agentcore-starter-toolkit>=0.1.25
+strands-agents-tools[a2a-client,agent-core-browser,agent-core-code-interpreter]==0.2.12
+
+# Bedrock AgentCore stack (aligned pins)
+bedrock-agentcore==0.1.7
+bedrock-agentcore-starter-toolkit>=0.1.21,<0.2
 
 # Strands Agents Tools - All extras for comprehensive agent capabilities
 # These are installed on-demand in Fargate containers (serverless - no cost when idle)
@@ -85,3 +87,7 @@ flask>=3.1.2
 flask-cors>=6.0.1
 requests>=2.31.0
 python-dateutil>=2.8.2
+
+# Browser automation runtime (required by AgentCore Browser quickstart)
+playwright>=1.47
+nest-asyncio>=1.6

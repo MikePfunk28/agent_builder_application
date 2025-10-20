@@ -1,0 +1,4 @@
+# pyproject.toml
+[build-system]
+requires = ["setuptools>=80"]  # modern setuptools handles wheel building
+build-backend = "setuptools.build_meta"

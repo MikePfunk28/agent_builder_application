@@ -122,20 +122,26 @@ export const processQueue = internalAction({
               conversationHistory: test.conversationId ? await ctx.runQuery(internal.conversations.getHistory, { conversationId: test.conversationId }) : [],
             });
           } else {
-            // Route to Lambda (Docker support for Ollama)
+            // Route to ECS Fargate (Docker support for Ollama)
             await ctx.runMutation(internal.testExecution.appendLogs, {
               testId: test._id,
-              logs: ['🚀 Routing to Lambda (Ollama model)'],
+              logs: ['🚀 Routing to ECS Fargate (Ollama model)'],
               timestamp: Date.now(),
             });
-            
-            result = await ctx.runAction(internal.lambdaTesting.executeLambdaTest, {
+
+            result = await ctx.runAction(internal.containerOrchestrator.startTestContainer, {
               testId: test._id,
               agentCode: test.agentCode,
               requirements: test.requirements,
+              dockerfile: test.dockerfile || '',
               testQuery: test.testQuery,
-              modelId: modelId,
-              conversationId: test.conversationId,
+              modelProvider: 'ollama',
+              modelConfig: {
+                modelId: modelId,
+                baseUrl: process.env.OLLAMA_BASE_URL || 'http://host.docker.internal:11434',
+                testEnvironment: 'fargate',
+              },
+              timeout: 300000, // 5 minutes
             });
           }
 
@@ -169,7 +175,7 @@ export const processQueue = internalAction({
                 testId: test._id,
                 priority: queueEntry.priority,
                 attempts: queueEntry.attempts + 1,
-                lastError: result.error,
+                lastError: result.error ?? "",
               });
             }
           } else {
