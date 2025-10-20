@@ -4,9 +4,10 @@
 strands-agents-tools[a2a-client,local-chromium-browser,agent-core-code-interpreter,mem0-memory,diagram,rss,use-computer]==0.2.12
 strands-agents>=1.0.0
 
-# Bedrock AgentCore stack (aligned pins)
-bedrock-agentcore==0.1.0
-bedrock-agentcore-starter-toolkit>=0.1.21,<0.2
+# Bedrock AgentCore stack
+# bedrock-agentcore==0.1.0 is required by strands-agents-tools[agent-core-code-interpreter]
+# Removing bedrock-agentcore-starter-toolkit due to version conflict
+# (it requires bedrock-agentcore>=0.1.7 which conflicts with 0.1.0)
 
 # ============================================================================
 # AWS SDKs

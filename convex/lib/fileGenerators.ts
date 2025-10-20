@@ -29,8 +29,7 @@ export function generateRequirementsTxt(tools: any[], deploymentType: string): s
   if (isAWSDeployment(deploymentType)) {
     packages.set('boto3', '>=1.35.0');
     // bedrock-agentcore is managed by strands-agents-tools[agent-core-code-interpreter]
-    // Don't pin it here to avoid conflicts
-    packages.set('bedrock-agentcore-starter-toolkit', '>=0.1.21');
+    // bedrock-agentcore-starter-toolkit removed due to version conflict
   }
 
   // Collect tool-specific packages
@@ -134,7 +133,7 @@ export function generateMCPConfig(mcpServers: any[]): string {
  */
 export function generateDeployScript(agent: Agent): string {
   const sanitizedName = sanitizeAgentName(agent.name);
-  
+
   const lines = [
     '#!/bin/bash',
     `# Deployment script for ${agent.name}`,
@@ -296,7 +295,7 @@ def lambda_handler(event, context):
  */
 export function generateLambdaDeployScript(agent: Agent): string {
   const sanitizedName = sanitizeAgentName(agent.name);
-  
+
   return `#!/bin/bash
 # Lambda Deployment Script for ${agent.name}
 # Deploys agent as AWS Lambda function
@@ -379,7 +378,7 @@ export function generateAgentCoreConfig(agent: Agent): string {
  */
 export function generateAgentCoreDeployScript(agent: Agent): string {
   const sanitizedName = sanitizeAgentName(agent.name);
-  
+
   return `#!/bin/bash
 # AgentCore Deployment Script for ${agent.name}
 # Deploys to Bedrock AgentCore Runtime
@@ -423,7 +422,7 @@ rm agent_package.tar.gz
  */
 export function generateDeploymentReadme(agent: Agent, deploymentTarget: string, options: any): string {
   const sanitizedName = sanitizeAgentName(agent.name);
-  
+
   return `# ${agent.name} - Deployment Package
 
 AI Agent powered by [Strands Agents](https://strandsagents.com)
