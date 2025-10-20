@@ -50,7 +50,6 @@ describe("MCP Client", () => {
     // Create a test user
     const userId = await t.run(async (ctx) => {
       return await ctx.db.insert("users", {
-        userId: "test-user-id",
         email: "test@example.com",
         name: "Test User",
         tier: "freemium",
@@ -112,7 +111,6 @@ describe("MCP Client Retry Logic", () => {
     // Create a test user
     const userId = await t.run(async (ctx) => {
       return await ctx.db.insert("users", {
-        userId: "test-user-id",
         email: "test@example.com",
         name: "Test User",
         tier: "freemium",
@@ -164,7 +162,6 @@ describe("MCP Client Retry Logic", () => {
     // Create a test user
     const userId = await t.run(async (ctx) => {
       return await ctx.db.insert("users", {
-        userId: "test-user-id",
         email: "test@example.com",
         name: "Test User",
         tier: "freemium",

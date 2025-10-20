@@ -80,14 +80,18 @@ scripts/*.ps1
 # Shell scripts with sensitive configuration
 scripts/*.sh
 
+# TypeScript scripts (contain deployment URLs and configuration)
+scripts/*.ts
+
 # Python requirements (not needed for Cloudflare)
 requirements_complete.txt
 example_requirements.txt
 
-# Architecture diagrams
+# Architecture diagrams (contain PII and deployment URLs)
 architecture_diagram.py
 *.gv
 agent_builder_architecture*
+generated-diagrams/
 
 # Documentation directories (contain OAuth URLs and AWS account IDs)
 docs/

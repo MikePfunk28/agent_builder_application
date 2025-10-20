@@ -32,6 +32,7 @@ export default tseslint.config(
           "./tsconfig.node.json",
           "./tsconfig.app.json",
           "./convex/tsconfig.json",
+          "./scripts/tsconfig.json",
         ],
       },
     },

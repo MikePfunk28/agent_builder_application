@@ -232,7 +232,6 @@ describe("MCP Tool Invocation", () => {
         // Create authenticated user
         await t.run(async (ctx) => {
             return await ctx.db.insert("users", {
-                userId: "test-user-mcp-tool",
                 email: "mcp@example.com",
                 name: "MCP Test User",
                 tier: "personal",
@@ -241,7 +240,7 @@ describe("MCP Tool Invocation", () => {
         });
 
         // Add MCP server for custom tool
-        const serverId = await t.mutation(api.mcpConfig.addMCPServer, {
+        const _serverId = await t.mutation(api.mcpConfig.addMCPServer, {
             name: "custom-tools",
             command: "python",
             args: ["-m", "custom_tools_server"],
@@ -249,7 +248,7 @@ describe("MCP Tool Invocation", () => {
             timeout: 30000,
         });
 
-        expect(serverId).toBeDefined();
+        expect(_serverId).toBeDefined();
 
         // Verify server was created
         const server = await t.query(api.mcpConfig.getMCPServerByName, {
@@ -271,7 +270,6 @@ describe("MCP Tool Invocation", () => {
         // Create user and MCP server
         await t.run(async (ctx) => {
             return await ctx.db.insert("users", {
-                userId: "test-user-invoke",
                 email: "invoke@example.com",
                 name: "Invoke Test User",
                 tier: "personal",
@@ -279,7 +277,7 @@ describe("MCP Tool Invocation", () => {
             });
         });
 
-        const serverId = await t.mutation(api.mcpConfig.addMCPServer, {
+        const _serverId2 = await t.mutation(api.mcpConfig.addMCPServer, {
             name: "test-server",
             command: "uvx",
             args: ["test-mcp-server"],
@@ -316,7 +314,6 @@ describe("MCP Tool Invocation", () => {
 
         await t.run(async (ctx) => {
             return await ctx.db.insert("users", {
-                userId: "test-user-timeout",
                 email: "timeout@example.com",
                 name: "Timeout Test User",
                 tier: "personal",
@@ -517,7 +514,6 @@ describe("Tool Error Handling", () => {
 
         await t.run(async (ctx) => {
             return await ctx.db.insert("users", {
-                userId: "test-user-error",
                 email: "error@example.com",
                 name: "Error Test User",
                 tier: "personal",
@@ -547,7 +543,6 @@ describe("Tool Error Handling", () => {
 
         await t.run(async (ctx) => {
             return await ctx.db.insert("users", {
-                userId: "test-user-disabled",
                 email: "disabled@example.com",
                 name: "Disabled Test User",
                 tier: "personal",
@@ -587,7 +582,6 @@ describe("MCP Configuration File Generation", () => {
         // Create user with MCP servers
         await t.run(async (ctx) => {
             const userId = await ctx.db.insert("users", {
-                userId: "test-user-config",
                 email: "config@example.com",
                 name: "Config Test User",
                 tier: "personal",

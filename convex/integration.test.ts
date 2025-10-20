@@ -195,7 +195,6 @@ describe("OAuth Authentication Integration", () => {
       // Create user with GitHub profile data
       const _userId = await t.run(async (ctx) => {
         return await ctx.db.insert("users", {
-          userId: "github-user-123",
           email: "github@example.com",
           name: "GitHub User",
           image: "https://avatars.githubusercontent.com/u/123",
@@ -227,7 +226,6 @@ describe("OAuth Authentication Integration", () => {
       // Create user with Google profile data
       const _userId = await t.run(async (ctx) => {
         return await ctx.db.insert("users", {
-          userId: "google-user-456",
           email: "google@example.com",
           name: "Google User",
           image: "https://lh3.googleusercontent.com/a/test",
@@ -259,7 +257,6 @@ describe("OAuth Authentication Integration", () => {
       // Create users with different auth providers
       const githubUserId = await t.run(async (ctx) => {
         return await ctx.db.insert("users", {
-          userId: "github-provider-test",
           email: "github-provider@example.com",
           name: "GitHub Provider Test",
           authProvider: "github",
@@ -270,7 +267,6 @@ describe("OAuth Authentication Integration", () => {
 
       const googleUserId = await t.run(async (ctx) => {
         return await ctx.db.insert("users", {
-          userId: "google-provider-test",
           email: "google-provider@example.com",
           name: "Google Provider Test",
           authProvider: "google",
@@ -281,7 +277,6 @@ describe("OAuth Authentication Integration", () => {
 
       const passwordUserId = await t.run(async (ctx) => {
         return await ctx.db.insert("users", {
-          userId: "password-provider-test",
           email: "password-provider@example.com",
           name: "Password Provider Test",
           authProvider: "password",
@@ -305,7 +300,6 @@ describe("OAuth Authentication Integration", () => {
       // Create multiple users with different providers
       await t.run(async (ctx) => {
         await ctx.db.insert("users", {
-          userId: "github-query-1",
           email: "github1@example.com",
           name: "GitHub User 1",
           authProvider: "github",
@@ -314,7 +308,6 @@ describe("OAuth Authentication Integration", () => {
         });
 
         await ctx.db.insert("users", {
-          userId: "github-query-2",
           email: "github2@example.com",
           name: "GitHub User 2",
           authProvider: "github",
@@ -323,7 +316,6 @@ describe("OAuth Authentication Integration", () => {
         });
 
         await ctx.db.insert("users", {
-          userId: "google-query-1",
           email: "google1@example.com",
           name: "Google User 1",
           authProvider: "google",
@@ -370,7 +362,6 @@ describe("OAuth Authentication Integration", () => {
       // Create user with initial sign-in
       const userId = await t.run(async (ctx) => {
         return await ctx.db.insert("users", {
-          userId: "signin-tracking-test",
           email: "signin@example.com",
           name: "Sign-in Tracking User",
           authProvider: "github",
@@ -424,7 +415,7 @@ describe("OAuth Authentication Integration", () => {
       // Step 4: Create user record as Convex Auth would
       const _userId = await t.run(async (ctx) => {
         return await ctx.db.insert("users", {
-          userId: githubProfile.id,
+
           email: githubProfile.email,
           name: githubProfile.name,
           image: githubProfile.avatar_url,
@@ -444,7 +435,6 @@ describe("OAuth Authentication Integration", () => {
       const user = await t.query(api.auth.loggedInUser);
 
       expect(user).toBeDefined();
-      expect(user?.userId).toBe(githubProfile.id);
       expect(user?.login).toBe(githubProfile.login);
       expect(user?.authProvider).toBe("github");
       expect(user?.email).toBe(githubProfile.email);
@@ -468,7 +458,7 @@ describe("OAuth Authentication Integration", () => {
       // Step 4: Create user record as Convex Auth would
       const _userId = await t.run(async (ctx) => {
         return await ctx.db.insert("users", {
-          userId: googleProfile.sub,
+
           email: googleProfile.email,
           name: googleProfile.name,
           image: googleProfile.picture,
@@ -488,7 +478,6 @@ describe("OAuth Authentication Integration", () => {
       const user = await t.query(api.auth.loggedInUser);
 
       expect(user).toBeDefined();
-      expect(user?.userId).toBe(googleProfile.sub);
       expect(user?.locale).toBe(googleProfile.locale);
       expect(user?.authProvider).toBe("google");
       expect(user?.email).toBe(googleProfile.email);
@@ -574,7 +563,7 @@ describe("OAuth Authentication Integration", () => {
       // Step 1: Create existing user
       const existingUserId = await t.run(async (ctx) => {
         return await ctx.db.insert("users", {
-          userId: "returning-github-user",
+
           email: "returning@example.com",
           name: "Returning User",
           image: "https://avatars.githubusercontent.com/u/999",
@@ -613,7 +602,7 @@ describe("OAuth Authentication Integration", () => {
       // Test 1: Missing required profile fields
       const incompleteUserId = await t.run(async (ctx) => {
         return await ctx.db.insert("users", {
-          userId: "incomplete-user",
+
           // Missing email and name
           authProvider: "github",
           createdAt: Date.now(),
@@ -622,12 +611,11 @@ describe("OAuth Authentication Integration", () => {
 
       const incompleteUser = await t.run(async (ctx) => await ctx.db.get(incompleteUserId));
       expect(incompleteUser).toBeDefined();
-      expect(incompleteUser?.userId).toBe("incomplete-user");
 
       // Test 2: Invalid provider type
       const invalidProviderId = await t.run(async (ctx) => {
         return await ctx.db.insert("users", {
-          userId: "invalid-provider-user",
+
           email: "invalid@example.com",
           name: "Invalid Provider User",
           authProvider: "unknown-provider",
@@ -647,7 +635,7 @@ describe("OAuth Authentication Integration", () => {
       const userPromises = Array.from({ length: 5 }, (_, i) => {
         return t.run(async (ctx) => {
           return await ctx.db.insert("users", {
-            userId: `concurrent-user-${i}`,
+
             email: `concurrent${i}@example.com`,
             name: `Concurrent User ${i}`,
             authProvider: i % 2 === 0 ? "github" : "google",
@@ -691,7 +679,7 @@ describe("MCP Server Integration", () => {
     // Create test user
     _testUserId = await t.run(async (ctx) => {
       return await ctx.db.insert("users", {
-        userId: "test-user-mcp",
+
         email: "mcp-test@example.com",
         name: "MCP Test User",
         tier: "personal",
@@ -851,7 +839,7 @@ describe("AWS Diagram Generator Integration", () => {
     // Create test user
     testUserId = await t.run(async (ctx) => {
       return await ctx.db.insert("users", {
-        userId: "test-user-diagram",
+
         email: "diagram-test@example.com",
         name: "Diagram Test User",
         tier: "personal",
@@ -1028,7 +1016,7 @@ describe("Bedrock AgentCore Integration", () => {
     // Create test user
     testUserId = await t.run(async (ctx) => {
       return await ctx.db.insert("users", {
-        userId: "test-user-agentcore",
+
         email: "agentcore-test@example.com",
         name: "AgentCore Test User",
         tier: "freemium",
@@ -1127,7 +1115,7 @@ describe("Agent-to-Agent Communication via MCP", () => {
     // Create test user
     testUserId = await t.run(async (ctx) => {
       return await ctx.db.insert("users", {
-        userId: "test-user-agent-mcp",
+
         email: "agent-mcp-test@example.com",
         name: "Agent MCP Test User",
         tier: "personal",
@@ -1254,7 +1242,7 @@ describe("End-to-End Integration Scenarios", () => {
     // 1. Create user
     const _userId = await t.run(async (ctx) => {
       return await ctx.db.insert("users", {
-        userId: "test-user-e2e",
+
         email: "e2e-test@example.com",
         name: "E2E Test User",
         tier: "personal",
@@ -1317,7 +1305,7 @@ describe("End-to-End Integration Scenarios", () => {
     // 1. Create user
     const _userId = await t.run(async (ctx) => {
       return await ctx.db.insert("users", {
-        userId: "test-user-mcp-workflow",
+
         email: "mcp-workflow@example.com",
         name: "MCP Workflow User",
         tier: "personal",
@@ -1367,7 +1355,7 @@ describe("Deployment Integration Tests", () => {
       // Create freemium user
       const testUserId = await t.run(async (ctx) => {
         return await ctx.db.insert("users", {
-          userId: "test-user-tier1-all",
+
           email: "tier1-all@example.com",
           name: "Tier 1 All Tests User",
           tier: "freemium",
@@ -1415,7 +1403,7 @@ describe("Deployment Integration Tests", () => {
       // Create user
       const testUserId = await t.run(async (ctx) => {
         return await ctx.db.insert("users", {
-          userId: "test-user-tier1-usage-limits",
+
           email: "tier1-usage-limits@example.com",
           name: "Tier 1 Usage Limits User",
           tier: "freemium",
@@ -1444,7 +1432,7 @@ describe("Deployment Integration Tests", () => {
       const initialUsage = userBefore?.testsThisMonth || 0;
 
       await t.mutation(api.deploymentRouter.incrementUsage, {
-        userId: "test-user-tier1-usage-limits",
+        userId: testUserId,
       });
 
       const userAfter = await t.query(api.deploymentRouter.getUserTier);
@@ -1473,7 +1461,7 @@ describe("Deployment Integration Tests", () => {
       // Create personal tier user
       const testUserId = await t.run(async (ctx) => {
         return await ctx.db.insert("users", {
-          userId: "test-user-tier2-all",
+
           email: "tier2-all@example.com",
           name: "Tier 2 All Tests User",
           tier: "personal",
@@ -1553,7 +1541,7 @@ describe("Deployment Integration Tests", () => {
       // Create user without AWS connection
       const noAwsUserId = await t.run(async (ctx) => {
         return await ctx.db.insert("users", {
-          userId: "test-user-no-aws",
+
           email: "no-aws@example.com",
           name: "No AWS User",
           tier: "personal",
@@ -1594,7 +1582,7 @@ describe("Deployment Integration Tests", () => {
       // Create user
       const testUserId = await t.run(async (ctx) => {
         return await ctx.db.insert("users", {
-          userId: "test-user-errors-graceful",
+
           email: "errors-graceful@example.com",
           name: "Error Graceful User",
           tier: "freemium",
@@ -1638,7 +1626,7 @@ describe("Deployment Integration Tests", () => {
       // Create user
       const testUserId = await t.run(async (ctx) => {
         return await ctx.db.insert("users", {
-          userId: "test-user-errors-status",
+
           email: "errors-status@example.com",
           name: "Error Status User",
           tier: "freemium",
@@ -1709,7 +1697,7 @@ describe("Deployment Integration Tests", () => {
       // Create a test agent for this test
       const testUserId = await t.run(async (ctx) => {
         return await ctx.db.insert("users", {
-          userId: "test-user-unauth",
+
           email: "unauth@example.com",
           name: "Unauth Test User",
           tier: "personal",
@@ -1744,7 +1732,7 @@ describe("Deployment Integration Tests", () => {
       // Create test user and agent
       const testUserId = await t.run(async (ctx) => {
         return await ctx.db.insert("users", {
-          userId: "test-user-errors",
+
           email: "errors@example.com",
           name: "Errors Test User",
           tier: "personal",
@@ -1800,7 +1788,7 @@ describe("Deployment Integration Tests", () => {
       // Create user
       const testUserId = await t.run(async (ctx) => {
         return await ctx.db.insert("users", {
-          userId: "test-user-history-retrieve",
+
           email: "history-retrieve@example.com",
           name: "History Retrieve User",
           tier: "personal",
@@ -1855,7 +1843,7 @@ describe("Deployment Integration Tests", () => {
       // Create user
       const testUserId = await t.run(async (ctx) => {
         return await ctx.db.insert("users", {
-          userId: "test-user-history-list",
+
           email: "history-list@example.com",
           name: "History List User",
           tier: "personal",
@@ -1907,7 +1895,7 @@ describe("Deployment Integration Tests", () => {
       // Create user and agent for this test
       const testUserId = await t.run(async (ctx) => {
         return await ctx.db.insert("users", {
-          userId: "test-user-history",
+
           email: "history@example.com",
           name: "History User",
           tier: "freemium",
@@ -1966,7 +1954,7 @@ describe("Deployment Integration Tests", () => {
       // Create freemium users with usage
       await t.run(async (ctx) => {
         await ctx.db.insert("users", {
-          userId: "freemium-user-1",
+
           email: "freemium1@example.com",
           name: "Freemium User 1",
           tier: "freemium",
@@ -1975,7 +1963,7 @@ describe("Deployment Integration Tests", () => {
         });
 
         await ctx.db.insert("users", {
-          userId: "freemium-user-2",
+
           email: "freemium2@example.com",
           name: "Freemium User 2",
           tier: "freemium",
@@ -2009,7 +1997,7 @@ describe("Deployment Integration Tests", () => {
       // Create personal tier user with usage
       await t.run(async (ctx) => {
         await ctx.db.insert("users", {
-          userId: "personal-user-1",
+
           email: "personal1@example.com",
           name: "Personal User 1",
           tier: "personal",
@@ -2025,7 +2013,7 @@ describe("Deployment Integration Tests", () => {
       const user = await t.run(async (ctx) => {
         return await ctx.db
           .query("users")
-          .withIndex("by_user_id", (q) => q.eq("userId", "personal-user-1"))
+          .withIndex("by_email", (q) => q.eq("email", "personal1@example.com"))
           .first();
       });
 

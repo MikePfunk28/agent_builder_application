@@ -8,10 +8,9 @@
  * Requirements: 11.1, 11.2, 11.3, 11.4, 11.5, 11.6, 11.7
  */
 
-import { mutation, query, action, internalMutation } from "./_generated/server";
+import { mutation, query, internalMutation, internalAction } from "./_generated/server";
 import { v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
-import { internal } from "./_generated/api";
 
 /**
  * Meta-tooling system prompt template
@@ -166,7 +165,7 @@ Use your tools to integrate with external APIs and exchange data.`,
  */
 export const getMetaToolingInstructions = query({
   args: {},
-  handler: async () => {
+  handler: async (_ctx) => {
     return META_TOOLING_INSTRUCTIONS;
   },
 });
@@ -176,7 +175,7 @@ export const getMetaToolingInstructions = query({
  */
 export const getAgentTemplates = query({
   args: {},
-  handler: async () => {
+  handler: async (_ctx) => {
     return PREDEFINED_AGENT_TEMPLATES;
   },
 });
@@ -186,7 +185,7 @@ export const getAgentTemplates = query({
  */
 export const suggestAgentTemplate = query({
   args: { query: v.string() },
-  handler: async (ctx, args) => {
+  handler: async (_ctx, args) => {
     const queryLower = args.query.toLowerCase();
     
     // Find matching templates based on trigger patterns
@@ -433,11 +432,11 @@ function validateToolCodeHandler(code: string) {
  * Action to validate tool code syntax
  * Uses Python AST parsing to check for syntax errors
  */
-export const validateToolCode = action({
+export const validateToolCode = internalAction({
   args: {
     code: v.string(),
   },
-  handler: async (ctx, args) => {
+  handler: async (_ctx, args) => {
     return validateToolCodeHandler(args.code);
   },
 });
