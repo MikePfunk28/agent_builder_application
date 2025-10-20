@@ -27,9 +27,10 @@ export function generateRequirementsTxt(tools: any[], deploymentType: string): s
 
   // Add deployment-specific packages
   if (isAWSDeployment(deploymentType)) {
-    packages.set('boto3', '>=1.28.0');
-    packages.set('bedrock-agentcore', '>=0.1.6');
-    packages.set('bedrock-agentcore-starter-toolkit', '>=0.1.25');
+    packages.set('boto3', '>=1.35.0');
+    // bedrock-agentcore is managed by strands-agents-tools[agent-core-code-interpreter]
+    // Don't pin it here to avoid conflicts
+    packages.set('bedrock-agentcore-starter-toolkit', '>=0.1.21');
   }
 
   // Collect tool-specific packages
@@ -173,9 +174,9 @@ export function generatePyprojectToml(tools: any[], deploymentType: string, agen
   ]);
 
   if (isAWSDeployment(deploymentType)) {
-    packages.set('boto3', '>=1.28.0');
-    packages.set('bedrock-agentcore', '>=0.1.6');
-    packages.set('bedrock-agentcore-starter-toolkit', '>=0.1.25');
+    packages.set('boto3', '>=1.35.0');
+    // bedrock-agentcore is managed by strands-agents-tools[agent-core-code-interpreter]
+    packages.set('bedrock-agentcore-starter-toolkit', '>=0.1.21');
   }
 
   const extrasSet = new Set<string>();

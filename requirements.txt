@@ -1,22 +1,12 @@
 # ============================================================================
 # CORE AGENT RUNTIME (AWS Bedrock AgentCore)
 # ============================================================================
-strands-agents-tools[a2a-client,agent-core-browser,agent-core-code-interpreter]==0.2.12
+strands-agents-tools[a2a-client,local-chromium-browser,agent-core-code-interpreter,mem0-memory,diagram,rss,use-computer]==0.2.12
+strands-agents>=1.0.0
 
 # Bedrock AgentCore stack (aligned pins)
-bedrock-agentcore==0.1.7
+bedrock-agentcore==0.1.0
 bedrock-agentcore-starter-toolkit>=0.1.21,<0.2
-
-# Strands Agents Tools - All extras for comprehensive agent capabilities
-# These are installed on-demand in Fargate containers (serverless - no cost when idle)
-strands-agents-tools[mem0_memory]>=0.2.11
-strands-agents-tools[local_chromium_browser]>=0.2.11
-strands-agents-tools[agent_core_browser]>=0.2.11
-strands-agents-tools[agent_core_code_interpreter]>=0.2.11
-strands-agents-tools[a2a_client]>=0.2.11
-strands-agents-tools[diagram]>=0.2.11
-strands-agents-tools[rss]>=0.2.11
-strands-agents-tools[use_computer]>=0.2.11
 
 # ============================================================================
 # AWS SDKs
