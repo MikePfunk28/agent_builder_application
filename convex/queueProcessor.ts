@@ -94,17 +94,50 @@ export const processQueue = internalAction({
             timestamp: Date.now(),
           });
 
-          // Start ECS task
-          const result = await ctx.runAction(internal.containerOrchestrator.startTestContainer, {
-            testId: test._id,
-            agentCode: test.agentCode,
-            requirements: test.requirements,
-            dockerfile: test.dockerfile,
-            testQuery: test.testQuery,
-            modelProvider: test.modelProvider,
-            modelConfig: test.modelConfig,
-            timeout: test.timeout,
-          });
+          // SMART ROUTING: Bedrock → AgentCore, Ollama → Lambda
+          const agent = await ctx.runQuery(internal.agents.getInternal, { id: test.agentId });
+          const modelId = agent?.model || test.modelConfig?.modelId || '';
+          
+          // Check if Bedrock model (starts with provider prefix)
+          const isBedrockModel = modelId.startsWith('anthropic.') || 
+                                modelId.startsWith('amazon.') || 
+                                modelId.startsWith('ai21.') ||
+                                modelId.startsWith('cohere.') ||
+                                modelId.startsWith('meta.') ||
+                                modelId.startsWith('mistral.');
+          
+          let result;
+          if (isBedrockModel) {
+            // Route to AgentCore Sandbox (fast, serverless, Bedrock only)
+            await ctx.runMutation(internal.testExecution.appendLogs, {
+              testId: test._id,
+              logs: ['🚀 Routing to AgentCore Sandbox (Bedrock model)'],
+              timestamp: Date.now(),
+            });
+            
+            result = await ctx.runAction(internal.agentcoreTestExecution.executeAgentCoreTest, {
+              testId: test._id,
+              agentId: test.agentId,
+              input: test.testQuery,
+              conversationHistory: test.conversationId ? await ctx.runQuery(internal.conversations.getHistory, { conversationId: test.conversationId }) : [],
+            });
+          } else {
+            // Route to Lambda (Docker support for Ollama)
+            await ctx.runMutation(internal.testExecution.appendLogs, {
+              testId: test._id,
+              logs: ['🚀 Routing to Lambda (Ollama model)'],
+              timestamp: Date.now(),
+            });
+            
+            result = await ctx.runAction(internal.lambdaTesting.executeLambdaTest, {
+              testId: test._id,
+              agentCode: test.agentCode,
+              requirements: test.requirements,
+              testQuery: test.testQuery,
+              modelId: modelId,
+              conversationId: test.conversationId,
+            });
+          }
 
           if ("error" in result) {
             // Failed to start container
@@ -140,38 +173,15 @@ export const processQueue = internalAction({
               });
             }
           } else {
-            // Successfully started
-            console.log(`✅ Container started for test ${test._id}: ${result.taskArn}`);
-
-            // Update test with ECS task info
-            await ctx.runMutation(internal.queueProcessor.updateTestWithTaskInfo, {
-              testId: test._id,
-              taskArn: result.taskArn,
-              taskId: result.taskId,
-              logGroup: result.logGroup,
-              logStream: result.logStream,
-            });
+            // Successfully completed (Lambda returns immediately)
+            console.log(`✅ Lambda test completed for ${test._id}`);
 
             // Remove from queue
             await ctx.runMutation(internal.queueProcessor.removeFromQueue, {
               queueId: queueEntry._id,
             });
 
-            // Update status to RUNNING
-            await ctx.runMutation(internal.testExecution.updateStatus, {
-              testId: test._id,
-              status: "RUNNING",
-            });
-
-            await ctx.runMutation(internal.testExecution.appendLogs, {
-              testId: test._id,
-              logs: [
-                `✅ Container started: ${result.taskId}`,
-                `📊 Logs: ${result.logGroup}/${result.logStream}`,
-                "🤖 Agent loading...",
-              ],
-              timestamp: Date.now(),
-            });
+            // Test status already updated by Lambda execution
           }
         } catch (error: any) {
           console.error(`❌ Error processing test ${queueEntry.testId}:`, error);

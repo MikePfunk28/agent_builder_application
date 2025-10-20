@@ -150,16 +150,54 @@ export function AgentBuilder() {
     })();
   };
 
-  const handleDownload = () => {
-    const blob = new Blob([generatedCode], { type: "text/python" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${config.name.toLowerCase().replace(/\s+/g, "_")}_agent.py`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  const generateDeploymentPackage = useAction(api.deploymentPackageGenerator.generateDeploymentPackage);
+
+  const handleDownload = async () => {
+    if (!savedAgentId) {
+      toast.error("Please save the agent first to download the complete deployment package");
+      return;
+    }
+
+    try {
+      toast.info("Generating deployment package...");
+      
+      // Generate all 4 required files
+      const packageData = await generateDeploymentPackage({
+        agentId: savedAgentId,
+        options: {
+          includeCloudFormation: config.deploymentType === 'aws',
+          includeCLIScript: config.deploymentType === 'docker' || config.deploymentType === 'ollama',
+          includeLambdaConfig: config.deploymentType === 'lambda',
+        },
+      });
+
+      // Create ZIP file with JSZip
+      const JSZip = (await import('jszip')).default;
+      const zip = new JSZip();
+
+      // Add all files to ZIP
+      Object.entries(packageData.files).forEach(([filename, content]) => {
+        zip.file(filename, content);
+      });
+
+      // Generate ZIP blob
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      
+      // Download ZIP
+      const url = URL.createObjectURL(zipBlob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${config.name.toLowerCase().replace(/\s+/g, "_")}_deployment_package.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      toast.success("Deployment package downloaded successfully!");
+    } catch (error: any) {
+      console.error("Download failed:", error);
+      toast.error(error.message || "Failed to download deployment package");
+    }
   };
 
   return (

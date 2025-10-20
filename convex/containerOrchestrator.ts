@@ -36,6 +36,7 @@ export const startTestContainer = internalAction({
       baseUrl: v.optional(v.string()),
       modelId: v.optional(v.string()),
       region: v.optional(v.string()),
+      testEnvironment: v.optional(v.string()),
     }),
     timeout: v.number(),
   },

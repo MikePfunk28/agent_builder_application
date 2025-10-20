@@ -53,7 +53,7 @@ http.route({
       // Return in MCP protocol format
       return new Response(
         JSON.stringify({
-          tools: agents.map(agent => ({
+          tools: agents.map((agent: any) => ({
             name: agent.name,
             description: agent.description,
             inputSchema: agent.inputSchema

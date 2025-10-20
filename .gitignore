@@ -111,3 +111,4 @@ tests/
 # Current logs and temporary files
 current_logs.txt
 *.local
+*.md

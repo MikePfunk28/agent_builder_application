@@ -18,7 +18,7 @@ interface Model {
 }
 
 const models: Model[] = [
-  // AWS Bedrock - Claude Models
+  // AWS Bedrock - Claude Models (Latest First)
   {
     id: "anthropic.claude-sonnet-4-5-20250929-v1:0",
     name: "Claude 4.5 Sonnet",
@@ -28,6 +28,16 @@ const models: Model[] = [
     capabilities: ["reasoning", "coding", "analysis", "creative"],
     size: "405B",
     performanceScore: 98,
+  },
+  {
+    id: "us.anthropic.claude-haiku-4-5-20250514-v1:0",
+    name: "Claude 4.5 Haiku",
+    description: "Latest fast Claude model with reasoning - perfect for thinking agents and tool creation",
+    provider: "AWS Bedrock",
+    recommended: true,
+    capabilities: ["reasoning", "coding", "analysis", "fast"],
+    size: "70B",
+    performanceScore: 92,
   },
   {
     id: "anthropic.claude-opus-4-1-20250805-v1:0",

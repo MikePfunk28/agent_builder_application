@@ -620,12 +620,12 @@ describe("MCP Configuration File Generation", () => {
         expect(servers.length).toBe(2);
 
         // Verify server configurations
-        const awsDocs = servers.find(s => s.name === "aws-docs");
+        const awsDocs = servers.find((s: any) => s.name === "aws-docs");
         expect(awsDocs).toBeDefined();
         expect(awsDocs?.command).toBe("uvx");
         expect(awsDocs?.args).toContain("awslabs.aws-documentation-mcp-server@latest");
 
-        const customTools = servers.find(s => s.name === "custom-tools");
+        const customTools = servers.find((s: any) => s.name === "custom-tools");
         expect(customTools).toBeDefined();
         expect(customTools?.command).toBe("python");
     });

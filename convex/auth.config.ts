@@ -8,16 +8,7 @@ export default {
       domain: DEPLOYMENT_URLS.PRODUCTION,
       applicationID: "convex",
     },
-    // AWS Cognito - Custom OIDC Provider
-    // The domain must match the 'iss' field in Cognito's JWT
-    // The applicationID must match the 'aud' field in Cognito's JWT
-    ...(process.env.COGNITO_ISSUER_URL && process.env.COGNITO_CLIENT_ID
-      ? [
-          {
-            domain: process.env.COGNITO_ISSUER_URL,
-            applicationID: process.env.COGNITO_CLIENT_ID,
-          },
-        ]
-      : []),
+    // AWS Cognito removed - users will sign in with AWS directly when deploying
+    // GitHub/Google OAuth handled by Convex Auth for app access
   ],
 };

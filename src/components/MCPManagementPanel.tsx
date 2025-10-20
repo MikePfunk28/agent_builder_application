@@ -2,12 +2,12 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useAction } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
-import { 
-  Server, 
-  Plus, 
-  RefreshCw, 
-  CheckCircle, 
-  XCircle, 
+import {
+  Server,
+  Plus,
+  RefreshCw,
+  CheckCircle,
+  XCircle,
   AlertCircle,
   Trash2,
   Edit,
@@ -53,7 +53,7 @@ export function MCPManagementPanel() {
     void (async () => {
       try {
         const result = await testConnection({ serverId });
-        
+
         if (result.success) {
           toast.success(`Connected to ${servers.find(s => s._id === serverId)?.name}`);
         } else {
@@ -76,7 +76,7 @@ export function MCPManagementPanel() {
       try {
         await deleteServer({ serverId });
         toast.success('MCP server deleted successfully');
-        
+
         // Clear selection if deleted server was selected
         if (selectedServer?._id === serverId) {
           setSelectedServer(null);
@@ -235,7 +235,7 @@ export function MCPManagementPanel() {
                     {server.command}
                   </code>
                 </div>
-                
+
                 {server.args.length > 0 && (
                   <div className="flex items-start gap-2">
                     <span className="text-green-600 font-medium min-w-[80px]">Args:</span>

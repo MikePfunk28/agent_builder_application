@@ -9,6 +9,7 @@ import { mutation, query, internalMutation, internalQuery, action } from "./_gen
 import { v } from "convex/values";
 import { internal, api } from "./_generated/api";
 import { getAuthUserId } from "@convex-dev/auth/server";
+// Removed unused import: Id
 
 // Validation constants
 const MAX_QUERY_LENGTH = 2000;
@@ -28,6 +29,12 @@ export const submitTest = mutation({
     testQuery: v.string(),
     timeout: v.optional(v.number()),
     priority: v.optional(v.number()),
+    conversationId: v.optional(v.id("conversations")),
+    testEnvironment: v.optional(v.union(
+      v.literal("lambda"),
+      v.literal("agentcore"),
+      v.literal("fargate")
+    )),
   },
   handler: async (ctx, args) => {
     // Authentication - use getAuthUserId for Convex user document ID
@@ -99,6 +106,14 @@ export const submitTest = mutation({
     // Determine model provider and config
     const { modelProvider, modelConfig } = extractModelConfig(agent.model, agent.deploymentType);
 
+    // Get conversation history if conversationId provided
+    if (args.conversationId) {
+      const conversation = await ctx.db.get(args.conversationId);
+      if (!conversation) {
+        throw new Error("Conversation not found");
+      }
+    }
+
     // Create test execution record
     const testId = await ctx.db.insert("testExecutions", {
       agentId: args.agentId,
@@ -114,6 +129,7 @@ export const submitTest = mutation({
       phase: "queued",
       logs: [],
       submittedAt: Date.now(),
+      conversationId: args.conversationId,
     });
 
     // Add to queue
@@ -255,17 +271,35 @@ export const cancelTest = mutation({
       return { success: true, message: "Test removed from queue" };
     }
 
-    // If running, stop ECS task
-    if (test.ecsTaskArn) {
-      await ctx.scheduler.runAfter(0, internal.containerOrchestrator.stopTestContainer, {
-        testId: args.testId,
-        taskArn: test.ecsTaskArn,
+    // If building or running, stop ECS task
+    if (test.status === "BUILDING" || test.status === "RUNNING") {
+      if (test.ecsTaskArn) {
+        await ctx.scheduler.runAfter(0, internal.containerOrchestrator.stopTestContainer, {
+          testId: args.testId,
+          taskArn: test.ecsTaskArn,
+        });
+      }
+
+      // Mark as cancelled immediately
+      await ctx.db.patch(args.testId, {
+        status: "FAILED",
+        success: false,
+        error: "Cancelled by user",
+        completedAt: Date.now(),
       });
 
-      return { success: true, message: "Test cancellation requested" };
+      return { success: true, message: "Test cancelled" };
     }
 
-    throw new Error("Cannot cancel test in current state");
+    // Fallback: mark as cancelled anyway
+    await ctx.db.patch(args.testId, {
+      status: "FAILED",
+      success: false,
+      error: "Cancelled by user",
+      completedAt: Date.now(),
+    });
+
+    return { success: true, message: "Test cancelled" };
   },
 });
 
@@ -381,6 +415,7 @@ export const updateStatus = internalMutation({
     success: v.optional(v.boolean()),
     error: v.optional(v.string()),
     errorStage: v.optional(v.string()),
+    response: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const test = await ctx.db.get(args.testId);
@@ -404,6 +439,18 @@ export const updateStatus = internalMutation({
       if (args.error) {
         updates.error = args.error;
         updates.errorStage = args.errorStage;
+      }
+      if (args.response) {
+        updates.response = args.response;
+      }
+      
+      // Add assistant response to conversation if exists
+      if (test.conversationId && args.response && args.success) {
+        await ctx.runMutation(internal.conversations.addMessageInternal, {
+          conversationId: test.conversationId,
+          role: "assistant",
+          content: args.response,
+        });
       }
     }
 

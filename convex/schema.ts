@@ -130,27 +130,67 @@ const applicationTables = {
     name: v.string(),
     description: v.optional(v.string()),
     model: v.string(),
+    modelProvider: v.optional(v.string()), // "bedrock", "ollama", "openai", etc.
     systemPrompt: v.string(),
     tools: v.array(v.object({
       name: v.string(),
       type: v.string(),
-      config: v.optional(v.any()),
+      config: v.optional(v.object({
+        description: v.optional(v.string()),
+        parameters: v.optional(v.array(v.object({
+          name: v.string(),
+          type: v.string(),
+          description: v.optional(v.string()),
+          required: v.optional(v.boolean()),
+        }))),
+      })),
       requiresPip: v.optional(v.boolean()),
       pipPackages: v.optional(v.array(v.string())),
+      extrasPip: v.optional(v.string()),
+      notSupportedOn: v.optional(v.array(v.string())),
     })),
     generatedCode: v.string(),
     dockerConfig: v.optional(v.string()),
-    deploymentType: v.string(), // "aws", "ollama", "docker"
+    deploymentType: v.string(), // "aws", "ollama", "docker", "agentcore"
     createdBy: v.id("users"),
     isPublic: v.optional(v.boolean()),
+    tier: v.optional(v.string()), // "freemium", "personal", "enterprise"
+    
+    // MCP Configuration
+    mcpServers: v.optional(v.array(v.object({
+      name: v.string(),
+      command: v.string(),
+      args: v.array(v.string()),
+      env: v.optional(v.any()),
+      disabled: v.optional(v.boolean()),
+    }))),
+    
+    // Dynamic Tools (Meta-tooling)
+    dynamicTools: v.optional(v.array(v.object({
+      name: v.string(),
+      code: v.string(),
+      parameters: v.any(),
+    }))),
     
     // MCP Tool Exposure
     exposableAsMCPTool: v.optional(v.boolean()),
     mcpToolName: v.optional(v.string()),
     mcpInputSchema: v.optional(v.any()),
+    
+    // Architecture & Deployment Metadata
+    diagramUrl: v.optional(v.string()),
+    lastDeployedAt: v.optional(v.number()),
+    deploymentCount: v.optional(v.number()),
+    
+    // Timestamps
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
   }).index("by_user", ["createdBy"])
     .index("by_public", ["isPublic"])
-    .index("by_mcp_tool_name", ["mcpToolName"]),
+    .index("by_mcp_tool_name", ["mcpToolName"])
+    .index("by_user_and_tier", ["createdBy", "tier"])
+    .index("by_deployment_type", ["deploymentType"])
+    .index("by_model_provider", ["modelProvider"]),
 
   templates: defineTable({
     name: v.string(),
@@ -167,6 +207,24 @@ const applicationTables = {
     })),
     isOfficial: v.optional(v.boolean()),
   }).index("by_category", ["category"]),
+
+  // Conversation Management
+  conversations: defineTable({
+    agentId: v.id("agents"),
+    userId: v.id("users"),
+    title: v.string(),
+    messages: v.array(v.object({
+      role: v.union(v.literal("user"), v.literal("assistant"), v.literal("system")),
+      content: v.string(),
+      timestamp: v.number(),
+      metadata: v.optional(v.any()),
+    })),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_agent", ["agentId"])
+    .index("by_agent_user", ["agentId", "userId"]),
 
   // Containerized Agent Testing System
   testExecutions: defineTable({
@@ -188,6 +246,7 @@ const applicationTables = {
     }),
     timeout: v.number(),
     agentRuntimeArn: v.optional(v.string()), // For AgentCore testing
+    conversationId: v.optional(v.id("conversations")), // For conversation context
 
     // Execution State
     status: v.string(), // CREATED | QUEUED | BUILDING | RUNNING | COMPLETED | FAILED | ABANDONED | ARCHIVED

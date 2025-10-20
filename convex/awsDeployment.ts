@@ -658,13 +658,14 @@ export const createDeploymentInternal = internalMutation({
     }),
   },
   handler: async (ctx, args) => {
-    const user = await ctx.db
-      .query("users")
-      .first();
+    // Ensure userId is a proper Id<"users">
+    const userId = typeof args.userId === 'string' && args.userId.startsWith('j') 
+      ? args.userId as any 
+      : args.userId;
 
     return await ctx.db.insert("deployments", {
       agentId: args.agentId,
-      userId: user?._id || (args.userId as any),
+      userId: userId,
       tier: args.tier || "freemium",
       agentName: args.deploymentConfig.agentName,
       description: args.deploymentConfig.description,

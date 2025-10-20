@@ -5,7 +5,7 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 
 /**
  * MCP Configuration Management
- * 
+ *
  * This module provides CRUD operations for managing MCP server configurations.
  * It handles:
  * - Listing MCP servers
@@ -21,8 +21,9 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 export const listMCPServers = query({
   args: {},
   handler: async (ctx) => {
+    // Get Convex user document ID
     const userId = await getAuthUserId(ctx);
-    
+
     // Return empty array if not authenticated (instead of throwing error)
     if (!userId) {
       return [];
@@ -46,8 +47,9 @@ export const getMCPServerByName = query({
     serverName: v.string(),
   },
   handler: async (ctx, args) => {
+    // Get Convex user document ID
     const userId = await getAuthUserId(ctx);
-    
+
     if (!userId) {
       throw new Error("Not authenticated");
     }
@@ -55,7 +57,7 @@ export const getMCPServerByName = query({
     // Get server by name for this user
     const server = await ctx.db
       .query("mcpServers")
-      .withIndex("by_user_and_name", (q) => 
+      .withIndex("by_user_and_name", (q) =>
         q.eq("userId", userId).eq("name", args.serverName)
       )
       .first();
@@ -77,8 +79,9 @@ export const addMCPServer = mutation({
     timeout: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    // Get Convex user document ID
     const userId = await getAuthUserId(ctx);
-    
+
     if (!userId) {
       throw new Error("Not authenticated");
     }
@@ -86,7 +89,7 @@ export const addMCPServer = mutation({
     // Check if server with this name already exists for this user
     const existingServer = await ctx.db
       .query("mcpServers")
-      .withIndex("by_user_and_name", (q) => 
+      .withIndex("by_user_and_name", (q) =>
         q.eq("userId", userId).eq("name", args.name)
       )
       .first();
@@ -105,7 +108,7 @@ export const addMCPServer = mutation({
     // Create new MCP server
     const serverId = await ctx.db.insert("mcpServers", {
       name: args.name,
-      userId,
+      userId: userId,
       command: args.command,
       args: args.args,
       env: args.env,
@@ -136,8 +139,9 @@ export const updateMCPServer = mutation({
     }),
   },
   handler: async (ctx, args) => {
+    // Get Convex user document ID
     const userId = await getAuthUserId(ctx);
-    
+
     if (!userId) {
       throw new Error("Not authenticated");
     }
@@ -158,7 +162,7 @@ export const updateMCPServer = mutation({
     if (args.updates.name && args.updates.name !== server.name) {
       const existingServer = await ctx.db
         .query("mcpServers")
-        .withIndex("by_user_and_name", (q) => 
+        .withIndex("by_user_and_name", (q) =>
           q.eq("userId", userId).eq("name", args.updates.name!)
         )
         .first();
@@ -193,8 +197,9 @@ export const deleteMCPServer = mutation({
     serverId: v.id("mcpServers"),
   },
   handler: async (ctx, args) => {
+    // Get Convex user document ID
     const userId = await getAuthUserId(ctx);
-    
+
     if (!userId) {
       throw new Error("Not authenticated");
     }
@@ -308,8 +313,9 @@ export const getMCPServerById = query({
     serverId: v.id("mcpServers"),
   },
   handler: async (ctx, args) => {
+    // Get Convex user document ID
     const userId = await getAuthUserId(ctx);
-    
+
     if (!userId) {
       throw new Error("Not authenticated");
     }
