@@ -17,6 +17,7 @@
   "dependencies": {
     "@aws-sdk/client-bedrock-agent": "^3.913.0",
     "@aws-sdk/client-bedrock-agent-runtime": "^3.911.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.913.0",
     "@aws-sdk/client-cloudwatch-logs": "^3.701.0",
     "@aws-sdk/client-ecs": "^3.701.0",
     "@aws-sdk/client-lambda": "^3.913.0",
@@ -24,6 +25,7 @@
     "@aws-sdk/client-sts": "^3.911.0",
     "@aws-sdk/s3-request-presigner": "^3.910.0",
     "@convex-dev/auth": "^0.0.80",
+    "@modelcontextprotocol/sdk": "^1.20.1",
     "@types/react-syntax-highlighter": "^15.5.13",
     "clsx": "^2.1.1",
     "convex": "^1.24.2",

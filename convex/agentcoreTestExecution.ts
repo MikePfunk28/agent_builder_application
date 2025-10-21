@@ -23,7 +23,7 @@ export const executeAgentCoreTest = internalAction({
 
     try {
       // Get agent
-      const agent: any = await ctx.runQuery(api.agents.get, { id: args.agentId });
+      const agent: any = await ctx.runQuery(internal.agents.getInternal, { id: args.agentId });
       if (!agent) {
         throw new Error("Agent not found");
       }
@@ -34,8 +34,8 @@ export const executeAgentCoreTest = internalAction({
         status: "RUNNING",
       });
 
-      // Invoke AgentCore via MCP
-      const result = await ctx.runAction(api.mcpClient.invokeMCPTool, {
+      // Invoke AgentCore via MCP (using internal action - no auth required)
+      const result = await ctx.runAction(internal.mcpClient.invokeMCPToolInternal, {
         serverName: "bedrock-agentcore-mcp-server",
         toolName: "execute_agent",
         parameters: {

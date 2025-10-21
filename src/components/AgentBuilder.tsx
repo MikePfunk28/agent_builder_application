@@ -275,7 +275,7 @@ export function AgentBuilder() {
                 savedAgentId={savedAgentId}
                 onGenerate={handleGenerate}
                 onSave={handleSave}
-                onDownload={handleDownload}
+                onDownload={() => void handleDownload()}
               />
             )}
           </motion.div>
@@ -780,15 +780,107 @@ function DeployStep({
 }
 
 function ArchitectureStep({ config }: { config: AgentConfig }) {
+  const [showDiagramCode, setShowDiagramCode] = useState(false);
+  const generateDiagram = useAction(api.diagramGenerator.generateArchitectureDiagram);
+  const [diagramCode, setDiagramCode] = useState<string>("");
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  const handleGenerateDiagram = () => {
+    if (!config.name) return;
+    
+    setIsGenerating(true);
+    void generateDiagram({
+      agentName: config.name,
+      deploymentType: config.deploymentType,
+      model: config.model,
+      tools: config.tools,
+    }).then((result) => {
+      if (result.success && result.diagramCode) {
+        setDiagramCode(result.diagramCode);
+        setShowDiagramCode(true);
+        toast.success("Diagram code generated! (MCP integration coming soon)");
+      }
+    }).catch((error) => {
+      toast.error("Failed to generate diagram");
+      console.error(error);
+    }).finally(() => {
+      setIsGenerating(false);
+    });
+  };
+
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-bold text-green-400 mb-6">Architecture Preview</h2>
+      
       <ArchitecturePreview
         agentName={config.name}
         model={config.model}
         tools={config.tools}
         deploymentType={config.deploymentType}
       />
+
+      {/* Architecture Diagram Section */}
+      <div className="bg-gray-900/50 border border-green-900/30 rounded-lg p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-green-400 flex items-center gap-2">
+            <Network className="w-5 h-5" />
+            Architecture Diagram
+          </h3>
+          <button
+            onClick={handleGenerateDiagram}
+            disabled={isGenerating || !config.name}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
+          >
+            {isGenerating ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+                Generating...
+              </>
+            ) : (
+              <>
+                <Network className="w-4 h-4" />
+                Generate Diagram Code
+              </>
+            )}
+          </button>
+        </div>
+
+        {showDiagramCode && diagramCode ? (
+          <div className="space-y-3">
+            <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm text-gray-400">Python Diagrams Code</span>
+                <button
+                  onClick={() => {
+                    void navigator.clipboard.writeText(diagramCode);
+                    toast.success("Copied to clipboard!");
+                  }}
+                  className="text-xs text-blue-400 hover:text-blue-300"
+                >
+                  Copy
+                </button>
+              </div>
+              <pre className="text-xs text-green-400 overflow-x-auto">
+                <code>{diagramCode}</code>
+              </pre>
+            </div>
+            <p className="text-xs text-gray-500">
+              💡 Tip: Run this code with the <code className="text-green-400">diagrams</code> package to generate a visual diagram.
+              MCP integration for automatic diagram generation coming soon!
+            </p>
+          </div>
+        ) : (
+          <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-8 text-center">
+            <Network className="w-12 h-12 text-gray-600 mx-auto mb-3" />
+            <p className="text-gray-400 text-sm mb-2">
+              No diagram generated yet
+            </p>
+            <p className="text-gray-500 text-xs">
+              Click "Generate Diagram Code" to create Python code for visualizing your architecture
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -333,7 +333,9 @@ export const updateTestWithTaskInfo = internalMutation({
 });
 
 /**
- * Cleanup abandoned tests (scheduled to run every 15 minutes)
+ * Cleanup abandoned tests (scheduled to run every hour)
+ * 
+ * Cost optimization: Exits early if no tests in queue
  */
 export const cleanupAbandonedTests = internalAction({
   args: {},
@@ -343,6 +345,13 @@ export const cleanupAbandonedTests = internalAction({
     const abandoned = await ctx.runQuery(internal.queueProcessor.queryAbandonedTests, {
       cutoffTime: fifteenMinutesAgo,
     });
+
+    // Exit early if nothing to clean up (saves operations)
+    if (abandoned.length === 0) {
+      return;
+    }
+
+    console.log(`🧹 Found ${abandoned.length} abandoned test(s) to clean up`);
 
     for (const queueEntry of abandoned) {
       console.log(`🧹 Cleaning up abandoned test: ${queueEntry.testId}`);

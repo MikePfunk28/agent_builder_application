@@ -102,16 +102,16 @@ const applicationTables = {
     upgradedAt: v.optional(v.number()),
     createdAt: v.optional(v.number()),
     isAnonymous: v.optional(v.boolean()), // For anonymous users
-    
+
     // OAuth provider-specific fields
     locale: v.optional(v.string()), // Google: user's locale (e.g., "en-US")
     login: v.optional(v.string()), // GitHub: username
     authProvider: v.optional(v.string()), // "github" | "google" | "cognito" | "password"
-    
+
     // Auth metadata
     lastSignIn: v.optional(v.number()),
     signInCount: v.optional(v.number()),
-    
+
     // AWS Federated Identity (for Cognito users)
     awsIdentityId: v.optional(v.string()), // Cognito Identity Pool ID
     awsCredentials: v.optional(v.object({
@@ -155,7 +155,7 @@ const applicationTables = {
     createdBy: v.id("users"),
     isPublic: v.optional(v.boolean()),
     tier: v.optional(v.string()), // "freemium", "personal", "enterprise"
-    
+
     // MCP Configuration
     mcpServers: v.optional(v.array(v.object({
       name: v.string(),
@@ -164,24 +164,24 @@ const applicationTables = {
       env: v.optional(v.any()),
       disabled: v.optional(v.boolean()),
     }))),
-    
+
     // Dynamic Tools (Meta-tooling)
     dynamicTools: v.optional(v.array(v.object({
       name: v.string(),
       code: v.string(),
       parameters: v.any(),
     }))),
-    
+
     // MCP Tool Exposure
     exposableAsMCPTool: v.optional(v.boolean()),
     mcpToolName: v.optional(v.string()),
     mcpInputSchema: v.optional(v.any()),
-    
+
     // Architecture & Deployment Metadata
     diagramUrl: v.optional(v.string()),
     lastDeployedAt: v.optional(v.number()),
     deploymentCount: v.optional(v.number()),
-    
+
     // Timestamps
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
@@ -434,7 +434,8 @@ const applicationTables = {
   })
     .index("by_event_type", ["eventType", "timestamp"])
     .index("by_user", ["userId", "timestamp"])
-    .index("by_resource", ["resource", "resourceId"]),
+    .index("by_resource", ["resource", "resourceId"])
+    .index("by_timestamp", ["timestamp"]),
 
   // Dynamic Tools (Meta-tooling)
   dynamicTools: defineTable({
@@ -444,31 +445,31 @@ const applicationTables = {
     description: v.string(),
     userId: v.id("users"),
     agentId: v.optional(v.id("agents")), // Agent that created this tool
-    
+
     // Tool Code
     code: v.string(), // Python code with @tool decorator
     validated: v.boolean(), // Whether code passed syntax validation
     validationError: v.optional(v.string()),
-    
+
     // Tool Metadata
     parameters: v.any(), // JSON schema for tool parameters
     returnType: v.optional(v.string()),
     category: v.optional(v.string()),
-    
+
     // Dependencies
     pipPackages: v.optional(v.array(v.string())),
     extrasPip: v.optional(v.string()),
-    
+
     // Usage Tracking
     invocationCount: v.number(),
     lastInvokedAt: v.optional(v.number()),
     successCount: v.number(),
     errorCount: v.number(),
-    
+
     // Timestamps
     createdAt: v.number(),
     updatedAt: v.number(),
-    
+
     // Status
     isActive: v.boolean(),
     isPublic: v.optional(v.boolean()),

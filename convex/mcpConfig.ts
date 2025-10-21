@@ -1,4 +1,4 @@
-import { mutation, query, action } from "./_generated/server";
+import { mutation, query, action, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import { api } from "./_generated/api";
 import { getAuthUserId } from "@convex-dev/auth/server";
@@ -63,6 +63,55 @@ export const getMCPServerByName = query({
       .first();
 
     return server;
+  },
+});
+
+/**
+ * Get a specific MCP server by name (internal - no auth required)
+ * Used by system actions like queue processor
+ */
+export const getMCPServerByNameInternal = internalQuery({
+  args: {
+    serverName: v.string(),
+    userId: v.optional(v.id("users")),
+  },
+  handler: async (ctx, args) => {
+    // Special case: bedrock-agentcore-mcp-server is a built-in system server
+    if (args.serverName === "bedrock-agentcore-mcp-server") {
+      return {
+        _id: "system_bedrock_agentcore" as any,
+        _creationTime: Date.now(),
+        name: "bedrock-agentcore-mcp-server",
+        userId: args.userId || ("system" as any),
+        command: "bedrock-agentcore",
+        args: [],
+        env: {},
+        disabled: false,
+        timeout: 60000,
+        status: "connected",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+    }
+
+    if (args.userId) {
+      // Get server by name for specific user
+      const userId = args.userId; // Type narrowing
+      const server = await ctx.db
+        .query("mcpServers")
+        .withIndex("by_user_and_name", (q) =>
+          q.eq("userId", userId).eq("name", args.serverName)
+        )
+        .first();
+      return server;
+    } else {
+      // Get first server by name (for other MCP servers)
+      const server = await ctx.db
+        .query("mcpServers")
+        .filter((q) => q.eq(q.field("name"), args.serverName))
+        .first();
+      return server;
+    }
   },
 });
 

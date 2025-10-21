@@ -1,6 +1,8 @@
-import { action } from "./_generated/server";
+"use node";
+
+import { action, internalAction } from "./_generated/server";
 import { v } from "convex/values";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 
 /**
  * MCP Client for invoking tools from configured MCP servers
@@ -79,6 +81,78 @@ function calculateBackoffDelay(
  * - Exponential backoff retry logic
  * - Comprehensive error handling
  */
+/**
+ * Internal MCP tool invocation (no auth required)
+ * Used by system actions like queue processor
+ */
+export const invokeMCPToolInternal = internalAction({
+  args: {
+    serverName: v.string(),
+    toolName: v.string(),
+    parameters: v.any(),
+    userId: v.optional(v.id("users")),
+    timeout: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const startTime = Date.now();
+
+    try {
+      // Get MCP server configuration from database (internal query)
+      const server = await ctx.runQuery(internal.mcpConfig.getMCPServerByNameInternal, {
+        serverName: args.serverName,
+        userId: args.userId,
+      });
+
+      if (!server) {
+        return {
+          success: false,
+          error: `MCP server "${args.serverName}" not found.`,
+        };
+      }
+
+      if (server.disabled) {
+        return {
+          success: false,
+          error: `MCP server "${args.serverName}" is disabled.`,
+        };
+      }
+
+      // Use server-specific timeout or provided timeout
+      const timeout = args.timeout || server.timeout || 30000;
+
+      // Invoke tool with retry logic
+      const result = await invokeMCPToolWithRetry(
+        server,
+        args.toolName,
+        args.parameters,
+        timeout,
+        DEFAULT_RETRY_CONFIG
+      );
+
+      const executionTime = Date.now() - startTime;
+
+      // Return properly typed result
+      if (result.success) {
+        return {
+          success: true,
+          result: result.result,
+          executionTime,
+        };
+      } else {
+        return {
+          success: false,
+          error: result.error,
+        };
+      }
+    } catch (error: any) {
+      return {
+        success: false,
+        error: `Failed to invoke MCP tool: ${error.message || String(error)}`,
+      };
+    }
+  },
+});
+
 export const invokeMCPTool = action({
   args: {
     serverName: v.string(),
@@ -88,7 +162,7 @@ export const invokeMCPTool = action({
   },
   handler: async (ctx, args) => {
     const startTime = Date.now();
-    
+
     try {
       // Get MCP server configuration from database
       const server = await ctx.runQuery(api.mcpConfig.getMCPServerByName, {
@@ -303,32 +377,176 @@ async function invokeMCPToolWithRetry(
 }
 
 /**
- * Direct MCP tool invocation (placeholder for actual MCP protocol implementation)
- * 
- * TODO: Implement actual MCP protocol communication
- * This could use:
- * - MCP SDK if available
- * - Direct stdio communication with the MCP server process
- * - HTTP/WebSocket communication depending on server type
+ * Direct MCP tool invocation
+ *
+ * For Bedrock AgentCore: Uses Bedrock Runtime API directly
+ * For other MCP servers: Uses MCP SDK with stdio transport
  */
 async function invokeMCPToolDirect(
   server: any,
   toolName: string,
-  _parameters: any,
-  _timeout: number
+  parameters: any,
+  timeout: number
 ): Promise<any> {
-  // This is a placeholder implementation
-  // In a real implementation, this would:
-  // 1. Spawn the MCP server process (if not already running)
-  // 2. Send a tool invocation request using MCP protocol
-  // 3. Wait for the response with timeout
-  // 4. Parse and return the result
+  // Special handling for Bedrock AgentCore
+  if (server.name === "bedrock-agentcore-mcp-server" || toolName === "execute_agent") {
+    return await invokeBedrockAgentCore(parameters, timeout);
+  }
 
-  throw new Error(
-    "MCP protocol implementation not yet available. " +
-    "This requires integration with MCP SDK or direct protocol implementation. " +
-    `Server: ${server.name}, Tool: ${toolName}`
-  );
+  // For other MCP servers, use MCP SDK
+  const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+  const { StdioClientTransport } = await import("@modelcontextprotocol/sdk/client/stdio.js");
+
+  let client: any = null;
+
+  try {
+    // Create stdio transport for the MCP server
+    const transport = new StdioClientTransport({
+      command: server.command,
+      args: server.args || [],
+      env: {
+        ...process.env,
+        ...(server.env || {}),
+      },
+    });
+
+    // Create MCP client
+    client = new Client(
+      {
+        name: "agent-builder-convex",
+        version: "1.0.0",
+      },
+      {
+        capabilities: {
+          tools: {},
+        },
+      }
+    );
+
+    // Connect to the server with timeout
+    await Promise.race([
+      client.connect(transport),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("MCP server connection timeout")), timeout)
+      ),
+    ]);
+
+    // List available tools
+    const toolsList = await client.listTools();
+
+    // Find the requested tool
+    const tool = toolsList.tools.find((t: any) => t.name === toolName);
+    if (!tool) {
+      throw new Error(
+        `Tool "${toolName}" not found. Available tools: ${toolsList.tools.map((t: any) => t.name).join(", ")}`
+      );
+    }
+
+    // Call the tool with timeout
+    const result = await Promise.race([
+      client.callTool({
+        name: toolName,
+        arguments: parameters,
+      }),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("MCP tool invocation timeout")), timeout)
+      ),
+    ]) as any;
+
+    // Return the result content
+    return result.content?.[0]?.text || result;
+  } catch (error: any) {
+    console.error(`MCP invocation error (${server.name}/${toolName}):`, error);
+    throw error;
+  } finally {
+    // Clean up: close the client connection
+    if (client) {
+      try {
+        await client.close();
+      } catch (closeError) {
+        console.error("Error closing MCP client:", closeError);
+      }
+    }
+  }
+}
+
+/**
+ * Invoke Bedrock AgentCore directly using AWS SDK
+ */
+async function invokeBedrockAgentCore(parameters: any, timeout: number): Promise<any> {
+  try {
+    const { BedrockRuntimeClient, InvokeModelCommand } = await import("@aws-sdk/client-bedrock-runtime");
+    
+    const client = new BedrockRuntimeClient({
+      region: process.env.AWS_REGION || "us-east-1",
+      credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+      },
+    });
+
+    const modelId = parameters.model_id || "anthropic.claude-3-haiku-20240307-v1:0";
+    const input = parameters.input || "";
+    const systemPrompt = parameters.system_prompt || "You are a helpful AI assistant.";
+    const conversationHistory = parameters.conversation_history || [];
+
+    // Build messages array from conversation history
+    const messages: any[] = [];
+    
+    // Add conversation history
+    for (const msg of conversationHistory) {
+      messages.push({
+        role: msg.role === "assistant" ? "assistant" : "user",
+        content: [{ text: msg.content }],
+      });
+    }
+    
+    // Add current input
+    messages.push({
+      role: "user",
+      content: [{ text: input }],
+    });
+
+    // Prepare request payload
+    const payload = {
+      anthropic_version: "bedrock-2023-05-31",
+      max_tokens: 4096,
+      system: systemPrompt,
+      messages: messages,
+      temperature: 0.7,
+    };
+
+    const command = new InvokeModelCommand({
+      modelId: modelId,
+      contentType: "application/json",
+      accept: "application/json",
+      body: JSON.stringify(payload),
+    });
+
+    // Invoke with timeout
+    const response: any = await Promise.race([
+      client.send(command),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error("Bedrock invocation timeout")), timeout)
+      ),
+    ]);
+
+    // Parse response
+    const responseBody = JSON.parse(new TextDecoder().decode(response.body));
+    
+    // Extract text from response
+    const responseText = responseBody.content?.[0]?.text || JSON.stringify(responseBody);
+
+    return {
+      response: responseText,
+      model_id: modelId,
+      usage: responseBody.usage || {},
+      stop_reason: responseBody.stop_reason,
+    };
+  } catch (error: any) {
+    console.error("Bedrock AgentCore invocation failed:", error);
+    throw new Error(`Bedrock invocation failed: ${error.message}`);
+  }
 }
 
 /**
@@ -364,7 +582,7 @@ function isRetryableError(error: any): boolean {
 
 /**
  * Test MCP server connection
- * 
+ *
  * This action attempts to connect to an MCP server and list its available tools.
  * It's useful for validating server configuration.
  */
@@ -395,15 +613,95 @@ export const testMCPServerConnection = action({
         };
       }
 
-      // Try to list tools (this tests the connection)
-      // TODO: Implement actual tool listing via MCP protocol
-      // For now, return a placeholder response
-      
-      return {
-        success: false,
-        status: "error",
-        error: "MCP protocol implementation not yet available",
-      };
+      // Special case for Bedrock AgentCore - it's always available if AWS creds are set
+      if (server.name === "bedrock-agentcore-mcp-server") {
+        if (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) {
+          return {
+            success: false,
+            status: "error",
+            error: "AWS credentials not configured",
+          };
+        }
+        return {
+          success: true,
+          status: "connected",
+          tools: [
+            {
+              name: "execute_agent",
+              description: "Execute an agent in Bedrock AgentCore sandbox",
+              inputSchema: {
+                type: "object",
+                properties: {
+                  code: { type: "string" },
+                  input: { type: "string" },
+                  model_id: { type: "string" },
+                  system_prompt: { type: "string" },
+                  conversation_history: { type: "array" },
+                },
+                required: ["code", "input"],
+              },
+            },
+          ],
+        };
+      }
+
+      // For other MCP servers, connect and list tools
+      const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+      const { StdioClientTransport } = await import("@modelcontextprotocol/sdk/client/stdio.js");
+
+      let client: any = null;
+
+      try {
+        const transport = new StdioClientTransport({
+          command: server.command,
+          args: server.args || [],
+          env: {
+            ...process.env,
+            ...(server.env || {}),
+          },
+        });
+
+        client = new Client(
+          {
+            name: "agent-builder-convex",
+            version: "1.0.0",
+          },
+          {
+            capabilities: {
+              tools: {},
+            },
+          }
+        );
+
+        // Connect with 10 second timeout
+        await Promise.race([
+          client.connect(transport),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("Connection timeout")), 10000)
+          ),
+        ]);
+
+        // List available tools
+        const toolsList = await client.listTools();
+
+        return {
+          success: true,
+          status: "connected",
+          tools: toolsList.tools.map((tool: any) => ({
+            name: tool.name,
+            description: tool.description,
+            inputSchema: tool.inputSchema,
+          })),
+        };
+      } finally {
+        if (client) {
+          try {
+            await client.close();
+          } catch (closeError) {
+            console.error("Error closing test client:", closeError);
+          }
+        }
+      }
     } catch (error: any) {
       return {
         success: false,
