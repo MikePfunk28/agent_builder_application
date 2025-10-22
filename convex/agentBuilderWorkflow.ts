@@ -10,6 +10,32 @@
 import { v } from "convex/values";
 import { action } from "./_generated/server";
 import { api } from "./_generated/api";
+import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
+
+const WORKFLOW_MODEL_ID =
+  process.env.BEDROCK_WORKFLOW_MODEL_ID ||
+  process.env.DEFAULT_BEDROCK_MODEL_ID ||
+  "us.anthropic.claude-3-5-haiku-20241022-v1:0";
+const WORKFLOW_REGION =
+  process.env.BEDROCK_REGION ||
+  process.env.AWS_REGION ||
+  "us-east-1";
+
+const bedrockClient = new BedrockRuntimeClient({
+  region: WORKFLOW_REGION,
+});
+
+type WorkflowModelPayload = {
+  stageName: string;
+  systemPrompt: string;
+  userPrompt: string;
+};
+
+type WorkflowModelResult = {
+  outputText: string;
+  inputTokens: number;
+  outputTokens: number;
+};
 
 // Workflow stages for agent building
 export const WORKFLOW_STAGES = {
@@ -162,11 +188,6 @@ export const executeWorkflowStage = action({
     conversationId: v.optional(v.string())
   },
   handler: async (ctx, args) => {
-    const Anthropic = (await import("@anthropic-ai/sdk")).default;
-    const anthropic = new Anthropic({
-      apiKey: process.env.ANTHROPIC_API_KEY,
-    });
-
     const stage = WORKFLOW_STAGES[args.stage as keyof typeof WORKFLOW_STAGES];
     if (!stage) {
       throw new Error(`Invalid workflow stage: ${args.stage}`);
@@ -183,31 +204,87 @@ export const executeWorkflowStage = action({
 
     const fullPrompt = `${contextPrompt}USER REQUEST:\n${args.userInput}\n\nYour task: ${stage.systemPrompt}`;
 
-    const response = await anthropic.messages.create({
-      model: "claude-3-7-sonnet-20250219",
-      max_tokens: 8000,
-      temperature: 0.7,
-      system: stage.systemPrompt,
-      messages: [{
-        role: "user",
-        content: fullPrompt
-      }]
+    const result = await invokeWorkflowModel({
+      stageName: stage.name,
+      systemPrompt: stage.systemPrompt,
+      userPrompt: fullPrompt,
     });
-
-    const output = response.content[0].type === "text" 
-      ? response.content[0].text 
-      : "";
 
     return {
       stage: stage.name,
-      output,
+      output: result.outputText,
       usage: {
-        inputTokens: response.usage.input_tokens,
-        outputTokens: response.usage.output_tokens
+        inputTokens: result.inputTokens,
+        outputTokens: result.outputTokens
       }
     };
   }
 });
+
+async function invokeWorkflowModel(payload: WorkflowModelPayload): Promise<WorkflowModelResult> {
+  const { stageName, systemPrompt, userPrompt } = payload;
+
+  const requestBody = {
+    anthropic_version: "bedrock-2023-05-31",
+    system: systemPrompt,
+    max_tokens: 8000,
+    temperature: 0.7,
+    messages: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: userPrompt,
+          },
+        ],
+      },
+    ],
+  };
+
+  const command = new InvokeModelCommand({
+    modelId: WORKFLOW_MODEL_ID,
+    contentType: "application/json",
+    accept: "application/json",
+    body: JSON.stringify(requestBody),
+  });
+
+  try {
+    const response = await bedrockClient.send(command);
+    const decoded = new TextDecoder().decode(response.body);
+    const json = JSON.parse(decoded);
+    const contentBlocks = Array.isArray(json.content) ? json.content : [];
+    const outputText = contentBlocks
+      .filter((block: any) => block?.type === "text" && typeof block.text === "string")
+      .map((block: any) => block.text as string)
+      .join("\n\n")
+      .trim();
+
+    if (!outputText) {
+      throw new Error("Bedrock response did not include text content");
+    }
+
+    const usage = json.usage ?? {};
+    const inputTokens = usage.input_tokens ?? usage.inputTokens ?? 0;
+    const outputTokens = usage.output_tokens ?? usage.outputTokens ?? 0;
+
+    return {
+      outputText,
+      inputTokens,
+      outputTokens,
+    };
+  } catch (error: any) {
+    console.error("Bedrock workflow invocation failed", {
+      stageName,
+      modelId: WORKFLOW_MODEL_ID,
+      region: WORKFLOW_REGION,
+      error: error?.message,
+    });
+    throw new Error(
+      `Bedrock workflow stage "${stageName}" failed: ${error?.message || "Unknown error"}`
+    );
+  }
+}
 
 /**
  * Execute the complete agent building workflow

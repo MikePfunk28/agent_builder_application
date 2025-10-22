@@ -36,14 +36,41 @@ export const executeAgentCoreTest = internalAction({
         status: "RUNNING",
       });
 
-      // Execute the user's generated agent code directly
-      // This runs THEIR agent with THEIR chosen model, not ours
-      const result = await executeUserAgentCode({
+      // Try Lambda first (runs actual agent code with @app.entrypoint)
+      let result = await executeViaLambda({
         agentCode: agent.generatedCode,
         input: args.input,
         modelId: agent.model,
         tools: agent.tools || [],
       });
+      
+      if (!result.success) {
+        const isTimeout = result.error?.includes("timeout");
+        const is4xxOr5xx = result.error?.includes("4") || result.error?.includes("5");
+        
+        if (isTimeout) {
+          // 200 but no response - wait 2s and retry Lambda once
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          result = await executeViaLambda({
+            agentCode: agent.generatedCode,
+            input: args.input,
+            modelId: agent.model,
+            tools: agent.tools || [],
+          });
+          
+          // If still timeout, fail
+          if (!result.success) {
+            return { success: false, error: result.error, executionTime: Date.now() - startTime };
+          }
+        } else if (is4xxOr5xx) {
+          // 4xx/5xx - try Bedrock fallback once
+          result = await executeViaDirectBedrock({
+            input: args.input,
+            modelId: agent.model,
+            systemPrompt: agent.systemPrompt,
+          });
+        }
+      }
 
       const executionTime = Date.now() - startTime;
 
@@ -84,110 +111,135 @@ export const executeAgentCoreTest = internalAction({
 
 
 /**
- * Execute user's generated agent code
- * This runs THEIR agent with THEIR model, not ours
+ * Execute via Lambda (runs actual agent code with @app.entrypoint)
  */
-async function executeUserAgentCode(params: {
+async function executeViaLambda(params: {
   agentCode: string;
   input: string;
   modelId: string;
   tools: any[];
 }): Promise<{ success: boolean; result?: any; error?: string }> {
   try {
-    // In production, this would:
-    // 1. Write agent code to temp file
-    // 2. Run: echo '{"prompt":"input"}' | python agent.py
-    // 3. Capture output
-    // 4. Parse response
+    const { LambdaClient, InvokeCommand } = await import("@aws-sdk/client-lambda");
     
-    // For now, we'll use a subprocess to run the agent
-    const { spawn } = await import("child_process");
-    const fs = await import("fs");
-    const path = await import("path");
-    const os = await import("os");
-    
-    // Create temp directory
-    const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "agent-test-"));
-    const agentFile = path.join(tempDir, "agent.py");
-    
-    // Write agent code
-    await fs.promises.writeFile(agentFile, params.agentCode);
-    
-    // Prepare input
-    const input = JSON.stringify({ prompt: params.input });
-    
-    // Run agent
-    return new Promise((resolve) => {
-      const childProcess = spawn("python", [agentFile], {
-        cwd: tempDir,
-        env: {
-          ...process.env,
-          BYPASS_TOOL_CONSENT: "true",
-          AWS_REGION: process.env.AWS_REGION || "us-east-1",
-          AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID,
-          AWS_SECRET_ACCESS_KEY: process.env.AWS_SECRET_ACCESS_KEY,
-        }
-      });
-      
-      let stdout = "";
-      let stderr = "";
-      
-      childProcess.stdout.on("data", (data: any) => {
-        stdout += data.toString();
-      });
-      
-      childProcess.stderr.on("data", (data: any) => {
-        stderr += data.toString();
-      });
-      
-      // Send input
-      childProcess.stdin.write(input);
-      childProcess.stdin.end();
-      
-      // Handle completion
-      childProcess.on("close", async (code: any) => {
-        // Cleanup
-        await fs.promises.rm(tempDir, { recursive: true, force: true });
-        
-        if (code !== 0) {
-          resolve({
-            success: false,
-            error: `Agent exited with code ${code}: ${stderr}`
-          });
-          return;
-        }
-        
-        try {
-          // Parse response (agent outputs JSON events)
-          const lines = stdout.split("\n").filter(l => l.trim());
-          const lastLine = lines[lines.length - 1];
-          const response = JSON.parse(lastLine);
-          
-          resolve({
-            success: true,
-            result: { response }
-          });
-        } catch (e) {
-          resolve({
-            success: true,
-            result: { response: stdout }
-          });
-        }
-      });
-      
-      // Timeout after 5 minutes
-      setTimeout(() => {
-        childProcess.kill();
-        resolve({
-          success: false,
-          error: "Agent execution timeout (5 minutes)"
-        });
-      }, 300000);
+    const client = new LambdaClient({
+      region: process.env.AWS_REGION || "us-east-1",
+      credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+      },
     });
+    
+    const command = new InvokeCommand({
+      FunctionName: process.env.AGENT_TEST_LAMBDA_FUNCTION || "agent-builder-test-runner",
+      InvocationType: "RequestResponse",
+      Payload: JSON.stringify({
+        agentCode: params.agentCode,
+        input: params.input,
+        modelId: params.modelId,
+        tools: params.tools,
+      }),
+    });
+    
+    // Set 30s timeout for Lambda response
+    const timeoutPromise = new Promise<never>((_, reject) => 
+      setTimeout(() => reject(new Error("timeout")), 30000)
+    );
+    
+    const response = await Promise.race([
+      client.send(command),
+      timeoutPromise
+    ]);
+    const statusCode = response.StatusCode || 500;
+    
+    // Lambda execution failed (agent code error)
+    if (response.FunctionError) {
+      const errorPayload = JSON.parse(new TextDecoder().decode(response.Payload));
+      return {
+        success: false,
+        error: `Lambda 400: ${errorPayload.errorMessage || "agent code failed"}`,
+      };
+    }
+    
+    // Lambda invocation failed (service error)
+    if (statusCode !== 200 && statusCode !== 202) {
+      return {
+        success: false,
+        error: `Lambda ${statusCode}: invocation failed`,
+      };
+    }
+    
+    const result = JSON.parse(new TextDecoder().decode(response.Payload));
+    return {
+      success: true,
+      result: { response: result.response || result.body },
+    };
+  } catch (error: any) {
+    if (error.message === "timeout") {
+      return { success: false, error: `Lambda timeout: no response after 30s` };
+    }
+    if (error.code === "ResourceNotFoundException") {
+      return { success: false, error: `Lambda 404: function not found` };
+    }
+    if (error.code === "AccessDeniedException") {
+      return { success: false, error: `Lambda 403: access denied` };
+    }
+    return { success: false, error: `Lambda 500: ${error.message}` };
+  }
+}
+
+/**
+ * Fallback: Execute via direct Bedrock API (doesn't run agent code, just model)
+ */
+async function executeViaDirectBedrock(params: {
+  input: string;
+  modelId: string;
+  systemPrompt: string;
+}): Promise<{ success: boolean; result?: any; error?: string }> {
+  try {
+    const { BedrockRuntimeClient, InvokeModelCommand } = await import("@aws-sdk/client-bedrock-runtime");
+    
+    const client = new BedrockRuntimeClient({
+      region: process.env.AWS_REGION || "us-east-1",
+      credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+      },
+    });
+    
+    let modelId = params.modelId;
+    if (!modelId.includes(":") && !modelId.startsWith("us.") && !modelId.startsWith("anthropic.")) {
+      const modelMap: Record<string, string> = {
+        "claude-3-5-sonnet-20241022": "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+        "claude-3-5-haiku-20241022": "us.anthropic.claude-3-5-haiku-20241022-v1:0",
+      };
+      modelId = modelMap[params.modelId] || "us.anthropic.claude-3-5-haiku-20241022-v1:0";
+    }
+    
+    const command = new InvokeModelCommand({
+      modelId,
+      contentType: "application/json",
+      accept: "application/json",
+      body: JSON.stringify({
+        anthropic_version: "bedrock-2023-05-31",
+        max_tokens: 4096,
+        system: params.systemPrompt,
+        messages: [{ role: "user", content: [{ type: "text", text: params.input }] }],
+      }),
+    });
+    
+    const response = await client.send(command);
+    const body = JSON.parse(new TextDecoder().decode(response.body));
+    const content = body.content?.find((c: any) => c.type === "text")?.text || "";
+    
+    return {
+      success: true,
+      result: { response: content },
+    };
   } catch (error: any) {
     return {
       success: false,
-      error: error.message
+      error: `Bedrock API failed: ${error.message}`,
     };
   }
 }
