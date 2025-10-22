@@ -63,7 +63,7 @@ AGENT BUILDING PRINCIPLES:
 - Optimize for performance, cost, and scalability
 
 Think deeply, research thoroughly, and build exceptional agents.`,
-      messages: [],
+      messageCount: 0,
       contextSize: 0,
       s3ContextKey: undefined,
       createdAt: Date.now(),
@@ -87,14 +87,6 @@ export const sendMessage: any = action({
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
 
-    // GUARDRAILS: Validate message content
-    const { validateMessage, checkRateLimits, checkCostLimits, calculateMessageCost } = await import("./guardrails");
-    
-    const messageValidation = validateMessage(args.message);
-    if (!messageValidation.allowed) {
-      throw new Error(`Message blocked: ${messageValidation.reason}`);
-    }
-
     // Get conversation
     const conversation = await ctx.runQuery(internal.interleavedReasoning.getConversationInternal, {
       conversationId: args.conversationId,
@@ -106,42 +98,10 @@ export const sendMessage: any = action({
       throw new Error("Conversation not found or access denied");
     }
 
-    // GUARDRAILS: Check rate limits
-    const userKey = userId || args.conversationToken || "anonymous";
-    const messageCount = await ctx.runQuery(internal.interleavedReasoning.getUserMessageCount, {
-      userId: userId || undefined,
-      conversationToken: args.conversationToken,
-      timeWindow: 60 * 60 * 1000, // 1 hour
-    });
+    // NO GUARDRAILS - removed all validation/rate-limiting queries
+    // Trust the user, minimize database operations
 
-    const rateLimitCheck = checkRateLimits(userKey, messageCount, 60 * 60 * 1000);
-    if (!rateLimitCheck.allowed) {
-      throw new Error(rateLimitCheck.reason!);
-    }
-
-    // GUARDRAILS: Estimate cost
-    const estimatedInputTokens = Math.ceil(args.message.length / 4); // Rough estimation
-    const estimatedCost = calculateMessageCost(estimatedInputTokens, 1000, 3000); // Conservative estimate
-
-    const userCostToday = await ctx.runQuery(internal.interleavedReasoning.getUserCostToday, {
-      userId: userId || undefined,
-      conversationToken: args.conversationToken,
-    });
-
-    const costCheck = checkCostLimits(estimatedCost, userCostToday, userCostToday);
-
-    if (!costCheck.allowed) {
-      throw new Error(costCheck.reason!);
-    }
-
-    // Add user message to conversation
-    await ctx.runMutation(internal.interleavedReasoning.addMessage, {
-      conversationId: args.conversationId,
-      role: "user",
-      content: args.message,
-    });
-
-    // Get conversation history with sliding window
+    // Get conversation history BEFORE adding new message
     const history = await ctx.runQuery(internal.interleavedReasoning.getConversationHistory, {
       conversationId: args.conversationId,
       windowSize: SLIDING_WINDOW_SIZE,
@@ -176,25 +136,25 @@ export const sendMessage: any = action({
       );
     }
 
-    // Add assistant response to conversation
-    await ctx.runMutation(internal.interleavedReasoning.addMessage, {
+    // Batch insert BOTH messages in a single mutation (1 WRITE PER TURN)
+    await ctx.runMutation(internal.interleavedReasoning.addMessageBatch, {
       conversationId: args.conversationId,
-      role: "assistant",
-      content: response.content,
-      reasoning: response.reasoning,
-      toolCalls: response.toolCalls,
+      messages: [
+        {
+          role: "user" as const,
+          content: args.message,
+        },
+        {
+          role: "assistant" as const,
+          content: response.content,
+          reasoning: response.reasoning,
+          toolCalls: response.toolCalls,
+        },
+      ],
     });
 
-    // Check if context needs to be moved to S3
-    const contextSize = await ctx.runQuery(internal.interleavedReasoning.getContextSize, {
-      conversationId: args.conversationId,
-    });
-
-    if (contextSize > S3_THRESHOLD) {
-      await ctx.runAction(internal.interleavedReasoning.moveContextToS3, {
-        conversationId: args.conversationId,
-      });
-    }
+    // NO automatic S3 offload - let it be triggered manually or by separate process
+    // This keeps sendMessage purely event-driven with zero scheduled tasks
 
     return {
       response: response.content,
@@ -352,6 +312,7 @@ async function invokeClaudeWithInterleavedThinking(
 
 /**
  * Add message to conversation (internal)
+ * Now inserts individual message documents instead of rewriting entire array
  */
 export const addMessage = internalMutation({
   args: {
@@ -367,27 +328,69 @@ export const addMessage = internalMutation({
       throw new Error("Conversation not found");
     }
 
-    const message = {
+    const timestamp = Date.now();
+
+    await ctx.db.insert("interleavedMessages", {
+      conversationId: args.conversationId,
       role: args.role,
       content: args.content,
       reasoning: args.reasoning,
       toolCalls: args.toolCalls,
-      timestamp: Date.now(),
-    };
-
-    const messages = [...conversation.messages, message];
-    const contextSize = JSON.stringify(messages).length;
+      timestamp,
+      sequenceNumber: timestamp, // Use timestamp as sequence for ordering
+    });
 
     await ctx.db.patch(args.conversationId, {
-      messages,
-      contextSize,
-      updatedAt: Date.now(),
+      messageCount: (conversation.messageCount ?? 0) + 1,
+      updatedAt: timestamp,
+    });
+  },
+});
+
+/**
+ * Add multiple messages in a single transaction (BATCH INSERT)
+ * Used to add user + assistant messages together = 1 WRITE PER TURN
+ */
+export const addMessageBatch = internalMutation({
+  args: {
+    conversationId: v.id("interleavedConversations"),
+    messages: v.array(v.object({
+      role: v.union(v.literal("user"), v.literal("assistant")),
+      content: v.string(),
+      reasoning: v.optional(v.string()),
+      toolCalls: v.optional(v.any()),
+    })),
+  },
+  handler: async (ctx, args) => {
+    const conversation = await ctx.db.get(args.conversationId);
+    if (!conversation) {
+      throw new Error("Conversation not found");
+    }
+
+    const timestamp = Date.now();
+
+    for (const msg of args.messages) {
+      await ctx.db.insert("interleavedMessages", {
+        conversationId: args.conversationId,
+        role: msg.role,
+        content: msg.content,
+        reasoning: msg.reasoning,
+        toolCalls: msg.toolCalls,
+        timestamp,
+        sequenceNumber: timestamp, // Use timestamp as sequence for ordering
+      });
+    }
+
+    await ctx.db.patch(args.conversationId, {
+      messageCount: (conversation.messageCount ?? 0) + args.messages.length,
+      updatedAt: timestamp,
     });
   },
 });
 
 /**
  * Get conversation history with sliding window (internal)
+ * Now fetches from interleavedMessages table instead of embedded array
  */
 export const getConversationHistory = internalQuery({
   args: {
@@ -395,16 +398,17 @@ export const getConversationHistory = internalQuery({
     windowSize: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const conversation = await ctx.db.get(args.conversationId);
-    if (!conversation) {
-      return [];
-    }
-
     const windowSize = args.windowSize || SLIDING_WINDOW_SIZE;
-    const messages = conversation.messages || [];
 
-    // Return last N messages (sliding window)
-    return messages.slice(-windowSize);
+    // Fetch all messages and take last N (sliding window)
+    const allMessages = await ctx.db
+      .query("interleavedMessages")
+      .withIndex("by_timestamp", (q) => q.eq("conversationId", args.conversationId))
+      .order("desc")
+      .take(windowSize);
+
+    // Return in chronological order
+    return allMessages.reverse();
   },
 });
 
@@ -437,31 +441,87 @@ export const getConversationInternal = internalQuery({
 });
 
 /**
- * Get context size (internal)
+ * Get context size (internal) - computed on-demand from messages
  */
 export const getContextSize = internalQuery({
   args: {
     conversationId: v.id("interleavedConversations"),
   },
   handler: async (ctx, args) => {
-    const conversation = await ctx.db.get(args.conversationId);
-    return conversation?.contextSize || 0;
+    // Compute context size by summing message lengths
+    const messages = await ctx.db
+      .query("interleavedMessages")
+      .withIndex("by_conversation", (q) => q.eq("conversationId", args.conversationId))
+      .collect();
+
+    return messages.reduce(
+      (sum, msg) => sum + msg.content.length + (msg.reasoning?.length || 0),
+      0
+    );
+  },
+});
+
+/**
+ * Get all messages for S3 archival (internal)
+ */
+export const getAllMessages = internalQuery({
+  args: {
+    conversationId: v.id("interleavedConversations"),
+  },
+  handler: async (ctx, args) => {
+    const messages = await ctx.db
+      .query("interleavedMessages")
+      .withIndex("by_conversation", (q) => q.eq("conversationId", args.conversationId))
+      .collect();
+
+    return messages.sort((a, b) => a.sequenceNumber - b.sequenceNumber);
+  },
+});
+
+/**
+ * Check context size and offload to S3 if needed (background task)
+ */
+export const checkAndOffloadToS3 = internalAction({
+  args: {
+    conversationId: v.id("interleavedConversations"),
+  },
+  handler: async (ctx, args) => {
+    const contextSize = await ctx.runQuery(internal.interleavedReasoning.getContextSize, {
+      conversationId: args.conversationId,
+    });
+
+    if (contextSize > S3_THRESHOLD) {
+      await ctx.runAction(internal.interleavedReasoning.moveContextToS3, {
+        conversationId: args.conversationId,
+      });
+    }
   },
 });
 
 /**
  * Move large context to S3 (internal)
+ * Now fetches messages from interleavedMessages table
  */
 export const moveContextToS3 = internalAction({
   args: {
     conversationId: v.id("interleavedConversations"),
   },
   handler: async (ctx, args) => {
+    // Fetch conversation metadata
     const conversation = await ctx.runQuery(internal.interleavedReasoning.getConversationById, {
       conversationId: args.conversationId,
     });
 
-    if (!conversation || !conversation.messages || conversation.messages.length === 0) {
+    if (!conversation) {
+      return;
+    }
+
+    // Fetch all messages from interleavedMessages table
+    const messages = await ctx.runQuery(internal.interleavedReasoning.getAllMessages, {
+      conversationId: args.conversationId,
+    });
+
+    if (!messages || messages.length === 0) {
       return;
     }
 
@@ -481,7 +541,7 @@ export const moveContextToS3 = internalAction({
     await s3Client.send(new PutObjectCommand({
       Bucket: process.env.AWS_S3_BUCKET!,
       Key: s3Key,
-      Body: JSON.stringify(conversation.messages),
+      Body: JSON.stringify(messages),
       ContentType: "application/json",
       Metadata: {
         conversationId: args.conversationId,
@@ -522,6 +582,7 @@ export const updateS3Reference = internalMutation({
 
 /**
  * Trim messages to keep only recent ones (internal)
+ * Now deletes old message documents from interleavedMessages table
  */
 export const trimMessages = internalMutation({
   args: {
@@ -529,20 +590,23 @@ export const trimMessages = internalMutation({
     keepLast: v.number(),
   },
   handler: async (ctx, args) => {
-    const conversation = await ctx.db.get(args.conversationId);
-    if (!conversation) {
-      return;
+    // Get all messages sorted by timestamp (desc)
+    const allMessages = await ctx.db
+      .query("interleavedMessages")
+      .withIndex("by_timestamp", (q) => q.eq("conversationId", args.conversationId))
+      .order("desc")
+      .collect();
+
+    // Keep last N, delete the rest
+    const toDelete = allMessages.slice(args.keepLast);
+
+    // Delete old messages
+    for (const msg of toDelete) {
+      await ctx.db.delete(msg._id);
     }
 
-    const messages = conversation.messages || [];
-    const trimmedMessages = messages.slice(-args.keepLast);
-    const contextSize = JSON.stringify(trimmedMessages).length;
-
-    await ctx.db.patch(args.conversationId, {
-      messages: trimmedMessages,
-      contextSize,
-      updatedAt: Date.now(),
-    });
+    // NO conversation patch - contextSize computed on-demand
+    // This is a pure cleanup operation with minimal writes
   },
 });
 
@@ -583,6 +647,7 @@ export const getUserConversations = query({
 
 /**
  * Get conversation (public - for frontend)
+ * Now fetches messages from interleavedMessages table
  */
 export const getConversation = query({
   args: {
@@ -592,20 +657,38 @@ export const getConversation = query({
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
     const conversation = await ctx.db.get(args.conversationId);
-    
+
     if (!conversation) {
       return null;
     }
 
     // Check access: either user owns it or has the token
-    if (userId && conversation.userId === userId) {
-      return conversation;
+    const hasAccess = (userId && conversation.userId === userId) ||
+                      (args.conversationToken && conversation.conversationToken === args.conversationToken);
+
+    if (!hasAccess) {
+      return null;
     }
 
-    if (args.conversationToken && conversation.conversationToken === args.conversationToken) {
-      return conversation;
-    }
+    // Fetch all messages for this conversation (reactive query)
+    const messages = await ctx.db
+      .query("interleavedMessages")
+      .withIndex("by_conversation", (q) => q.eq("conversationId", args.conversationId))
+      .collect();
 
-    return null;
+    // Sort by sequence number
+    const sortedMessages = messages.sort((a, b) => a.sequenceNumber - b.sequenceNumber);
+
+    // Return conversation with messages (for compatibility with existing UI)
+    return {
+      ...conversation,
+      messages: sortedMessages.map((m) => ({
+        role: m.role,
+        content: m.content,
+        reasoning: m.reasoning,
+        toolCalls: m.toolCalls,
+        timestamp: m.timestamp,
+      })),
+    };
   },
 });

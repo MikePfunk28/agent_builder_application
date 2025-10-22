@@ -12,12 +12,14 @@ import { AIAgentBuilder } from "./components/AIAgentBuilder";
 import { InterleavedChat } from "./components/InterleavedChat";
 import { useState } from "react";
 import { Bot, Home, Server, AlertCircle, FileText, Sparkles, MessageSquare } from "lucide-react";
+import { BuilderAutomationProvider } from "./context/BuilderAutomationContext";
 
 export default function App() {
   const [currentView, setCurrentView] = useState<"dashboard" | "builder" | "aiBuilder" | "chat" | "mcp" | "errors" | "audit" | "settings">("dashboard");
 
   return (
-    <div className="min-h-screen bg-black text-green-400">
+    <BuilderAutomationProvider>
+      <div className="min-h-screen bg-black text-green-400">
       <header className="sticky top-0 z-50 bg-black/90 backdrop-blur-sm border-b border-green-900/30">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -127,16 +129,17 @@ export default function App() {
         </Unauthenticated>
 
         <Authenticated>
-          <Content currentView={currentView} />
+          <Content currentView={currentView} onNavigate={setCurrentView} />
         </Authenticated>
       </main>
       
       <Toaster theme="dark" />
     </div>
+    </BuilderAutomationProvider>
   );
 }
 
-function Content({ currentView }: { currentView: string }) {
+function Content({ currentView, onNavigate }: { currentView: string; onNavigate: (view: "dashboard" | "builder" | "aiBuilder" | "chat" | "mcp" | "errors" | "audit" | "settings") => void }) {
   const loggedInUser = useQuery(api.auth.loggedInUser);
 
   if (loggedInUser === undefined) {
@@ -156,7 +159,7 @@ function Content({ currentView }: { currentView: string }) {
         // TODO: Navigate to builder with pre-filled agents
       }} />;
     case "chat":
-      return <InterleavedChat />;
+      return <InterleavedChat onNavigate={onNavigate} />;
     case "mcp":
       return <MCPManagementPanel />;
     case "errors":

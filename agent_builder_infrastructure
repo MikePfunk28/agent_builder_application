@@ -1,0 +1,140 @@
+digraph "Agent Builder Application - Complete Infrastructure" {
+	graph [fontcolor="#2D3436" fontname="Sans-Serif" fontsize=15 label="Agent Builder Application - Complete Infrastructure" nodesep=0.60 pad=2.0 rankdir=TB ranksep=0.75 splines=ortho]
+	node [fixedsize=true fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13 height=1.4 imagescale=true labelloc=b shape=box style=rounded width=1.4]
+	edge [color="#7B8894"]
+	subgraph "cluster_Users & External Auth" {
+		graph [bgcolor="#E5F5FD" fontname="Sans-Serif" fontsize=12 label="Users & External Auth" labeljust=l pencolor="#AEB6BE" rankdir=LR shape=box style=rounded]
+		"97239b58c5184864a8786fabcb694e5f" [label=Users height=1.9 image="C:\Users\mikep\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\resources/onprem/client\users.png" shape=none]
+		"1cf4ba1654ff497f83539ea49295da7f" [label="GitHub OAuth" height=1.9 image="C:\Users\mikep\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\resources/onprem/vcs\github.png" shape=none]
+		e811f78acd5a47a8b77216214f3d1be1 [label="Google OAuth" height=1.9 image="C:\Users\mikep\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\resources/generic/compute\rack.png" shape=none]
+	}
+	subgraph "cluster_Frontend - Cloudflare Pages" {
+		graph [bgcolor="#E5F5FD" fontname="Sans-Serif" fontsize=12 label="Frontend - Cloudflare Pages" labeljust=l pencolor="#AEB6BE" rankdir=LR shape=box style=rounded]
+		"79c4d4e4b1024f39ae6c769c7f968603" [label="Cloudflare Pages
+ai-forge.mikepfunk.com" height=2.3 image="C:\Users\mikep\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\resources/onprem/network\internet.png" shape=none]
+		c214fb7c6df647ee8e49ef294cfaa6d5 [label="React + Vite
+Agent Builder UI" height=2.3 image="C:\Users\mikep\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\resources/programming/framework\react.png" shape=none]
+	}
+	subgraph "cluster_Backend - Convex Cloud" {
+		graph [bgcolor="#E5F5FD" fontname="Sans-Serif" fontsize=12 label="Backend - Convex Cloud" labeljust=l pencolor="#AEB6BE" rankdir=LR shape=box style=rounded]
+		"425ab1eca1fa41d99902501a0d16e4a1" [label="Convex Database
+resolute-kudu-325" height=2.3 image="C:\Users\mikep\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\resources/generic/database\sql.png" shape=none]
+		"4addc5e7046749a0ad4102409ec6e42b" [label="Convex Functions
+Auth, Agents, MCP" height=2.3 image="C:\Users\mikep\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\resources/programming/language\nodejs.png" shape=none]
+		dde04109604d4a1982e85d41c927aa3c [label="Convex Auth
+OAuth + Password" height=2.3 image="C:\Users\mikep\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\resources/aws/security\identity-and-access-management-iam.png" shape=none]
+	}
+	subgraph "cluster_AI/ML Services" {
+		graph [bgcolor="#E5F5FD" fontname="Sans-Serif" fontsize=12 label="AI/ML Services" labeljust=l pencolor="#AEB6BE" rankdir=LR shape=box style=rounded]
+		"9debf73e338a4ee5ac6399b9f3c49f6c" [label="AWS Bedrock
+49 Models" height=2.3 image="C:\Users\mikep\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\resources/aws/ml\bedrock.png" shape=none]
+		b54a56ed07654e6ea45c7e60ef39af4c [label="Ollama
+Local Models" height=2.3 image="C:\Users\mikep\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\resources/generic/compute\rack.png" shape=none]
+		a23155091e5e42769ee47d8446cf3aa1 [label="Claude Haiku 4.5
+Interleaved Reasoning" height=2.3 image="C:\Users\mikep\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\resources/generic/compute\rack.png" shape=none]
+	}
+	subgraph "cluster_External APIs (1000/month)" {
+		graph [bgcolor="#E5F5FD" fontname="Sans-Serif" fontsize=12 label="External APIs (1000/month)" labeljust=l pencolor="#AEB6BE" rankdir=LR shape=box style=rounded]
+		"0c0942e46236421584b3461cd729e70d" [label="Tavily
+Web Search" height=2.3 image="C:\Users\mikep\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\resources/generic/compute\rack.png" shape=none]
+		"57a1d056b6ac4870891d3fca12672ab6" [label="Mem0
+Memory" height=2.3 image="C:\Users\mikep\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\resources/generic/compute\rack.png" shape=none]
+		cd12e30f6f9d45c9bdc3819087950c61 [label="AgentOps
+Tracing" height=2.3 image="C:\Users\mikep\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\resources/generic/compute\rack.png" shape=none]
+	}
+	subgraph "cluster_MCP Integration" {
+		graph [bgcolor="#E5F5FD" fontname="Sans-Serif" fontsize=12 label="MCP Integration" labeljust=l pencolor="#AEB6BE" rankdir=LR shape=box style=rounded]
+		"84c4cd8c20c540be9b5b43a5ae595882" [label="MCP Servers
+AWS Diagram, Tools" height=2.3 image="C:\Users\mikep\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\resources/programming/language\python.png" shape=none]
+		"73e1348c6977427e9a25bb3486c61dc1" [label="Strands Tools
+50+ Tools" height=2.3 image="C:\Users\mikep\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\resources/programming/language\python.png" shape=none]
+	}
+	subgraph "cluster_Tier 1: AgentCore (Freemium)" {
+		graph [bgcolor="#E5F5FD" fontname="Sans-Serif" fontsize=12 label="Tier 1: AgentCore (Freemium)" labeljust=l pencolor="#AEB6BE" rankdir=LR shape=box style=rounded]
+		"8f24ba5502af4c3199e49841cbee385e" [label="Bedrock AgentCore
+Managed Runtime" height=2.3 image="C:\Users\mikep\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\resources/aws/ml\bedrock.png" shape=none]
+		b0106a51451542fbbdeacfc8bc37f8c6 [label="AgentCore Invoker" height=1.9 image="C:\Users\mikep\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\resources/aws/compute\lambda.png" shape=none]
+	}
+	subgraph "cluster_Tier 2: Personal AWS (Cross-Account)" {
+		graph [bgcolor="#E5F5FD" fontname="Sans-Serif" fontsize=12 label="Tier 2: Personal AWS (Cross-Account)" labeljust=l pencolor="#AEB6BE" rankdir=LR shape=box style=rounded]
+		subgraph "cluster_User AWS Account" {
+			graph [bgcolor="#EBF3E7" fontname="Sans-Serif" fontsize=12 label="User AWS Account" labeljust=l pencolor="#AEB6BE" rankdir=LR shape=box style=rounded]
+			"263677a7977b4b638ffc52af83479b13" [label="Cross-Account Role
+External ID" height=2.3 image="C:\Users\mikep\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\resources/aws/security\identity-and-access-management-iam.png" shape=none]
+			"5576c861434a4b35a9fe81458e125d6c" [label="VPC
+10.0.0.0/16" height=2.3 image="C:\Users\mikep\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\resources/generic/network\firewall.png" shape=none]
+			subgraph "cluster_ECS Fargate" {
+				graph [bgcolor="#ECE8F6" fontname="Sans-Serif" fontsize=12 label="ECS Fargate" labeljust=l pencolor="#AEB6BE" rankdir=LR shape=box style=rounded]
+				"17e5f6a3e85c4cb0a2dd9dcd335eec0e" [label="ECS Cluster" height=1.9 image="C:\Users\mikep\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\resources/aws/compute\elastic-container-service.png" shape=none]
+				d909dd1c0a9b47799f1610b34f211594 [label="Fargate Service
+Agent Container" height=2.3 image="C:\Users\mikep\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\resources/aws/compute\fargate.png" shape=none]
+			}
+			"252a8521fc844e2fa5b6b86cf457d2a3" [label="ECR Repository
+Agent Images" height=2.3 image="C:\Users\mikep\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\resources/aws/compute\ec2-container-registry.png" shape=none]
+			"2c1e559541024c78b7943bc42bc3eac1" [label="S3 Bucket
+Deployment Packages" height=2.3 image="C:\Users\mikep\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\resources/aws/storage\simple-storage-service-s3.png" shape=none]
+			f85d002c3c854eb38181c518aafbeac8 [label="CloudWatch Logs" height=1.9 image="C:\Users\mikep\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\resources/aws/management\cloudwatch-logs.png" shape=none]
+			"60f5d9eb1bae4218b8396180b3d28bfa" [label="CloudFormation
+Infrastructure" height=2.3 image="C:\Users\mikep\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\resources/aws/management\cloudformation.png" shape=none]
+		}
+	}
+	subgraph "cluster_Chat System (3 Chats)" {
+		graph [bgcolor="#E5F5FD" fontname="Sans-Serif" fontsize=12 label="Chat System (3 Chats)" labeljust=l pencolor="#AEB6BE" rankdir=LR shape=box style=rounded]
+		a64d2e8933734ad18a338484ee390815 [label="Chat UI Panel
+Agent Building Process" height=2.3 image="C:\Users\mikep\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\resources/programming/framework\react.png" shape=none]
+		ac97846ee11f423bb173f0f4e6de4910 [label="Agent Builder Input
+Automated Processing" height=2.3 image="C:\Users\mikep\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\resources/programming/language\typescript.png" shape=none]
+		f635c478f3504c20bcf6649d7874afde [label="Test Chat
+Agent Testing" height=2.3 image="C:\Users\mikep\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\resources/programming/framework\react.png" shape=none]
+		"217d75fc7081493a9f2e93fe11f3a4b2" [label="Conversation Manager
+Strands Agents" height=2.3 image="C:\Users\mikep\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\resources/programming/language\python.png" shape=none]
+	}
+	subgraph "cluster_Code Generation & Meta-tooling" {
+		graph [bgcolor="#E5F5FD" fontname="Sans-Serif" fontsize=12 label="Code Generation & Meta-tooling" labeljust=l pencolor="#AEB6BE" rankdir=LR shape=box style=rounded]
+		"13278842847f48668c09de509c38b769" [label="Code Generator
+@agent/@tool decorators" height=2.3 image="C:\Users\mikep\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\resources/programming/language\python.png" shape=none]
+		"236dd94d29374d6981945b434aeb9541" [label="Meta-tooling
+Dynamic Tool Creation" height=2.3 image="C:\Users\mikep\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\resources/programming/language\python.png" shape=none]
+		"2238471b3adc4a86b6c46c4c983d343d" [label="Docker Generator
+Container Images" height=2.3 image="C:\Users\mikep\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\resources/programming/language\python.png" shape=none]
+	}
+	"97239b58c5184864a8786fabcb694e5f" -> "79c4d4e4b1024f39ae6c769c7f968603" [label=HTTPS dir=forward fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13]
+	"79c4d4e4b1024f39ae6c769c7f968603" -> c214fb7c6df647ee8e49ef294cfaa6d5 [dir=forward fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13]
+	c214fb7c6df647ee8e49ef294cfaa6d5 -> "4addc5e7046749a0ad4102409ec6e42b" [label="WebSocket/HTTP" dir=forward fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13]
+	"97239b58c5184864a8786fabcb694e5f" -> "1cf4ba1654ff497f83539ea49295da7f" [dir=forward fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13]
+	"1cf4ba1654ff497f83539ea49295da7f" -> dde04109604d4a1982e85d41c927aa3c [dir=forward fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13]
+	"97239b58c5184864a8786fabcb694e5f" -> e811f78acd5a47a8b77216214f3d1be1 [dir=forward fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13]
+	e811f78acd5a47a8b77216214f3d1be1 -> dde04109604d4a1982e85d41c927aa3c [dir=forward fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13]
+	dde04109604d4a1982e85d41c927aa3c -> "4addc5e7046749a0ad4102409ec6e42b" [dir=forward fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13]
+	"4addc5e7046749a0ad4102409ec6e42b" -> "425ab1eca1fa41d99902501a0d16e4a1" [dir=forward fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13]
+	"4addc5e7046749a0ad4102409ec6e42b" -> "9debf73e338a4ee5ac6399b9f3c49f6c" [dir=forward fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13]
+	"4addc5e7046749a0ad4102409ec6e42b" -> b54a56ed07654e6ea45c7e60ef39af4c [dir=forward fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13]
+	"4addc5e7046749a0ad4102409ec6e42b" -> a23155091e5e42769ee47d8446cf3aa1 [dir=forward fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13]
+	"4addc5e7046749a0ad4102409ec6e42b" -> "0c0942e46236421584b3461cd729e70d" [label="1000/month" dir=forward fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13]
+	"4addc5e7046749a0ad4102409ec6e42b" -> "57a1d056b6ac4870891d3fca12672ab6" [label="1000/month" dir=forward fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13]
+	"4addc5e7046749a0ad4102409ec6e42b" -> cd12e30f6f9d45c9bdc3819087950c61 [label="1000/month" dir=forward fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13]
+	"4addc5e7046749a0ad4102409ec6e42b" -> "84c4cd8c20c540be9b5b43a5ae595882" [dir=forward fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13]
+	"84c4cd8c20c540be9b5b43a5ae595882" -> "73e1348c6977427e9a25bb3486c61dc1" [dir=forward fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13]
+	"97239b58c5184864a8786fabcb694e5f" -> a64d2e8933734ad18a338484ee390815 [dir=forward fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13]
+	a64d2e8933734ad18a338484ee390815 -> ac97846ee11f423bb173f0f4e6de4910 [dir=forward fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13]
+	ac97846ee11f423bb173f0f4e6de4910 -> a23155091e5e42769ee47d8446cf3aa1 [label="Interleaved Reasoning" dir=forward fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13]
+	a23155091e5e42769ee47d8446cf3aa1 -> "13278842847f48668c09de509c38b769" [dir=forward fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13]
+	"13278842847f48668c09de509c38b769" -> "236dd94d29374d6981945b434aeb9541" [dir=forward fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13]
+	"236dd94d29374d6981945b434aeb9541" -> f635c478f3504c20bcf6649d7874afde [dir=forward fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13]
+	f635c478f3504c20bcf6649d7874afde -> "217d75fc7081493a9f2e93fe11f3a4b2" [dir=forward fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13]
+	"13278842847f48668c09de509c38b769" -> "8f24ba5502af4c3199e49841cbee385e" [dir=forward fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13]
+	"8f24ba5502af4c3199e49841cbee385e" -> b0106a51451542fbbdeacfc8bc37f8c6 [dir=forward fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13]
+	"13278842847f48668c09de509c38b769" -> "2238471b3adc4a86b6c46c4c983d343d" [dir=forward fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13]
+	"2238471b3adc4a86b6c46c4c983d343d" -> "252a8521fc844e2fa5b6b86cf457d2a3" [dir=forward fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13]
+	"4addc5e7046749a0ad4102409ec6e42b" -> "263677a7977b4b638ffc52af83479b13" [label=AssumeRole dir=forward fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13]
+	"263677a7977b4b638ffc52af83479b13" -> "60f5d9eb1bae4218b8396180b3d28bfa" [dir=forward fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13]
+	"60f5d9eb1bae4218b8396180b3d28bfa" -> "17e5f6a3e85c4cb0a2dd9dcd335eec0e" [dir=forward fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13]
+	"60f5d9eb1bae4218b8396180b3d28bfa" -> d909dd1c0a9b47799f1610b34f211594 [dir=forward fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13]
+	"60f5d9eb1bae4218b8396180b3d28bfa" -> "2c1e559541024c78b7943bc42bc3eac1" [dir=forward fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13]
+	"60f5d9eb1bae4218b8396180b3d28bfa" -> f85d002c3c854eb38181c518aafbeac8 [dir=forward fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13]
+	"252a8521fc844e2fa5b6b86cf457d2a3" -> d909dd1c0a9b47799f1610b34f211594 [dir=forward fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13]
+	d909dd1c0a9b47799f1610b34f211594 -> "5576c861434a4b35a9fe81458e125d6c" [dir=forward fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13]
+	"13278842847f48668c09de509c38b769" -> "2238471b3adc4a86b6c46c4c983d343d" [label="Python + Decorators" dir=forward fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13]
+	"13278842847f48668c09de509c38b769" -> "236dd94d29374d6981945b434aeb9541" [label="Python + Decorators" dir=forward fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13]
+	"13278842847f48668c09de509c38b769" -> "60f5d9eb1bae4218b8396180b3d28bfa" [label="Python + Decorators" dir=forward fontcolor="#2D3436" fontname="Sans-Serif" fontsize=13]
+}

@@ -22,6 +22,109 @@ import {
 } from "./lib/fileGenerators";
 import { generateCloudFormationTemplate } from "./lib/cloudFormationGenerator";
 
+interface AWSResource {
+  type: string;
+  name: string;
+  id?: string;
+  properties?: Record<string, any>;
+}
+
+/**
+ * Build AWS resource list from agent configuration
+ * Used for diagram generation before deployment
+ */
+function buildResourceListFromAgent(agent: any): AWSResource[] {
+  const resources: AWSResource[] = [];
+  const deploymentType = agent.deploymentType || "docker";
+  const model = agent.model || "";
+  const region = agent.region || "us-east-1";
+
+  // Determine if it's a Bedrock model
+  const isBedrockModel = model.startsWith('anthropic.') ||
+                        model.startsWith('amazon.') ||
+                        model.startsWith('ai21.') ||
+                        model.startsWith('cohere.') ||
+                        model.startsWith('meta.') ||
+                        model.startsWith('mistral.');
+
+  if (deploymentType === 'aws' || isBedrockModel) {
+    // Bedrock AgentCore deployment
+    resources.push({
+      type: "bedrock-agentcore",
+      name: agent.name || "Agent",
+      properties: {
+        model,
+        region,
+      },
+    });
+
+    resources.push({
+      type: "lambda",
+      name: `${agent.name}-invoker`,
+      properties: {
+        runtime: "python3.11",
+        region,
+      },
+    });
+  } else {
+    // Docker/Container deployment (Fargate)
+    resources.push({
+      type: "vpc",
+      name: `${agent.name}-vpc`,
+      properties: {
+        cidr: "10.0.0.0/16",
+        region,
+      },
+    });
+
+    resources.push({
+      type: "subnet",
+      name: `${agent.name}-subnet-1`,
+      properties: {
+        cidr: "10.0.1.0/24",
+        availabilityZone: `${region}a`,
+      },
+    });
+
+    resources.push({
+      type: "ecr",
+      name: `${agent.name}-repository`,
+      properties: {
+        region,
+      },
+    });
+
+    resources.push({
+      type: "ecs-cluster",
+      name: `${agent.name}-cluster`,
+      properties: {
+        region,
+      },
+    });
+
+    resources.push({
+      type: "ecs-fargate",
+      name: `${agent.name}-service`,
+      properties: {
+        cpu: "256",
+        memory: "512",
+        region,
+      },
+    });
+
+    resources.push({
+      type: "cloudwatch-logs",
+      name: `/ecs/${agent.name}`,
+      properties: {
+        retentionDays: 7,
+        region,
+      },
+    });
+  }
+
+  return resources;
+}
+
 export type DeploymentPackageOptions = {
   includeCloudFormation?: boolean;
   includeCLIScript?: boolean;
@@ -118,6 +221,35 @@ export const generateDeploymentPackage = action({
       pythonFileName,
     });
 
+    // Generate architecture diagram using MCP aws-diagram tool
+    try {
+      const resources = buildResourceListFromAgent(agent);
+      const diagramResult = await ctx.runAction(api.mcpClient.invokeMCPTool, {
+        serverName: "aws-diagram",
+        toolName: "generate_architecture_diagram",
+        parameters: {
+          resources,
+          format: "png",
+          title: `${agent.name || 'Agent'} Architecture`,
+          region: agent.region || "us-east-1",
+        },
+      });
+
+      if (diagramResult.success) {
+        // Extract PNG content from result
+        // MCP returns images in content[0].data as base64
+        const result = (diagramResult as any).result;
+        const diagramContent = result?.data || result?.diagram || result || "";
+        if (diagramContent && typeof diagramContent === 'string') {
+          // Store base64-encoded PNG
+          files["architecture_diagram.png"] = diagramContent;
+        }
+      }
+    } catch (error) {
+      // Diagram generation is optional - log error but continue
+      console.warn("Failed to generate architecture diagram:", error);
+    }
+
     return {
       files,
       agentName: agent.name,
@@ -151,6 +283,35 @@ export const generateDeploymentPackageWithoutSaving = action({
       ...options,
       pythonFileName,
     });
+
+    // Generate architecture diagram using MCP aws-diagram tool
+    try {
+      const resources = buildResourceListFromAgent(agent);
+      const diagramResult = await ctx.runAction(api.mcpClient.invokeMCPTool, {
+        serverName: "aws-diagram",
+        toolName: "generate_architecture_diagram",
+        parameters: {
+          resources,
+          format: "png",
+          title: `${agent.name || 'Agent'} Architecture`,
+          region: agent.region || "us-east-1",
+        },
+      });
+
+      if (diagramResult.success) {
+        // Extract PNG content from result
+        // MCP returns images in content[0].data as base64
+        const result = (diagramResult as any).result;
+        const diagramContent = result?.data || result?.diagram || result || "";
+        if (diagramContent && typeof diagramContent === 'string') {
+          // Store base64-encoded PNG
+          files["architecture_diagram.png"] = diagramContent;
+        }
+      }
+    } catch (error) {
+      // Diagram generation is optional - log error but continue
+      console.warn("Failed to generate architecture diagram:", error);
+    }
 
     return {
       files,

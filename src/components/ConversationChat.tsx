@@ -107,6 +107,7 @@ export function ConversationChat({ agentId, agentName, modelId }: ConversationCh
         <div>
           <h3 className="text-lg font-semibold text-green-400">Chat with {agentName}</h3>
           <p className="text-xs text-green-600">Model: {modelId}</p>
+          <p className="text-xs text-green-500 mt-1">Strandsagents Conversation Manager &mdash; testing sandbox for your built agent.</p>
         </div>
         <div className="flex gap-2">
           {messages.length > 0 && (

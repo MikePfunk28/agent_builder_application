@@ -54,6 +54,7 @@ deploy-to-aws.sh
 
 # Package lock files
 package-lock.json
+.npmrc
 
 # Temporary and local files
 *.local

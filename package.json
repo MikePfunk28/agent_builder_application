@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
-    "@auth/core": "^0.41.0",
+    "@auth/core": "^0.37.0",
     "@aws-sdk/client-bedrock-agent": "^3.913.0",
     "@aws-sdk/client-bedrock-agent-runtime": "^3.911.0",
     "@aws-sdk/client-bedrock-runtime": "^3.913.0",
@@ -46,6 +46,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.21.0",
+    "@rollup/rollup-win32-x64-msvc": "^4.52.5",
     "@types/node": "^22.13.10",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",

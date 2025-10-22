@@ -469,14 +469,15 @@ const applicationTables = {
     agentId: v.optional(v.id("agents")), // Optional: Associate conversation with specific agent
     title: v.string(),
     systemPrompt: v.string(),
-    messages: v.array(v.object({
+    messages: v.optional(v.array(v.object({
       role: v.union(v.literal("user"), v.literal("assistant")),
       content: v.string(),
-      reasoning: v.optional(v.string()), // Claude's thinking process
+      reasoning: v.optional(v.string()),
       toolCalls: v.optional(v.any()),
       timestamp: v.number(),
-    })),
-    contextSize: v.number(), // Size in bytes
+    }))), // DEPRECATED: Use interleavedMessages table instead
+    messageCount: v.optional(v.number()), // OPTIONAL: Computed on-demand from interleavedMessages count
+    contextSize: v.number(), // Size in bytes (approximate)
     s3ContextKey: v.optional(v.string()), // S3 key for archived context
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -485,6 +486,37 @@ const applicationTables = {
     .index("by_user", ["userId", "updatedAt"])
     .index("by_token", ["conversationToken"])
     .index("by_agent", ["agentId", "updatedAt"]),
+
+  // Interleaved Messages (one document per message for efficient writes)
+  interleavedMessages: defineTable({
+    conversationId: v.id("interleavedConversations"),
+    role: v.union(v.literal("user"), v.literal("assistant")),
+    content: v.string(),
+    reasoning: v.optional(v.string()), // Claude's thinking process
+    toolCalls: v.optional(v.any()),
+    timestamp: v.number(),
+    sequenceNumber: v.number(), // For ordering messages
+  })
+    .index("by_conversation", ["conversationId", "sequenceNumber"])
+    .index("by_timestamp", ["conversationId", "timestamp"]),
+
+  // Agent Memory store (Convex + S3 hybrid)
+  agentMemories: defineTable({
+    agentId: v.optional(v.id("agents")),
+    conversationId: v.optional(v.id("interleavedConversations")),
+    memoryType: v.string(),
+    title: v.optional(v.string()),
+    summary: v.optional(v.string()),
+    content: v.optional(v.string()),
+    s3Key: v.optional(v.string()),
+    metadata: v.optional(v.any()),
+    tokenCount: v.optional(v.number()),
+    createdAt: v.number(),
+    archived: v.optional(v.boolean()),
+  })
+    .index("by_agent", ["agentId", "createdAt"])
+    .index("by_conversation", ["conversationId", "createdAt"])
+    .index("by_type", ["memoryType", "createdAt"]),
 
   // Dynamic Tools (Meta-tooling)
   dynamicTools: defineTable({

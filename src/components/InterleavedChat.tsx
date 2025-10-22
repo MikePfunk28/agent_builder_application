@@ -3,25 +3,32 @@
  * Chat with Claude Haiku 4.5 using interleaved thinking
  */
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { toast } from "sonner";
-import { Send, Brain, Sparkles, MessageSquare, Trash2 } from "lucide-react";
+import { Send, Brain, Sparkles, MessageSquare, Trash2, Route, Bot } from "lucide-react";
 import { Id } from "../../convex/_generated/dataModel";
+import { useBuilderAutomation } from "../context/BuilderAutomationContext";
 
-export function InterleavedChat() {
+type InterleavedChatProps = {
+  onNavigate?: (view: "dashboard" | "builder" | "aiBuilder" | "chat" | "mcp" | "errors" | "audit" | "settings") => void;
+};
+
+export function InterleavedChat({ onNavigate }: InterleavedChatProps) {
   const [conversationId, setConversationId] = useState<Id<"interleavedConversations"> | null>(null);
   const [conversationToken, setConversationToken] = useState<string | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<Id<"agents"> | null>(null);
   const [message, setMessage] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [isPreparingAutomation, setIsPreparingAutomation] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const createConversation = useMutation(api.interleavedReasoning.createConversation);
   const sendMessage = useAction(api.interleavedReasoning.sendMessage);
   const conversations = useQuery(api.interleavedReasoning.getUserConversations, { limit: 10 });
   const agents = useQuery(api.agents.list) || [];
+  const { setAutomationData, clearAutomation } = useBuilderAutomation();
   
   const conversation = useQuery(
     api.interleavedReasoning.getConversation,
@@ -98,6 +105,44 @@ export function InterleavedChat() {
     }
   };
 
+  const transcript = useMemo(() => {
+    if (!conversation?.messages?.length) return "";
+    return conversation.messages
+      .map((msg: any) => `${msg.role.toUpperCase()}: ${msg.content}`)
+      .join("\n\n");
+  }, [conversation?.messages]);
+
+  const handleSendToBuilder = async () => {
+    if (!conversationId) {
+      toast.error("Start a conversation before sending to the builder");
+      return;
+    }
+
+    if (!transcript) {
+      toast.error("Conversation is empty – add more detail first");
+      return;
+    }
+
+    setIsPreparingAutomation(true);
+    try {
+      clearAutomation();
+      setAutomationData({
+        prompt: transcript,
+        transcript,
+        conversationId,
+        createdAt: Date.now(),
+      });
+      toast.success("Conversation handed off to Agent Builder automation");
+      onNavigate?.("builder");
+    } catch (error: any) {
+      toast.error("Couldn't prepare builder automation", {
+        description: error.message,
+      });
+    } finally {
+      setIsPreparingAutomation(false);
+    }
+  };
+
   return (
     <div className="flex h-[calc(100vh-8rem)] gap-4">
       {/* Sidebar - Agents & Conversations */}
@@ -170,48 +215,56 @@ export function InterleavedChat() {
 
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col bg-gray-900/50 border border-green-900/30 rounded-xl">
-        {!conversationId ? (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="text-center">
-              <Brain className="w-16 h-16 text-green-400 mx-auto mb-4" />
-              <h2 className="text-2xl font-bold text-green-400 mb-2">
-                Interleaved Reasoning Chat
-              </h2>
-              <p className="text-green-600 mb-6">
-                Chat with Claude Haiku 4.5 using advanced interleaved thinking
-              </p>
-              <div className="space-y-3">
-                <button
-                  onClick={() => void handleCreateConversation()}
-                  className="bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-lg flex items-center gap-2 mx-auto"
-                >
-                  <Sparkles className="w-5 h-5" />
-                  Start New Conversation
-                </button>
-                
-                {agents.length > 0 && (
-                  <div className="text-center">
-                    <p className="text-green-600 text-sm mb-3">Or chat with one of your agents:</p>
-                    <div className="flex flex-wrap gap-2 justify-center">
-                      {agents.slice(0, 3).map((agent) => (
-                        <button
-                          key={agent._id}
-                          onClick={() => void handleCreateConversation(agent._id)}
-                          className="bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center gap-2 text-sm"
-                        >
-                          <Bot className="w-4 h-4" />
-                          {agent.name}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
+        <div className="border-b border-green-900/30 p-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div>
+            <h2 className="text-xl font-semibold text-green-400 flex items-center gap-2">
+              <Brain className="w-5 h-5" />
+              Agent Builder Strategy Chat
+            </h2>
+            <p className="text-sm text-green-600 mt-1 max-w-2xl">
+              Use this space to scope your agent before automation runs. When you\'re ready, send the
+              conversation to the Agent Builder and it will run the interleaved workflow automatically.
+            </p>
+          </div>
+          <button
+            onClick={() => void handleSendToBuilder()}
+            disabled={isPreparingAutomation || !conversationId || !conversation?.messages?.length}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed hover:bg-emerald-500 transition-colors"
+          >
+            {isPreparingAutomation ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+                Preparing Builder...
+              </>
+            ) : (
+              <>
+                <Route className="w-4 h-4" />
+                Send to Agent Builder
+              </>
+            )}
+          </button>
+        </div>
+
+        {conversationId ? (
+          <>
+            <div className="border-b border-green-900/30 p-4 flex items-start gap-3">
+              {selectedAgent ? (
+                <Bot className="w-6 h-6 text-green-400" />
+              ) : (
+                <Brain className="w-6 h-6 text-green-400" />
+              )}
+              <div>
+                <h3 className="text-lg font-semibold text-green-400">
+                  {selectedAgent ? `Designing: ${selectedAgent.name}` : conversation?.title || "Design Conversation"}
+                </h3>
+                <p className="text-xs text-green-600 mt-1">
+                  {selectedAgent
+                    ? `Chatting with your agent configuration (${selectedAgent.model})`
+                    : "Guided discussion with Claude Haiku 4.5 interleaved reasoning"}
+                </p>
               </div>
             </div>
-          </div>
-        ) : (
-          <>
-            {/* Messages */}
+
             <div className="flex-1 overflow-y-auto p-6 space-y-4">
               {conversation?.messages.map((msg, index) => (
                 <div
@@ -238,7 +291,6 @@ export function InterleavedChat() {
                       {msg.content}
                     </div>
 
-                    {/* Show reasoning if available */}
                     {msg.reasoning && (
                       <details className="mt-3 pt-3 border-t border-green-900/30">
                         <summary className="text-xs text-green-600 cursor-pointer hover:text-green-400 flex items-center gap-2">
@@ -251,7 +303,6 @@ export function InterleavedChat() {
                       </details>
                     )}
 
-                    {/* Show tool calls if available */}
                     {msg.toolCalls && msg.toolCalls.length > 0 && (
                       <div className="mt-3 pt-3 border-t border-green-900/30">
                         <div className="text-xs text-green-600 mb-2">Tool Calls:</div>
@@ -287,32 +338,6 @@ export function InterleavedChat() {
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Chat Header */}
-            {conversation && (
-              <div className="border-b border-green-900/30 p-4">
-                <div className="flex items-center gap-3">
-                  {selectedAgent ? (
-                    <>
-                      <Bot className="w-6 h-6 text-green-400" />
-                      <div>
-                        <h2 className="text-lg font-semibold text-green-400">{selectedAgent.name}</h2>
-                        <p className="text-sm text-green-600">{selectedAgent.model}</p>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <Brain className="w-6 h-6 text-green-400" />
-                      <div>
-                        <h2 className="text-lg font-semibold text-green-400">{conversation.title}</h2>
-                        <p className="text-sm text-green-600">Claude Haiku 4.5 with Interleaved Thinking</p>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Input Area */}
             <div className="border-t border-green-900/30 p-4">
               <div className="flex gap-2">
                 <textarea
@@ -339,6 +364,44 @@ export function InterleavedChat() {
               </div>
             </div>
           </>
+        ) : (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center">
+              <Brain className="w-16 h-16 text-green-400 mx-auto mb-4" />
+              <h2 className="text-2xl font-bold text-green-400 mb-2">
+                Interleaved Reasoning Chat
+              </h2>
+              <p className="text-green-600 mb-6">
+                Talk through the agent you want to build. The workflow will take over when you\'re ready.
+              </p>
+              <div className="space-y-3">
+                <button
+                  onClick={() => void handleCreateConversation()}
+                  className="bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-lg flex items-center gap-2 mx-auto"
+                >
+                  <Sparkles className="w-5 h-5" />
+                  Start New Conversation
+                </button>
+                {agents.length > 0 && (
+                  <div className="text-center">
+                    <p className="text-green-600 text-sm mb-3">Or chat with one of your agents:</p>
+                    <div className="flex flex-wrap gap-2 justify-center">
+                      {agents.slice(0, 3).map((agent) => (
+                        <button
+                          key={agent._id}
+                          onClick={() => void handleCreateConversation(agent._id)}
+                          className="bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center gap-2 text-sm"
+                        >
+                          <Bot className="w-4 h-4" />
+                          {agent.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </div>

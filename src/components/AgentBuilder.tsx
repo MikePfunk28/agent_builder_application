@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback, useRef, type ChangeEvent } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useMutation, useAction, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
@@ -14,6 +14,7 @@ import {
   Trash2,
   Copy,
   Download,
+  Upload,
   TestTube,
   Network,
   Shield,
@@ -28,6 +29,7 @@ import { AgentMCPConfig } from "./AgentMCPConfig";
 import { AgentMCPTester } from "./AgentMCPTester";
 import { ArchitecturePreview } from "./ArchitecturePreview";
 import { AWSAuthModal } from "./AWSAuthModal";
+import { useBuilderAutomation, WorkflowResult } from "../context/BuilderAutomationContext";
 
 interface Tool {
   name: string;
@@ -63,10 +65,10 @@ export function AgentBuilder() {
   const [config, setConfig] = useState<AgentConfig>({
     name: "",
     description: "",
-    model: "claude-3-5-sonnet-20241022",
+    model: "us.anthropic.claude-3-5-haiku-20241022-v1:0",
     systemPrompt: "",
     tools: [],
-    deploymentType: "docker",
+    deploymentType: "aws",
     exposableAsMCPTool: false,
     mcpToolName: "",
     mcpInputSchema: undefined,
@@ -76,9 +78,18 @@ export function AgentBuilder() {
   const [requirementsTxt, setRequirementsTxt] = useState<string>("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [savedAgentId, setSavedAgentId] = useState<Id<"agents"> | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const { automationData, workflowResult, setWorkflowResult, clearAutomation } = useBuilderAutomation();
+  const [automationStatus, setAutomationStatus] = useState<"idle" | "running" | "complete" | "error">("idle");
+  const [automationError, setAutomationError] = useState<string | null>(null);
+  const [automationSummary, setAutomationSummary] = useState<WorkflowResult | null>(workflowResult);
+  const [lastAutomationStamp, setLastAutomationStamp] = useState<number | null>(null);
+  const [isAutoGenerating, setIsAutoGenerating] = useState(false);
 
   const generateAgent = useAction(api.codeGenerator.generateAgent);
   const createAgent = useMutation(api.agents.create);
+  const executeWorkflow = useAction(api.agentBuilderWorkflow.executeCompleteWorkflow);
 
   const handleNext = () => {
     if (currentStep < steps.length - 1) {
@@ -157,6 +168,208 @@ export function AgentBuilder() {
   const generateDeploymentPackage = useAction(api.deploymentPackageGenerator.generateDeploymentPackage);
   const generateDeploymentPackageWithoutSaving = useAction(api.deploymentPackageGenerator.generateDeploymentPackageWithoutSaving);
 
+  useEffect(() => {
+    if (!automationData) {
+      setLastAutomationStamp(null);
+      if (!workflowResult) {
+        setAutomationSummary(null);
+        setAutomationStatus("idle");
+        setAutomationError(null);
+      }
+      return;
+    }
+
+    if (lastAutomationStamp === automationData.createdAt) {
+      return;
+    }
+
+    setLastAutomationStamp(automationData.createdAt);
+    setAutomationStatus("running");
+    setAutomationError(null);
+    setAutomationSummary(null);
+    setCurrentStep(0);
+    setGeneratedCode("");
+    setDockerConfig("");
+    setRequirementsTxt("");
+    setSavedAgentId(null);
+
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const result = await executeWorkflow({
+          userRequest: automationData.prompt,
+          conversationId: automationData.conversationId,
+        });
+
+        if (cancelled) return;
+
+        setAutomationSummary(result as WorkflowResult);
+        setWorkflowResult(result as WorkflowResult);
+        setAutomationStatus("complete");
+        toast.success("Builder automation completed. Review the plan below.");
+      } catch (error: any) {
+        const message = error?.message || "Automation workflow failed";
+        if (cancelled) return;
+        setAutomationStatus("error");
+        setAutomationError(message);
+        toast.error("Automation workflow failed", { description: message });
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [automationData, executeWorkflow, lastAutomationStamp, setWorkflowResult]);
+
+  useEffect(() => {
+    if (workflowResult) {
+      setAutomationSummary(workflowResult);
+      if (automationStatus === "running") {
+        setAutomationStatus("complete");
+      }
+    }
+  }, [workflowResult, automationStatus]);
+
+  const handleAutoGenerateFromPlan = useCallback(async () => {
+    if (!automationSummary) {
+      toast.error("No automation plan available yet");
+      return;
+    }
+
+    const requirementsOutput = automationSummary.workflow.find((stage) =>
+      stage.stage.includes("requirements")
+    )?.output || automationData?.prompt || "";
+
+    const architectureOutput = automationSummary.workflow.find((stage) =>
+      stage.stage.includes("architecture")
+    )?.output || "";
+
+    const implementationOutput = automationSummary.workflow.find((stage) =>
+      stage.stage.includes("implementation")
+    )?.output || "";
+
+    const finalOutput = automationSummary.finalOutput || "";
+
+    const nameMatch = requirementsOutput.match(/Agent Name[:\-]\s*(.+)/i);
+    let derivedName = nameMatch ? nameMatch[1].trim() : "";
+    if (!derivedName) {
+      derivedName = `Automated Agent ${new Date().toLocaleTimeString()}`;
+    }
+    derivedName = derivedName.replace(/["'`]/g, "").slice(0, 80) || "Automated Agent";
+
+    const derivedDescription = requirementsOutput.trim().slice(0, 400) || "Automatically generated agent description.";
+
+    const derivedSystemPrompt = [finalOutput, implementationOutput, architectureOutput]
+      .filter(Boolean)
+      .join("\n\n")
+      .trim() || requirementsOutput.trim();
+
+    const autoConfig: AgentConfig = {
+      name: derivedName,
+      description: derivedDescription,
+      model: "us.anthropic.claude-3-5-haiku-20241022-v1:0",
+      systemPrompt: derivedSystemPrompt,
+      tools: config.tools,
+      deploymentType: "aws",
+      exposableAsMCPTool: false,
+      mcpToolName: "",
+      mcpInputSchema: undefined,
+    };
+
+    setConfig(autoConfig);
+    setIsGenerating(true);
+    setIsAutoGenerating(true);
+    setSavedAgentId(null);
+
+    try {
+      const response = await generateAgent({
+        name: autoConfig.name,
+        model: autoConfig.model,
+        systemPrompt: autoConfig.systemPrompt,
+        tools: autoConfig.tools,
+        deploymentType: autoConfig.deploymentType,
+      });
+
+      setGeneratedCode(response.generatedCode);
+      setDockerConfig("");
+      setRequirementsTxt(response.requirementsTxt || "");
+      toast.success("Agent generated from automation plan");
+      setCurrentStep(4);
+    } catch (error) {
+      console.error(error);
+      toast.error("Automatic generation failed", {
+        description: error instanceof Error ? error.message : undefined,
+      });
+    } finally {
+      setIsGenerating(false);
+      setIsAutoGenerating(false);
+    }
+  }, [automationSummary, automationData, config.tools, generateAgent]);
+
+  const handleExportConfig = useCallback(() => {
+    const payload = {
+      config,
+      generatedCode,
+      requirementsTxt,
+      automationSummary,
+      timestamp: Date.now(),
+    };
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    const safeName = (config.name || "agent").toLowerCase().replace(/[^a-z0-9]+/g, "_");
+    link.download = `${safeName || "agent"}_builder_state.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    toast.success("Builder state exported");
+  }, [config, generatedCode, requirementsTxt, automationSummary]);
+
+  const handleImportConfig = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
+  const handleImportFileSelected = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+
+      if (data.config) {
+        setConfig((prev) => ({
+          ...prev,
+          ...data.config,
+        }));
+      }
+
+      if (typeof data.generatedCode === "string") {
+        setGeneratedCode(data.generatedCode);
+      }
+      if (typeof data.requirementsTxt === "string") {
+        setRequirementsTxt(data.requirementsTxt);
+      }
+      if (data.automationSummary) {
+        setAutomationSummary(data.automationSummary as WorkflowResult);
+        setWorkflowResult(data.automationSummary as WorkflowResult);
+        setAutomationStatus("complete");
+        setAutomationError(null);
+      }
+
+      setSavedAgentId(null);
+      toast.success("Builder state imported");
+    } catch (error: any) {
+      toast.error("Failed to import configuration", {
+        description: error?.message,
+      });
+    } finally {
+      event.target.value = "";
+    }
+  }, [setConfig, setWorkflowResult]);
+
   const handleDownload = async () => {
     // Allow download even without saving - generate package on the fly
     const agentToDownload = savedAgentId || {
@@ -213,7 +426,12 @@ export function AgentBuilder() {
 
       // Add all files to ZIP
       Object.entries(packageData.files).forEach(([filename, content]) => {
-        zip.file(filename, content);
+        // Handle binary files (PNG, images) - they're base64 encoded
+        if (filename.endsWith('.png') || filename.endsWith('.jpg') || filename.endsWith('.jpeg') || filename.endsWith('.svg')) {
+          zip.file(filename, content, { base64: true });
+        } else {
+          zip.file(filename, content);
+        }
       });
 
       // Generate ZIP blob
@@ -238,6 +456,49 @@ export function AgentBuilder() {
 
   return (
     <div className="max-w-6xl mx-auto">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="application/json"
+        className="hidden"
+        onChange={handleImportFileSelected}
+      />
+
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-green-400">Agent Builder</h1>
+          <p className="text-sm text-green-600">Design, generate, and deploy Bedrock agents with strandsagents tooling.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleImportConfig}
+            className="flex items-center gap-2 px-3 py-2 text-sm rounded-lg border border-green-900/40 bg-black/40 hover:border-green-400 transition-colors"
+          >
+            <Upload className="w-4 h-4" />
+            Import JSON
+          </button>
+          <button
+            onClick={handleExportConfig}
+            className="flex items-center gap-2 px-3 py-2 text-sm rounded-lg border border-green-900/40 bg-black/40 hover:border-green-400 transition-colors"
+          >
+            <Download className="w-4 h-4" />
+            Export JSON
+          </button>
+        </div>
+      </div>
+
+      {(automationData || automationSummary) && (
+        <AutomationSummaryPanel
+          status={automationStatus}
+          promptPreview={automationData?.prompt || automationSummary?.workflow?.[0]?.output || ""}
+          summary={automationSummary}
+          error={automationError}
+          onClear={clearAutomation}
+          onGenerate={automationSummary ? handleAutoGenerateFromPlan : undefined}
+          isGenerating={isGenerating || isAutoGenerating}
+        />
+      )}
+
       {/* Progress Steps */}
       <div className="mb-8">
         <div className="flex items-center justify-between">
@@ -338,6 +599,131 @@ export function AgentBuilder() {
           <ChevronRight className="w-4 h-4" />
         </button>
       </div>
+    </div>
+  );
+}
+
+interface AutomationSummaryPanelProps {
+  status: "idle" | "running" | "complete" | "error";
+  promptPreview: string;
+  summary: WorkflowResult | null;
+  error?: string | null;
+  onClear: () => void;
+  onGenerate?: () => void;
+  isGenerating?: boolean;
+}
+
+function AutomationSummaryPanel({
+  status,
+  promptPreview,
+  summary,
+  error,
+  onClear,
+  onGenerate,
+  isGenerating,
+}: AutomationSummaryPanelProps) {
+  const statusLabel = () => {
+    switch (status) {
+      case "running":
+        return "Running automation workflow...";
+      case "complete":
+        return "Automation plan ready";
+      case "error":
+        return "Automation failed";
+      default:
+        return "Automation status";
+    }
+  };
+
+  const statusColor =
+    status === "complete"
+      ? "text-emerald-400"
+      : status === "error"
+      ? "text-red-400"
+      : status === "running"
+      ? "text-blue-400"
+      : "text-green-600";
+
+  return (
+    <div className="mb-8 bg-gray-900/50 border border-green-900/30 rounded-xl p-6">
+      <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-semibold text-green-400 flex items-center gap-2">
+            <Sparkles className="w-4 h-4" />
+            Interleaved Workflow Automation
+          </h2>
+          <p className={`text-sm mt-1 ${statusColor}`}>{statusLabel()}</p>
+          {error && <p className="text-xs text-red-400 mt-2">{error}</p>}
+        </div>
+        <div className="flex items-center gap-2">
+          {status === "complete" && onGenerate && (
+            <button
+              onClick={onGenerate}
+              disabled={isGenerating}
+              className="flex items-center gap-2 px-3 py-2 text-sm rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors"
+            >
+              {isGenerating ? (
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+              ) : (
+                <Sparkles className="w-4 h-4" />
+              )}
+              Generate Agent from Plan
+            </button>
+          )}
+          <button
+            onClick={onClear}
+            className="px-3 py-2 text-sm rounded-lg border border-green-900/40 text-green-500 hover:border-green-400 transition-colors"
+          >
+            Clear Automation
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <div className="bg-black/40 border border-green-900/30 rounded-lg p-4">
+          <h3 className="text-sm font-medium text-green-300 mb-2">Conversation Summary</h3>
+          <p className="text-xs text-green-500 whitespace-pre-wrap max-h-40 overflow-y-auto">
+            {promptPreview ? promptPreview.slice(0, 1600) : "Awaiting conversation details..."}
+            {promptPreview.length > 1600 && "..."}
+          </p>
+        </div>
+        <div className="bg-black/40 border border-green-900/30 rounded-lg p-4">
+          <h3 className="text-sm font-medium text-green-300 mb-2">Token Usage</h3>
+          {summary ? (
+            <div className="text-xs text-green-500 space-y-2">
+              <div className="flex justify-between">
+                <span>Input tokens</span>
+                <span>{summary.totalUsage.inputTokens}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Output tokens</span>
+                <span>{summary.totalUsage.outputTokens}</span>
+              </div>
+              <div className="pt-2 border-t border-green-900/40">
+                <span className="text-green-400">Stages completed:</span>
+                <span className="ml-2 text-green-500">{summary.workflow.length}</span>
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-green-600">Token usage will appear once the workflow finishes.</p>
+          )}
+        </div>
+      </div>
+
+      {summary && (
+        <div className="mt-6 space-y-3">
+          {summary.workflow.map((stage) => (
+            <details key={stage.stage} className="bg-black/40 border border-green-900/30 rounded-lg">
+              <summary className="cursor-pointer text-sm font-medium text-green-300 px-4 py-3">
+                {stage.stage.replace(/_/g, " ")}
+              </summary>
+              <div className="px-4 pb-4 text-xs text-green-500 whitespace-pre-wrap">
+                {stage.output}
+              </div>
+            </details>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -457,19 +843,19 @@ function ToolsStep({ config, setConfig }: { config: AgentConfig; setConfig: (con
   );
 }
 
-function DeployStep({ 
-  config, 
-  setConfig, 
-  generatedCode, 
+function DeployStep({
+  config,
+  setConfig,
+  generatedCode,
   dockerConfig,
-  requirementsTxt, 
+  requirementsTxt,
   isGenerating,
   savedAgentId,
-  onGenerate, 
-  onSave, 
-  onDownload 
-}: { 
-  config: AgentConfig; 
+  onGenerate,
+  onSave,
+  onDownload,
+}: {
+  config: AgentConfig;
   setConfig: (config: AgentConfig) => void;
   generatedCode: string;
   dockerConfig: string;
