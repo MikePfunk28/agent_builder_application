@@ -28,15 +28,20 @@ export function generateRequirementsTxt(tools: any[], deploymentType: string): s
   // Add deployment-specific packages
   if (isAWSDeployment(deploymentType)) {
     packages.set('boto3', '>=1.35.0');
-    // bedrock-agentcore is managed by strands-agents-tools[agent-core-code-interpreter]
-    // bedrock-agentcore-starter-toolkit removed due to version conflict
+    // Add bedrock-agentcore packages explicitly to avoid conflict
+    // with agent-core-code-interpreter extra (which pins to 0.1.0)
+    packages.set('bedrock-agentcore', '>=0.1.6');
+    packages.set('bedrock-agentcore-starter-toolkit', '>=0.1.25');
   }
 
   // Collect tool-specific packages
   const extrasSet = new Set<string>();
   for (const tool of tools) {
     if (tool.extrasPip) {
-      extrasSet.add(tool.extrasPip);
+      // Filter out agent-core-code-interpreter to avoid bedrock-agentcore conflict
+      if (tool.extrasPip !== 'agent-core-code-interpreter') {
+        extrasSet.add(tool.extrasPip);
+      }
     }
     if (tool.pipPackages && Array.isArray(tool.pipPackages)) {
       tool.pipPackages.forEach((pkg: string) => {
@@ -49,7 +54,7 @@ export function generateRequirementsTxt(tools: any[], deploymentType: string): s
     }
   }
 
-  // Add strands-agents-tools with extras
+  // Add strands-agents-tools with extras (excluding agent-core-code-interpreter)
   if (extrasSet.size > 0) {
     const extras = Array.from(extrasSet).join(',');
     packages.set('strands-agents-tools', `[${extras}]>=1.0.0`);
@@ -174,14 +179,19 @@ export function generatePyprojectToml(tools: any[], deploymentType: string, agen
 
   if (isAWSDeployment(deploymentType)) {
     packages.set('boto3', '>=1.35.0');
-    // bedrock-agentcore is managed by strands-agents-tools[agent-core-code-interpreter]
-    packages.set('bedrock-agentcore-starter-toolkit', '>=0.1.21');
+    // Add bedrock-agentcore packages explicitly to avoid conflict
+    // with agent-core-code-interpreter extra (which pins to 0.1.0)
+    packages.set('bedrock-agentcore', '>=0.1.6');
+    packages.set('bedrock-agentcore-starter-toolkit', '>=0.1.25');
   }
 
   const extrasSet = new Set<string>();
   for (const tool of tools) {
     if (tool.extrasPip) {
-      extrasSet.add(tool.extrasPip);
+      // Filter out agent-core-code-interpreter to avoid bedrock-agentcore conflict
+      if (tool.extrasPip !== 'agent-core-code-interpreter') {
+        extrasSet.add(tool.extrasPip);
+      }
     }
     if (tool.pipPackages && Array.isArray(tool.pipPackages)) {
       tool.pipPackages.forEach((pkg: string) => {
