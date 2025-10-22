@@ -62,7 +62,7 @@ export const generateArchitectureDiagram = action({
       try {
         diagramResult = await ctx.runAction(api.mcpClient.invokeMCPTool, {
           serverName: "aws-diagram",
-          toolName: "generate_diagram",
+          toolName: "generate_architecture_diagram",
           parameters: {
             resources,
             format,

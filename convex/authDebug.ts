@@ -37,20 +37,40 @@ export const getOAuthConfig = query({
       },
     ];
 
-    // Convex Auth handles OAuth callbacks through the Convex backend
-    const convexSiteUrl = process.env.CONVEX_SITE_URL || "https://resolute-kudu-325.convex.site";
-
-    const environments = [
+    // All 4 deployment environments that need OAuth callback URLs configured
+    const deploymentUrls = [
       {
-        name: "OAuth Callback URLs (Configure in OAuth Provider)",
-        url: convexSiteUrl,
-        note: "All OAuth providers should redirect to your Convex backend URL",
-        callbackUrls: providers.map((p) => ({
-          provider: p.id,
-          url: `${convexSiteUrl}/api/auth/callback/${p.id}`,
-        })),
+        name: "Local Development",
+        url: "http://localhost:3000",
+        description: "For local testing during development",
+      },
+      {
+        name: "Convex Production",
+        url: "https://resolute-kudu-325.convex.site",
+        description: "Primary Convex backend deployment",
+      },
+      {
+        name: "Cloudflare Pages",
+        url: "https://633051e6.agent-builder-application.pages.dev",
+        description: "Cloudflare Pages deployment",
+      },
+      {
+        name: "Custom Domain",
+        url: "https://ai-forge.mikepfunk.com",
+        description: "Production custom domain",
       },
     ];
+
+    const environments = deploymentUrls.map((env) => ({
+      name: env.name,
+      url: env.url,
+      description: env.description,
+      callbackUrls: providers.map((p) => ({
+        provider: p.id,
+        providerName: p.name,
+        url: `${env.url}/api/auth/callback/${p.id}`,
+      })),
+    }));
 
     return {
       providers,

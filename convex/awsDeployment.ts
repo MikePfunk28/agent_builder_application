@@ -1,12 +1,15 @@
 /**
  * AWS AgentCore Deployment Service
- * 
+ *
  * Handles deployment of agents to user's AWS accounts using AgentCore Runtime
  */
 
 import { action, internalAction, mutation, query, internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
-import { internal } from "./_generated/api";
+import { internal, api } from "./_generated/api";
+import { getAuthUserId } from "@convex-dev/auth/server";
+import { assembleDeploymentPackageFiles } from "./deploymentPackageGenerator";
+import { sanitizeAgentName } from "./constants";
 
 /**
  * Deploy agent - Routes to correct tier (Tier 1/2/3)
@@ -22,55 +25,77 @@ export const deployToAWS = action({
       enableMonitoring: v.optional(v.boolean()),
       enableAutoScaling: v.optional(v.boolean()),
     }),
+    // Optional: Provide AWS credentials directly (for anonymous users)
+    awsCredentials: v.optional(v.object({
+      accessKeyId: v.string(),
+      secretAccessKey: v.string(),
+      roleArn: v.optional(v.string()),
+    })),
   },
   handler: async (ctx, args): Promise<any> => {
-    // Authentication check
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
+    // Get user ID (can be anonymous)
+    const userId = await getAuthUserId(ctx);
 
     // Get agent
-    const agent: any = await ctx.runQuery(internal.agents.getInternal, { 
-      id: args.agentId 
+    const agent: any = await ctx.runQuery(internal.agents.getInternal, {
+      id: args.agentId
     });
-    
+
     if (!agent) {
       throw new Error("Agent not found");
     }
 
-    // Verify ownership
-    if (agent.createdBy !== identity.subject) {
+    // Verify ownership (allow anonymous users to deploy their own agents)
+    if (userId && agent.createdBy !== userId) {
       throw new Error("Not authorized to deploy this agent");
     }
 
-    // Get user tier
-    const user = await ctx.runQuery(internal.awsDeployment.getUserTierInternal, {
-      userId: identity.subject,
-    });
+    // Get user tier (default to freemium for anonymous users)
+    const user = userId ? await ctx.runQuery(internal.awsDeployment.getUserTierInternal, {
+      userId: userId,
+    }) : null;
 
     const tier = user?.tier || "freemium";
 
-    // Route based on tier
+    // Check if user provided AWS credentials directly (for anonymous/one-time deployment)
+    if (args.awsCredentials) {
+      // TODO: Implement direct credential deployment
+      throw new Error("Direct AWS credential deployment not yet implemented. Please save your AWS credentials in settings first.");
+    }
+
+    // Check if user has AWS credentials configured (saved)
+    const hasAWSCreds = userId ? await ctx.runQuery(api.awsAuth.hasValidAWSCredentials) : false;
+
+    // If user has saved AWS credentials, deploy to THEIR account (Tier 2)
+    if (hasAWSCreds && userId) {
+      return await deployTier2(ctx, args, userId);
+    }
+
+    // Otherwise, use platform deployment (Tier 1)
     if (tier === "freemium") {
+      // Anonymous users must provide AWS credentials
+      if (!userId) {
+        throw new Error("Anonymous users must provide AWS credentials or sign in to use the platform.");
+      }
+
       // Tier 1: Check usage limits
       const testsThisMonth = user?.testsThisMonth || 0;
       if (testsThisMonth >= 10) {
-        throw new Error("Free tier limit reached (10 tests/month). Upgrade to deploy to your own AWS account!");
+        throw new Error("Free tier limit reached (10 tests/month). Configure AWS credentials to deploy to your own account!");
       }
-      
-      // Deploy to YOUR Fargate
-      return await deployTier1(ctx, args, identity.subject);
-    } else if (tier === "personal") {
-      // Tier 2: Deploy to USER's AWS account
-      return await deployTier2(ctx, args, identity.subject);
+
+      // Deploy to platform Fargate
+      return await deployTier1(ctx, args, userId);
     } else if (tier === "enterprise") {
       // Tier 3: Enterprise SSO (not implemented yet)
       throw new Error("Enterprise tier not yet implemented");
     }
 
-    // Fallback to Tier 1
-    return await deployTier1(ctx, args, identity.subject);
+    // Fallback to Tier 1 - requires authentication
+    if (!userId) {
+      throw new Error("Authentication required for deployment.");
+    }
+    return await deployTier1(ctx, args, userId);
   },
 });
 
@@ -105,8 +130,8 @@ export const executeDeployment = internalAction({
       });
 
       // Get agent details
-      const agent = await ctx.runQuery(internal.agents.getInternal, { 
-        id: args.agentId 
+      const agent = await ctx.runQuery(internal.agents.getInternal, {
+        id: args.agentId
       });
 
       if (!agent) {
@@ -219,11 +244,11 @@ export const updateDeploymentStatus = mutation({
     }
 
     if (args.totalSteps) {
-      updates.totalSteps = args.totalSteps;
+      (updates as any).totalSteps = args.totalSteps;
     }
 
     if (args.stepDetails) {
-      updates.stepDetails = args.stepDetails;
+      (updates as any).stepDetails = args.stepDetails;
     }
 
     // Add log entry for status changes
@@ -245,7 +270,7 @@ export const updateDeploymentStatus = mutation({
 
     // Calculate deployment duration
     if (deployment.createdAt) {
-      updates.duration = Date.now() - deployment.createdAt;
+      (updates as any).duration = Date.now() - deployment.createdAt;
     }
 
     await ctx.db.patch(args.deploymentId, updates);
@@ -292,13 +317,13 @@ export const addDeploymentLog = mutation({
 export const getDeploymentWithLogs = query({
   args: { deploymentId: v.id("deployments") },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
       return null;
     }
 
     const deployment = await ctx.db.get(args.deploymentId);
-    if (!deployment || deployment.userId !== identity.subject) {
+    if (!deployment || deployment.userId !== userId) {
       return null;
     }
 
@@ -330,30 +355,23 @@ export const getDeploymentWithLogs = query({
  * List user deployments with pagination and filtering
  */
 export const listUserDeployments = query({
-  args: { 
+  args: {
     limit: v.optional(v.number()),
     status: v.optional(v.string()),
     agentId: v.optional(v.id("agents")),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
       return [];
     }
 
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_user_id", (q) => q.eq("userId", identity.subject))
-      .first();
-
-    if (!user) return [];
-
     const baseQuery = ctx.db
       .query("deployments")
-      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .withIndex("by_user", (q) => q.eq("userId", userId))
       .order("desc");
 
-    const deployments = args.limit 
+    const deployments = args.limit
       ? await baseQuery.take(args.limit)
       : await baseQuery.collect();
 
@@ -390,13 +408,13 @@ export const listUserDeployments = query({
 export const cancelDeployment = mutation({
   args: { deploymentId: v.id("deployments") },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
       throw new Error("Not authenticated");
     }
 
     const deployment = await ctx.db.get(args.deploymentId);
-    if (!deployment || deployment.userId !== identity.subject) {
+    if (!deployment || deployment.userId !== userId) {
       throw new Error("Deployment not found or not authorized");
     }
 
@@ -442,13 +460,13 @@ function formatDuration(milliseconds: number): string {
 export const getDeployment = query({
   args: { deploymentId: v.id("deployments") },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
       return null;
     }
 
     const deployment = await ctx.db.get(args.deploymentId);
-    if (!deployment || deployment.userId !== identity.subject) {
+    if (!deployment || deployment.userId !== userId) {
       return null;
     }
 
@@ -462,8 +480,8 @@ export const getDeployment = query({
 export const getUserDeployments = query({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
       return [];
     }
 
@@ -471,7 +489,7 @@ export const getUserDeployments = query({
 
     return await ctx.db
       .query("deployments")
-      .withIndex("by_user", (q) => q.eq("userId", identity.subject as any))
+      .withIndex("by_user", (q) => q.eq("userId", userId))
       .order("desc")
       .take(limit);
   },
@@ -482,13 +500,13 @@ export const getUserDeployments = query({
 async function generateDeploymentArtifacts(agent: any, config: any) {
   // Generate AgentCore-compatible agent code
   const agentCode = generateAgentCoreCode(agent);
-  
+
   // Generate requirements.txt
   const requirements = generateAgentCoreRequirements(agent.tools);
-  
+
   // Generate Dockerfile
   const dockerfile = generateAgentCoreDockerfile();
-  
+
   // Generate AgentCore configuration
   const agentCoreConfig = generateAgentCoreConfig(agent, config);
 
@@ -503,52 +521,59 @@ async function generateDeploymentArtifacts(agent: any, config: any) {
 }
 
 function generateAgentCoreCode(agent: any): string {
+  // Generate tool imports based on agent tools
+  const toolImports = agent.tools && agent.tools.length > 0
+    ? agent.tools.map((tool: any) => `from strands_tools import ${tool.name}`).join('\n')
+    : '# No tools configured';
+  
+  const toolsList = agent.tools && agent.tools.length > 0
+    ? agent.tools.map((tool: any) => tool.name).join(', ')
+    : '';
+
   return `"""
 Generated AgentCore Agent
 Agent: ${agent.name}
 Generated at: ${new Date().toISOString()}
 """
 
-from strands import Agent, tool
-from strands.models import BedrockModel
-from bedrock_agentcore.runtime import BedrockAgentCoreApp
-import json
 import os
+os.environ["BYPASS_TOOL_CONSENT"] = "true"
 
-# Initialize AgentCore app
-app = BedrockAgentCoreApp()
+from strands import Agent
+from bedrock_agentcore.runtime import BedrockAgentCoreApp
+${toolImports}
 
-# Initialize the agent
-model = BedrockModel(model_id="${agent.model}")
+# Initialize agent with tools
 agent = Agent(
-    model=model,
-    system_prompt="""${agent.systemPrompt}""",
-    tools=[${agent.tools.map((tool: any) => tool.name).join(', ')}]
+    tools=[${toolsList}],
+    callback_handler=None
 )
 
+# Create AgentCore app
+app = BedrockAgentCoreApp()
+
 @app.entrypoint
-def agent_handler(payload):
-    """Main agent handler for AgentCore Runtime"""
-    try:
-        user_input = payload.get("prompt", "")
-        session_id = payload.get("session_id", "default")
+async def agent_invocation(payload, context):
+    """
+    Handler for agent invocation with streaming support
+    
+    Args:
+        payload: Input payload with 'prompt' key
+        context: AgentCore runtime context
         
-        # Process the request
-        response = agent(user_input)
-        
-        return {
-            "message": response.message['content'][0]['text'],
-            "session_id": session_id,
-            "agent_name": "${agent.name}",
-            "timestamp": str(datetime.now())
-        }
-        
-    except Exception as e:
-        return {
-            "error": f"Agent error: {str(e)}",
-            "message": "I encountered an error. Please try again.",
-            "session_id": session_id
-        }
+    Yields:
+        Streaming events from agent execution
+    """
+    user_message = payload.get("prompt", "No prompt provided")
+    
+    print(f"[${agent.name}] Processing: {user_message}")
+    print(f"Context: {context}")
+    
+    # Stream agent responses
+    agent_stream = agent.stream_async(user_message)
+    
+    async for event in agent_stream:
+        yield event
 
 if __name__ == "__main__":
     app.run()
@@ -664,15 +689,14 @@ export const createDeploymentInternal = internalMutation({
     }),
   },
   handler: async (ctx, args) => {
-    // Find user by userId string
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_user_id", (q) => q.eq("userId", args.userId as string))
-      .first();
+    // Ensure userId is a proper Id<"users">
+    const userId = typeof args.userId === 'string' && args.userId.startsWith('j')
+      ? args.userId as any
+      : args.userId;
 
     return await ctx.db.insert("deployments", {
       agentId: args.agentId,
-      userId: user?._id || (args.userId as any),
+      userId: userId,
       tier: args.tier || "freemium",
       agentName: args.deploymentConfig.agentName,
       description: args.deploymentConfig.description,
@@ -714,6 +738,18 @@ export const updateDeploymentStatusInternal = internalMutation({
     cloudFormationStackId: v.optional(v.string()),
     ecrRepositoryUri: v.optional(v.string()),
     s3BucketName: v.optional(v.string()),
+    deploymentPackageKey: v.optional(v.string()),
+    awsAccountId: v.optional(v.string()),
+    awsCallerArn: v.optional(v.string()),
+    logs: v.optional(v.union(
+      v.string(),
+      v.array(v.object({
+        timestamp: v.number(),
+        level: v.string(),
+        message: v.string(),
+        source: v.optional(v.string()),
+      }))
+    )),
     error: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -746,6 +782,18 @@ export const updateDeploymentStatusInternal = internalMutation({
       updates.s3BucketName = args.s3BucketName;
     }
 
+    if (args.deploymentPackageKey) {
+      updates.deploymentPackageKey = args.deploymentPackageKey;
+    }
+
+    if (args.awsAccountId) {
+      updates.awsAccountId = args.awsAccountId;
+    }
+
+    if (args.awsCallerArn) {
+      updates.awsCallerArn = args.awsCallerArn;
+    }
+
     if (args.status === "ACTIVE") {
       updates.deployedAt = Date.now();
       updates.isActive = true;
@@ -759,19 +807,27 @@ export const updateDeploymentStatusInternal = internalMutation({
       updates.deletedAt = Date.now();
     }
 
-    // Add log entry
-    if (args.progress?.message) {
+    if (args.logs || args.progress?.message) {
       const deployment = await ctx.db.get(args.deploymentId);
-      if (deployment) {
-        const existingLogs = Array.isArray(deployment.logs) ? deployment.logs : [];
-        const newLog = {
+      const existingLogs = Array.isArray(deployment?.logs) ? deployment.logs : [];
+      const combinedLogs = [...existingLogs];
+
+      if (args.logs) {
+        if (Array.isArray(args.logs)) {
+          combinedLogs.push(...args.logs);
+        }
+      }
+
+      if (args.progress?.message) {
+        combinedLogs.push({
           timestamp: Date.now(),
           level: args.status === "FAILED" ? "error" : "info",
           message: args.progress.message,
           source: "deployment",
-        };
-        updates.logs = [...existingLogs, newLog];
+        });
       }
+
+      updates.logs = combinedLogs;
     }
 
     await ctx.db.patch(args.deploymentId, updates);
@@ -900,14 +956,14 @@ async function deployTier1(ctx: any, args: any, userId: string): Promise<any> {
 }
 
 /**
- * Tier 2: Deploy to USER's Fargate (Personal AWS Account)
+ * Tier 2: Deploy to USER's Fargate (Personal AWS Account) using Web Identity Federation
  */
 async function deployTier2(ctx: any, args: any, userId: string): Promise<any> {
-  // Check if user has connected AWS account
-  const awsAccount = await ctx.runQuery(internal.awsDeployment.getUserAWSAccountInternal, { userId });
-  
-  if (!awsAccount || !awsAccount.roleArn) {
-    throw new Error("No AWS account connected. Please connect your AWS account first.");
+  // Get user's stored Role ARN
+  const user = await ctx.runQuery(internal.awsDeployment.getUserTierInternal, { userId });
+
+  if (!user || !user.awsRoleArn) {
+    throw new Error("No AWS Role ARN configured. Please configure your IAM role in settings.");
   }
 
   // Create deployment record
@@ -918,13 +974,12 @@ async function deployTier2(ctx: any, args: any, userId: string): Promise<any> {
     deploymentConfig: args.deploymentConfig,
   });
 
-  // Start cross-account deployment
-  await ctx.scheduler.runAfter(0, internal.awsDeployment.executeCrossAccountDeploymentInternal, {
+  // Start deployment with web identity federation
+  await ctx.scheduler.runAfter(0, internal.awsDeployment.executeWebIdentityDeploymentInternal, {
     deploymentId,
     agentId: args.agentId,
     userId,
-    roleArn: awsAccount.roleArn,
-    externalId: awsAccount.externalId,
+    roleArn: user.awsRoleArn,
     region: args.deploymentConfig.region,
   });
 
@@ -932,7 +987,7 @@ async function deployTier2(ctx: any, args: any, userId: string): Promise<any> {
     deploymentId,
     status: "PREPARING",
     tier: "personal",
-    message: "Deploying to your AWS account...",
+    message: "Deploying to your AWS account using federated access...",
   };
 }
 
@@ -940,12 +995,9 @@ async function deployTier2(ctx: any, args: any, userId: string): Promise<any> {
  * Get user tier (internal)
  */
 export const getUserTierInternal = internalQuery({
-  args: { userId: v.string() },
+  args: { userId: v.id("users") },
   handler: async (ctx, args) => {
-    return await ctx.db
-      .query("users")
-      .withIndex("by_user_id", (q) => q.eq("userId", args.userId))
-      .first();
+    return await ctx.db.get(args.userId);
   },
 });
 
@@ -953,18 +1005,11 @@ export const getUserTierInternal = internalQuery({
  * Get user AWS account (internal)
  */
 export const getUserAWSAccountInternal = internalQuery({
-  args: { userId: v.string() },
+  args: { userId: v.id("users") },
   handler: async (ctx, args) => {
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_user_id", (q) => q.eq("userId", args.userId))
-      .first();
-    
-    if (!user) return null;
-
     return await ctx.db
       .query("userAWSAccounts")
-      .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+      .withIndex("by_user_id", (q) => q.eq("userId", args.userId))
       .first();
   },
 });
@@ -973,16 +1018,13 @@ export const getUserAWSAccountInternal = internalQuery({
  * Increment usage counter (internal)
  */
 export const incrementUsageInternal = internalMutation({
-  args: { userId: v.string() },
+  args: { userId: v.id("users") },
   handler: async (ctx, args) => {
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_user_id", (q) => q.eq("userId", args.userId))
-      .first();
+    const user = await ctx.db.get(args.userId);
 
     if (!user) return;
 
-    await ctx.db.patch(user._id, {
+    await ctx.db.patch(args.userId, {
       testsThisMonth: (user.testsThisMonth || 0) + 1,
     });
   },
@@ -1063,7 +1105,254 @@ export const executeCrossAccountDeploymentInternal = internalAction({
 });
 
 /**
- * Assume role in user's AWS account
+ * Execute deployment using Web Identity Federation
+ * Gets temporary credentials via AssumeRoleWithWebIdentity and deploys to user's AWS
+ */
+export const executeWebIdentityDeploymentInternal = internalAction({
+  args: {
+    deploymentId: v.id("deployments"),
+    agentId: v.id("agents"),
+    userId: v.string(),
+    roleArn: v.string(),
+    region: v.string(),
+  },
+  handler: async (ctx, args) => {
+    try {
+      await ctx.runMutation(internal.awsDeployment.updateDeploymentStatusInternal, {
+        deploymentId: args.deploymentId,
+        status: "BUILDING",
+        progress: {
+          stage: "authenticating",
+          percentage: 10,
+          message: "Getting temporary AWS credentials via web identity...",
+          currentStep: "authenticate",
+          totalSteps: 5,
+        },
+      });
+
+      const assumeRoleResult = await ctx.runAction(api.awsAuth.assumeRoleWithWebIdentity, {
+        roleArn: args.roleArn,
+      });
+
+      if (!assumeRoleResult.success || !assumeRoleResult.credentials) {
+        throw new Error(assumeRoleResult.error || "Failed to assume role with web identity");
+      }
+
+      const region = args.region;
+      const tempCredentials = assumeRoleResult.credentials;
+      const awsCredentials = {
+        accessKeyId: tempCredentials.accessKeyId,
+        secretAccessKey: tempCredentials.secretAccessKey,
+        sessionToken: tempCredentials.sessionToken,
+      };
+
+      const { STSClient, GetCallerIdentityCommand } = await import("@aws-sdk/client-sts");
+      const stsClient = new STSClient({ region, credentials: awsCredentials });
+      const identity = await stsClient.send(new GetCallerIdentityCommand({}));
+      const awsAccountId = identity.Account || "unknown";
+      const callerArn = identity.Arn || "";
+
+      await ctx.runMutation(internal.awsDeployment.updateDeploymentStatusInternal, {
+        deploymentId: args.deploymentId,
+        status: "BUILDING",
+        progress: {
+          stage: "packaging",
+          percentage: 30,
+          message: "Packaging deployment artifacts...",
+          currentStep: "package-artifacts",
+          totalSteps: 5,
+        },
+      });
+
+      const agent = await ctx.runQuery(internal.agents.getInternal, { id: args.agentId });
+      if (!agent) {
+        throw new Error("Agent not found");
+      }
+
+      const { files } = assembleDeploymentPackageFiles(agent, {
+        deploymentTarget: agent.deploymentType === "aws" ? "agentcore" : agent.deploymentType,
+        includeCloudFormation: true,
+        includeCLIScript: true,
+        includeLambdaConfig: agent.deploymentType === "lambda",
+      });
+
+      const JSZipModule = await import("jszip");
+      const zip = new JSZipModule.default();
+      for (const [filename, content] of Object.entries(files)) {
+        zip.file(filename, content);
+      }
+      const zipBuffer: Buffer = await zip.generateAsync({ type: "nodebuffer" });
+
+      await ctx.runMutation(internal.awsDeployment.updateDeploymentStatusInternal, {
+        deploymentId: args.deploymentId,
+        status: "BUILDING",
+        progress: {
+          stage: "packaged",
+          percentage: 45,
+          message: "Agent artifacts packaged successfully.",
+          currentStep: "package-artifacts",
+          totalSteps: 5,
+        },
+      });
+
+      const sanitizedName = sanitizeAgentName(agent.name || `agent-${args.agentId}`);
+      const packageKey = `agentcore/${sanitizedName}/${args.deploymentId}-${Date.now()}.zip`;
+      const baseBucketName = `agent-builder-${awsAccountId}-deployments`;
+      let bucketName = baseBucketName;
+
+      const { S3Client, CreateBucketCommand, HeadBucketCommand, PutObjectCommand, GetObjectCommand } = await import("@aws-sdk/client-s3");
+      const { getSignedUrl } = await import("@aws-sdk/s3-request-presigner");
+      const s3Client = new S3Client({ region, credentials: awsCredentials });
+
+      try {
+        await s3Client.send(new HeadBucketCommand({ Bucket: bucketName }));
+      } catch (headError: any) {
+        try {
+          const createParams: any = { Bucket: bucketName };
+          if (region !== "us-east-1") {
+            createParams.CreateBucketConfiguration = { LocationConstraint: region };
+          }
+          await s3Client.send(new CreateBucketCommand(createParams));
+        } catch (createError: any) {
+          if (createError.name === "BucketAlreadyOwnedByYou") {
+            // bucket already accessible
+          } else if (createError.name === "BucketAlreadyExists") {
+            bucketName = `${baseBucketName}-${Date.now()}`;
+            const createParams: any = { Bucket: bucketName };
+            if (region !== "us-east-1") {
+              createParams.CreateBucketConfiguration = { LocationConstraint: region };
+            }
+            await s3Client.send(new CreateBucketCommand(createParams));
+          } else {
+            throw createError;
+          }
+        }
+      }
+
+      await s3Client.send(new PutObjectCommand({
+        Bucket: bucketName,
+        Key: packageKey,
+        Body: zipBuffer,
+        ContentType: "application/zip",
+      }));
+
+      await ctx.runMutation(internal.awsDeployment.updateDeploymentStatusInternal, {
+        deploymentId: args.deploymentId,
+        status: "BUILDING",
+        progress: {
+          stage: "staging-artifacts",
+          percentage: 65,
+          message: `Uploaded deployment package to s3://${bucketName}/${packageKey}`,
+          currentStep: "upload-artifacts",
+          totalSteps: 5,
+        },
+        s3BucketName: bucketName,
+        deploymentPackageKey: packageKey,
+        awsAccountId,
+        awsCallerArn: callerArn,
+      });
+
+      const { ECRClient, DescribeRepositoriesCommand, CreateRepositoryCommand } = await import("@aws-sdk/client-ecr");
+      const ecrClient = new ECRClient({ region, credentials: awsCredentials });
+      const repositoryName = `agent-builder/${sanitizedName}`;
+      let repositoryUri: string | undefined;
+
+      try {
+        const describe = await ecrClient.send(new DescribeRepositoriesCommand({ repositoryNames: [repositoryName] }));
+        repositoryUri = describe.repositories?.[0]?.repositoryUri;
+      } catch (repoError: any) {
+        if (repoError.name === "RepositoryNotFoundException") {
+          const created = await ecrClient.send(new CreateRepositoryCommand({ repositoryName }));
+          repositoryUri = created.repository?.repositoryUri;
+        } else {
+          throw repoError;
+        }
+      }
+
+      await ctx.runMutation(internal.awsDeployment.updateDeploymentStatusInternal, {
+        deploymentId: args.deploymentId,
+        status: "DEPLOYING",
+        progress: {
+          stage: "registry-ready",
+          percentage: 80,
+          message: repositoryUri
+            ? `ECR repository ready at ${repositoryUri}`
+            : "ECR repository ready",
+          currentStep: "prepare-registry",
+          totalSteps: 5,
+        },
+        ecrRepositoryUri: repositoryUri,
+      });
+
+      let downloadUrl: string | null = null;
+      try {
+        downloadUrl = await getSignedUrl(
+          s3Client,
+          new GetObjectCommand({ Bucket: bucketName, Key: packageKey }),
+          { expiresIn: 3600 }
+        );
+      } catch (presignError) {
+        console.warn("Unable to create presigned URL for deployment package", presignError);
+      }
+
+      const instructionsLines = [
+        `Artifacts uploaded to s3://${bucketName}/${packageKey}`,
+        `1. Download package: aws s3 cp s3://${bucketName}/${packageKey} ./agent_package.zip --region ${region}`,
+        repositoryUri
+          ? `2. Build and push the container image:\n   aws ecr get-login-password --region ${region} | docker login --username AWS --password-stdin ${awsAccountId}.dkr.ecr.${region}.amazonaws.com\n   docker build -t ${repositoryUri}:latest .\n   docker push ${repositoryUri}:latest`
+          : "2. Build and push your agent image to the provisioned ECR repository.",
+        "3. Deploy the AgentCore stack using the CloudFormation template inside agent_package.zip or run deploy_agentcore.sh.",
+      ];
+
+      if (downloadUrl) {
+        instructionsLines.push(`Temporary download URL (valid 1 hour): ${downloadUrl}`);
+      }
+
+      const instructions = instructionsLines.join("\n\n");
+
+      await ctx.runMutation(internal.awsDeployment.updateDeploymentStatusInternal, {
+        deploymentId: args.deploymentId,
+        status: "ACTIVE",
+        progress: {
+          stage: "staged",
+          percentage: 100,
+          message: "Artifacts staged in your AWS account. Push the container image and launch AgentCore to finish deployment.",
+          currentStep: "staged",
+          totalSteps: 5,
+        },
+        ecrRepositoryUri: repositoryUri,
+        s3BucketName: bucketName,
+        deploymentPackageKey: packageKey,
+        awsAccountId,
+        awsCallerArn: callerArn,
+        logs: [
+          {
+            timestamp: Date.now(),
+            level: "info",
+            message: instructions,
+            source: "deployment",
+          },
+        ],
+      });
+
+    } catch (error: any) {
+      console.error("Web identity deployment error:", error);
+      await ctx.runMutation(internal.awsDeployment.updateDeploymentStatusInternal, {
+        deploymentId: args.deploymentId,
+        status: "FAILED",
+        progress: {
+          stage: "failed",
+          percentage: 0,
+          message: `Deployment failed: ${error.message}`,
+        },
+        error: error.message,
+      });
+    }
+  },
+});
+
+/**
+ * Assume role in user's AWS account (DEPRECATED - use web identity instead)
  */
 async function assumeUserRole(roleArn: string, externalId: string) {
   const response = await fetch(
@@ -1089,3 +1378,190 @@ async function assumeUserRole(roleArn: string, externalId: string) {
 
   return await response.json();
 }
+
+/**
+ *
+ Deploy agent to user's AWS account using temporary credentials
+ */
+async function deployToUserAWS(
+  agent: any,
+  region: string,
+  accessKeyId: string,
+  secretAccessKey: string,
+  sessionToken: string
+) {
+  const {
+    ECRClient,
+    CreateRepositoryCommand,
+    GetAuthorizationTokenCommand
+  } = await import("@aws-sdk/client-ecr");
+
+  const {
+    ECSClient,
+    CreateClusterCommand,
+    RegisterTaskDefinitionCommand,
+    CreateServiceCommand
+  } = await import("@aws-sdk/client-ecs");
+
+  const {
+    S3Client,
+    CreateBucketCommand,
+    PutObjectCommand
+  } = await import("@aws-sdk/client-s3");
+
+  const {
+    EC2Client,
+    DescribeVpcsCommand,
+    DescribeSubnetsCommand,
+    CreateSecurityGroupCommand,
+    AuthorizeSecurityGroupIngressCommand,
+    DescribeSecurityGroupsCommand
+  } = await import("@aws-sdk/client-ec2");
+
+  // Configure AWS clients with temporary credentials
+  const credentials = {
+    accessKeyId,
+    secretAccessKey,
+    sessionToken
+  };
+
+  const ecrClient = new ECRClient({ region, credentials });
+  const ecsClient = new ECSClient({ region, credentials });
+  const s3Client = new S3Client({ region, credentials });
+  const ec2Client = new EC2Client({ region, credentials });
+
+  // 1. Create ECR repository for agent image
+  const repoName = `agent-${agent._id.toLowerCase()}`;
+  try {
+    await ecrClient.send(new CreateRepositoryCommand({
+      repositoryName: repoName,
+      imageScanningConfiguration: {
+        scanOnPush: true
+      }
+    }));
+    console.log(`Created ECR repository: ${repoName}`);
+  } catch (error: any) {
+    if (error.name !== "RepositoryAlreadyExistsException") {
+      throw error;
+    }
+    console.log(`ECR repository already exists: ${repoName}`);
+  }
+
+  // 2. Get ECR auth token for Docker push
+  const authResponse = await ecrClient.send(new GetAuthorizationTokenCommand({}));
+  const authToken = authResponse.authorizationData?.[0];
+
+  if (!authToken) {
+    throw new Error("Failed to get ECR authorization token");
+  }
+
+  // 3. Create S3 bucket for agent artifacts
+  const bucketName = `agent-artifacts-${Date.now()}`;
+  try {
+    await s3Client.send(new CreateBucketCommand({
+      Bucket: bucketName,
+      CreateBucketConfiguration: {
+        LocationConstraint: (region !== "us-east-1" ? region : undefined) as any
+      }
+    }));
+    console.log(`Created S3 bucket: ${bucketName}`);
+  } catch (error: any) {
+    if (error.name !== "BucketAlreadyOwnedByYou") {
+      throw error;
+    }
+  }
+
+  // 4. Upload agent code to S3
+  const agentCode = generateAgentCoreCode(agent);
+  await s3Client.send(new PutObjectCommand({
+    Bucket: bucketName,
+    Key: "agent.py",
+    Body: agentCode,
+    ContentType: "text/x-python"
+  }));
+
+  // 5. Create ECS cluster
+  const clusterName = `agent-cluster-${agent._id}`;
+  try {
+    await ecsClient.send(new CreateClusterCommand({
+      clusterName,
+      capacityProviders: ["FARGATE"],
+      defaultCapacityProviderStrategy: [{
+        capacityProvider: "FARGATE",
+        weight: 1
+      }]
+    }));
+    console.log(`Created ECS cluster: ${clusterName}`);
+  } catch (error: any) {
+    if (error.name !== "ClusterAlreadyExistsException") {
+      throw error;
+    }
+  }
+
+  // 6. Register task definition
+  const taskFamily = `agent-task-${agent._id}`;
+  const taskDefResponse = await ecsClient.send(new RegisterTaskDefinitionCommand({
+    family: taskFamily,
+    networkMode: "awsvpc",
+    requiresCompatibilities: ["FARGATE"],
+    cpu: "256",
+    memory: "512",
+    executionRoleArn: `arn:aws:iam::${authToken.proxyEndpoint?.split('.')[0].split('//')[1]}:role/ecsTaskExecutionRole`,
+    containerDefinitions: [{
+      name: "agent-container",
+      image: `${authToken.proxyEndpoint}/${repoName}:latest`,
+      essential: true,
+      portMappings: [{
+        containerPort: 8080,
+        protocol: "tcp"
+      }],
+      environment: [
+        { name: "AGENT_NAME", value: agent.name },
+        { name: "MODEL_ID", value: agent.model }
+      ],
+      logConfiguration: {
+        logDriver: "awslogs",
+        options: {
+          "awslogs-group": `/ecs/${taskFamily}`,
+          "awslogs-region": region,
+          "awslogs-stream-prefix": "agent"
+        }
+      }
+    }]
+  }));
+
+  console.log(`Registered task definition: ${taskDefResponse.taskDefinition?.taskDefinitionArn}`);
+
+  // 7. Create ECS service
+  const serviceName = `agent-service-${agent._id}`;
+  try {
+    await ecsClient.send(new CreateServiceCommand({
+      cluster: clusterName,
+      serviceName,
+      taskDefinition: taskDefResponse.taskDefinition?.taskDefinitionArn,
+      desiredCount: 1,
+      launchType: "FARGATE",
+      networkConfiguration: {
+        awsvpcConfiguration: {
+          assignPublicIp: "ENABLED",
+          subnets: [], // TODO: Get default VPC subnets
+          securityGroups: [] // TODO: Create security group
+        }
+      }
+    }));
+    console.log(`Created ECS service: ${serviceName}`);
+  } catch (error: any) {
+    if (error.name !== "ServiceAlreadyExistsException") {
+      throw error;
+    }
+  }
+
+  return {
+    ecrRepository: `${authToken.proxyEndpoint}/${repoName}`,
+    ecsCluster: clusterName,
+    ecsService: serviceName,
+    s3Bucket: bucketName,
+    taskDefinition: taskDefResponse.taskDefinition?.taskDefinitionArn
+  };
+}
+

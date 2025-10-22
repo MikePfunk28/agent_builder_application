@@ -10,6 +10,8 @@ import { v } from "convex/values";
 
 /**
  * Log OAuth authentication attempt
+ * 
+ * RATE LIMITED: Only logs once per minute per provider to prevent quota exhaustion
  */
 export const logOAuthAttempt = mutation({
   args: {
@@ -22,6 +24,24 @@ export const logOAuthAttempt = mutation({
     expectedCallbackUrl: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    // RATE LIMITING: Check if we've logged this provider in the last minute
+    const oneMinuteAgo = Date.now() - 60000;
+    const recentLogs = await ctx.db
+      .query("auditLogs")
+      .withIndex("by_timestamp", (q) => q.gte("timestamp", oneMinuteAgo))
+      .filter((q) => q.eq(q.field("eventType"), "oauth_login"))
+      .collect();
+    
+    // Check if any recent log matches this provider
+    const recentLog = recentLogs.find(log => 
+      log.metadata?.provider === args.provider
+    );
+    
+    if (recentLog) {
+      console.log(`[OAuth] Rate limited: Skipping duplicate log for ${args.provider}`);
+      return; // Skip logging to prevent quota exhaustion
+    }
+
     // Log audit event
     await ctx.db.insert("auditLogs", {
       eventType: "oauth_login",
@@ -75,6 +95,8 @@ export const logOAuthAttempt = mutation({
 
 /**
  * Log OAuth callback URL mismatch
+ * 
+ * RATE LIMITED: Only logs once per 5 minutes per provider
  */
 export const logCallbackMismatch = mutation({
   args: {
@@ -84,6 +106,24 @@ export const logCallbackMismatch = mutation({
     userId: v.optional(v.id("users")),
   },
   handler: async (ctx, args) => {
+    // RATE LIMITING: Check if we've logged this error recently
+    const fiveMinutesAgo = Date.now() - 300000;
+    const recentLogs = await ctx.db
+      .query("errorLogs")
+      .withIndex("by_category", (q) => q.eq("category", "oauth"))
+      .filter((q) => q.gte(q.field("timestamp"), fiveMinutesAgo))
+      .collect();
+    
+    // Check if any recent log matches this provider
+    const recentLog = recentLogs.find(log => 
+      log.metadata?.provider === args.provider
+    );
+    
+    if (recentLog) {
+      console.log(`[OAuth] Rate limited: Skipping duplicate callback mismatch log for ${args.provider}`);
+      return;
+    }
+
     await ctx.db.insert("errorLogs", {
       category: "oauth",
       severity: "warning",

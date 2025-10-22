@@ -54,6 +54,7 @@ deploy-to-aws.sh
 
 # Package lock files
 package-lock.json
+.npmrc
 
 # Temporary and local files
 *.local
@@ -80,14 +81,18 @@ scripts/*.ps1
 # Shell scripts with sensitive configuration
 scripts/*.sh
 
+# TypeScript scripts (contain deployment URLs and configuration)
+scripts/*.ts
+
 # Python requirements (not needed for Cloudflare)
 requirements_complete.txt
 example_requirements.txt
 
-# Architecture diagrams
+# Architecture diagrams (contain PII and deployment URLs)
 architecture_diagram.py
 *.gv
 agent_builder_architecture*
+generated-diagrams/
 
 # Documentation directories (contain OAuth URLs and AWS account IDs)
 docs/
@@ -107,3 +112,7 @@ tests/
 # Current logs and temporary files
 current_logs.txt
 *.local
+*.md
+agent_builder_full_architecture_with_api_gateway
+agent_builder_complete_infrastructure
+

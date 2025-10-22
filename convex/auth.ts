@@ -4,10 +4,11 @@ import { Password } from "@convex-dev/auth/providers/Password";
 import { Anonymous } from "@convex-dev/auth/providers/Anonymous";
 import { convexAuth, getAuthUserId } from "@convex-dev/auth/server";
 import { query } from "./_generated/server";
+import CognitoProvider from '@auth/core/providers/cognito';
 
 // Build providers array with all authentication methods
 const providers: any[] = [
-  Anonymous, // Continue as guest
+  Anonymous, // Continue as guest - basic setup, no customization needed
   Password,  // Email/password authentication
   GitHub,    // GitHub OAuth
   Google,    // Google OAuth
@@ -17,10 +18,9 @@ const providers: any[] = [
 // When users sign in with Cognito, they can exchange their ID token for AWS credentials
 // This enables deployment to their own AWS accounts
 if (process.env.COGNITO_ISSUER_URL && process.env.COGNITO_CLIENT_ID && process.env.COGNITO_CLIENT_SECRET) {
-  const Cognito = {
+  const CognitoConfig = CognitoProvider({
     id: "cognito",
     name: "AWS Cognito",
-    type: "oidc",
     issuer: process.env.COGNITO_ISSUER_URL,
     clientId: process.env.COGNITO_CLIENT_ID,
     clientSecret: process.env.COGNITO_CLIENT_SECRET,
@@ -38,8 +38,8 @@ if (process.env.COGNITO_ISSUER_URL && process.env.COGNITO_CLIENT_ID && process.e
         cognitoUsername: profile["cognito:username"],
       };
     },
-  };
-  providers.push(Cognito as any);
+  });
+  providers.push(CognitoConfig);
 }
 
 export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({

@@ -42,6 +42,8 @@ const applicationTables = {
     cloudFormationStackId: v.optional(v.string()),
     ecrRepositoryUri: v.optional(v.string()),
     s3BucketName: v.optional(v.string()),
+    deploymentPackageKey: v.optional(v.string()),
+    awsCallerArn: v.optional(v.string()),
 
     // Status & Progress
     status: v.string(), // "running", "completed", "failed", "CREATING", "ACTIVE", etc.
@@ -93,7 +95,7 @@ const applicationTables = {
 
   // User Profiles with Tier Information
   users: defineTable({
-    userId: v.optional(v.string()), // From auth - optional for anonymous users
+    // DO NOT add userId field - use _id (Convex user document ID) instead
     email: v.optional(v.string()),
     name: v.optional(v.string()),
     image: v.optional(v.string()), // Profile picture URL
@@ -102,16 +104,23 @@ const applicationTables = {
     upgradedAt: v.optional(v.number()),
     createdAt: v.optional(v.number()),
     isAnonymous: v.optional(v.boolean()), // For anonymous users
-    
+
     // OAuth provider-specific fields
     locale: v.optional(v.string()), // Google: user's locale (e.g., "en-US")
     login: v.optional(v.string()), // GitHub: username
     authProvider: v.optional(v.string()), // "github" | "google" | "cognito" | "password"
-    
+
     // Auth metadata
     lastSignIn: v.optional(v.number()),
     signInCount: v.optional(v.number()),
     
+    // AWS Deployment Credentials
+    awsAuthMethod: v.optional(v.union(v.literal("assumeRole"), v.literal("direct"))),
+    awsRoleArn: v.optional(v.string()),
+    awsAccessKeyId: v.optional(v.string()),
+    awsSecretAccessKey: v.optional(v.string()),
+    awsConfiguredAt: v.optional(v.number()),
+
     // AWS Federated Identity (for Cognito users)
     awsIdentityId: v.optional(v.string()), // Cognito Identity Pool ID
     awsCredentials: v.optional(v.object({
@@ -122,36 +131,91 @@ const applicationTables = {
     })),
     awsCredentialsUpdatedAt: v.optional(v.number()),
   })
-    .index("by_user_id", ["userId"])
     .index("by_tier", ["tier"])
     .index("by_email", ["email"])
     .index("by_auth_provider", ["authProvider"]),
+
+  // API Keys for external access and usage tracking
+  apiKeys: defineTable({
+    userId: v.id("users"),
+    name: v.string(),
+    description: v.optional(v.string()),
+    keyHash: v.string(),
+    keyPrefix: v.string(),
+    isActive: v.boolean(),
+    testsUsed: v.number(),
+    lastUsed: v.optional(v.number()),
+    createdAt: v.number(),
+    revokedAt: v.optional(v.number()),
+  })
+    .index("by_user", ["userId"])
+    .index("by_hash", ["keyHash"]),
 
   agents: defineTable({
     name: v.string(),
     description: v.optional(v.string()),
     model: v.string(),
+    modelProvider: v.optional(v.string()), // "bedrock", "ollama", "openai", etc.
     systemPrompt: v.string(),
     tools: v.array(v.object({
       name: v.string(),
       type: v.string(),
-      config: v.optional(v.any()),
+      config: v.optional(v.object({
+        description: v.optional(v.string()),
+        parameters: v.optional(v.array(v.object({
+          name: v.string(),
+          type: v.string(),
+          description: v.optional(v.string()),
+          required: v.optional(v.boolean()),
+        }))),
+      })),
       requiresPip: v.optional(v.boolean()),
       pipPackages: v.optional(v.array(v.string())),
+      extrasPip: v.optional(v.string()),
+      notSupportedOn: v.optional(v.array(v.string())),
     })),
     generatedCode: v.string(),
     dockerConfig: v.optional(v.string()),
-    deploymentType: v.string(), // "aws", "ollama", "docker"
+    deploymentType: v.string(), // "aws", "ollama", "docker", "agentcore"
     createdBy: v.id("users"),
     isPublic: v.optional(v.boolean()),
-    
+    tier: v.optional(v.string()), // "freemium", "personal", "enterprise"
+
+    // MCP Configuration
+    mcpServers: v.optional(v.array(v.object({
+      name: v.string(),
+      command: v.string(),
+      args: v.array(v.string()),
+      env: v.optional(v.any()),
+      disabled: v.optional(v.boolean()),
+    }))),
+
+    // Dynamic Tools (Meta-tooling)
+    dynamicTools: v.optional(v.array(v.object({
+      name: v.string(),
+      code: v.string(),
+      parameters: v.any(),
+    }))),
+
     // MCP Tool Exposure
     exposableAsMCPTool: v.optional(v.boolean()),
     mcpToolName: v.optional(v.string()),
     mcpInputSchema: v.optional(v.any()),
+
+    // Architecture & Deployment Metadata
+    diagramUrl: v.optional(v.string()),
+    lastDeployedAt: v.optional(v.number()),
+    deploymentCount: v.optional(v.number()),
+
+    // Timestamps
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
   }).index("by_user", ["createdBy"])
     .index("by_public", ["isPublic"])
-    .index("by_mcp_tool_name", ["mcpToolName"]),
+    .index("by_mcp_tool_name", ["mcpToolName"])
+    .index("by_user_and_tier", ["createdBy", "tier"])
+    .index("by_deployment_type", ["deploymentType"])
+    .index("by_model_provider", ["modelProvider"]),
 
   templates: defineTable({
     name: v.string(),
@@ -169,6 +233,24 @@ const applicationTables = {
     isOfficial: v.optional(v.boolean()),
   }).index("by_category", ["category"]),
 
+  // Conversation Management
+  conversations: defineTable({
+    agentId: v.id("agents"),
+    userId: v.id("users"),
+    title: v.string(),
+    messages: v.array(v.object({
+      role: v.union(v.literal("user"), v.literal("assistant"), v.literal("system")),
+      content: v.string(),
+      timestamp: v.number(),
+      metadata: v.optional(v.any()),
+    })),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_agent", ["agentId"])
+    .index("by_agent_user", ["agentId", "userId"]),
+
   // Containerized Agent Testing System
   testExecutions: defineTable({
     // Identity
@@ -185,9 +267,11 @@ const applicationTables = {
       baseUrl: v.optional(v.string()),
       modelId: v.optional(v.string()),
       region: v.optional(v.string()),
+      testEnvironment: v.optional(v.string()), // "docker" | "agentcore" | "fargate"
     }),
     timeout: v.number(),
     agentRuntimeArn: v.optional(v.string()), // For AgentCore testing
+    conversationId: v.optional(v.id("conversations")), // For conversation context
 
     // Execution State
     status: v.string(), // CREATED | QUEUED | BUILDING | RUNNING | COMPLETED | FAILED | ABANDONED | ARCHIVED
@@ -375,7 +459,107 @@ const applicationTables = {
   })
     .index("by_event_type", ["eventType", "timestamp"])
     .index("by_user", ["userId", "timestamp"])
-    .index("by_resource", ["resource", "resourceId"]),
+    .index("by_resource", ["resource", "resourceId"])
+    .index("by_timestamp", ["timestamp"]),
+
+  // Interleaved Reasoning Conversations
+  interleavedConversations: defineTable({
+    userId: v.optional(v.id("users")),
+    conversationToken: v.optional(v.string()), // For anonymous users
+    agentId: v.optional(v.id("agents")), // Optional: Associate conversation with specific agent
+    title: v.string(),
+    systemPrompt: v.string(),
+    messages: v.optional(v.array(v.object({
+      role: v.union(v.literal("user"), v.literal("assistant")),
+      content: v.string(),
+      reasoning: v.optional(v.string()),
+      toolCalls: v.optional(v.any()),
+      timestamp: v.number(),
+    }))), // DEPRECATED: Use interleavedMessages table instead
+    messageCount: v.optional(v.number()), // OPTIONAL: Computed on-demand from interleavedMessages count
+    contextSize: v.number(), // Size in bytes (approximate)
+    s3ContextKey: v.optional(v.string()), // S3 key for archived context
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    isActive: v.boolean(),
+  })
+    .index("by_user", ["userId", "updatedAt"])
+    .index("by_token", ["conversationToken"])
+    .index("by_agent", ["agentId", "updatedAt"]),
+
+  // Interleaved Messages (one document per message for efficient writes)
+  interleavedMessages: defineTable({
+    conversationId: v.id("interleavedConversations"),
+    role: v.union(v.literal("user"), v.literal("assistant")),
+    content: v.string(),
+    reasoning: v.optional(v.string()), // Claude's thinking process
+    toolCalls: v.optional(v.any()),
+    timestamp: v.number(),
+    sequenceNumber: v.number(), // For ordering messages
+  })
+    .index("by_conversation", ["conversationId", "sequenceNumber"])
+    .index("by_timestamp", ["conversationId", "timestamp"]),
+
+  // Agent Memory store (Convex + S3 hybrid)
+  agentMemories: defineTable({
+    agentId: v.optional(v.id("agents")),
+    conversationId: v.optional(v.id("interleavedConversations")),
+    memoryType: v.string(),
+    title: v.optional(v.string()),
+    summary: v.optional(v.string()),
+    content: v.optional(v.string()),
+    s3Key: v.optional(v.string()),
+    metadata: v.optional(v.any()),
+    tokenCount: v.optional(v.number()),
+    createdAt: v.number(),
+    archived: v.optional(v.boolean()),
+  })
+    .index("by_agent", ["agentId", "createdAt"])
+    .index("by_conversation", ["conversationId", "createdAt"])
+    .index("by_type", ["memoryType", "createdAt"]),
+
+  // Dynamic Tools (Meta-tooling)
+  dynamicTools: defineTable({
+    // Identity
+    name: v.string(),
+    displayName: v.string(),
+    description: v.string(),
+    userId: v.id("users"),
+    agentId: v.optional(v.id("agents")), // Agent that created this tool
+
+    // Tool Code
+    code: v.string(), // Python code with @tool decorator
+    validated: v.boolean(), // Whether code passed syntax validation
+    validationError: v.optional(v.string()),
+
+    // Tool Metadata
+    parameters: v.any(), // JSON schema for tool parameters
+    returnType: v.optional(v.string()),
+    category: v.optional(v.string()),
+
+    // Dependencies
+    pipPackages: v.optional(v.array(v.string())),
+    extrasPip: v.optional(v.string()),
+
+    // Usage Tracking
+    invocationCount: v.number(),
+    lastInvokedAt: v.optional(v.number()),
+    successCount: v.number(),
+    errorCount: v.number(),
+
+    // Timestamps
+    createdAt: v.number(),
+    updatedAt: v.number(),
+
+    // Status
+    isActive: v.boolean(),
+    isPublic: v.optional(v.boolean()),
+  })
+    .index("by_user", ["userId", "createdAt"])
+    .index("by_agent", ["agentId"])
+    .index("by_name", ["name"])
+    .index("by_active", ["isActive"])
+    .index("by_public", ["isPublic"]),
 
 };
 

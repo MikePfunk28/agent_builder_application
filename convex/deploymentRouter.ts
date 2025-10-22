@@ -50,17 +50,15 @@ export const getUserTier = query({
     const userId = await getAuthUserId(ctx);
     if (!userId) return null;
 
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_user_id", (q) => q.eq("userId", userId))
-      .first();
+    // userId from getAuthUserId() is already the Convex user document ID
+    const user = await ctx.db.get(userId);
 
     return user || null;
   },
 });
 
 // Tier 1: Deploy to AgentCore (Freemium)
-async function deployTier1(ctx: any, args: any, userId: string): Promise<any> {
+async function deployTier1(ctx: any, args: any, userId: any): Promise<any> {
   // Check usage limits
   const user = await ctx.runQuery(api.deploymentRouter.getUserTier);
 
@@ -187,17 +185,15 @@ async function deployTier3(_ctx: any, _args: any, _userId: string): Promise<any>
 // Increment usage counter for freemium users
 export const incrementUsage = mutation({
   args: {
-    userId: v.string(),
+    userId: v.id("users"),
   },
   handler: async (ctx, args) => {
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_user_id", (q) => q.eq("userId", args.userId))
-      .first();
+    // userId is already the Convex document ID
+    const user = await ctx.db.get(args.userId);
 
     if (!user) return;
 
-    await ctx.db.patch(user._id, {
+    await ctx.db.patch(args.userId, {
       testsThisMonth: (user.testsThisMonth || 0) + 1,
     });
   },

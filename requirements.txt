@@ -1,17 +1,54 @@
-# Core agent runtime (AWS Bedrock AgentCore)
-strands-agents-tools>=0.2.11
-bedrock-agentcore>=0.0.25
+# ============================================================================
+# CORE AGENT RUNTIME (AWS Bedrock AgentCore)
+# ============================================================================
+# NOTE: agent-core-code-interpreter extra removed - it pins bedrock-agentcore==0.1.0
+# The code_interpreter tool is available in base strands-agents-tools (no extra needed)
+strands-agents-tools[a2a-client,local-chromium-browser,mem0-memory,diagram,rss,use-computer]>=0.2.12
+strands-agents>=1.0.0
+
+# Bedrock AgentCore stack - latest versions
+bedrock-agentcore>=0.1.6
 bedrock-agentcore-starter-toolkit>=0.1.25
 
-# AWS SDKs for Bedrock, S3, ECS, and cross-account deployments
+# ============================================================================
+# AWS SDKs
+# ============================================================================
 boto3>=1.35.0
 botocore>=1.35.0
 
-# Authentication utilities
+# ============================================================================
+# AUTHENTICATION
+# ============================================================================
 PyJWT>=2.8.0
 
-# Local container orchestration for Ollama tests
+# ============================================================================
+# CONTAINER ORCHESTRATION
+# ============================================================================
 docker>=6.0.0
+
+# ============================================================================
+# MCP (Model Context Protocol) SDK - Python
+# ============================================================================
+# MCP SDK for building MCP servers and clients
+mcp>=1.0.0
+
+# MCP client for agent-to-agent communication (A2A)
+# Note: a2a_client is included in strands-agents-tools[a2a_client] above
+
+# ============================================================================
+# VECTOR DATABASES & EMBEDDINGS
+# ============================================================================
+# LanceDB - Serverless vector database
+lancedb>=0.5.0
+
+# Mem0 - Memory management for agents
+mem0ai>=0.1.0
+
+# Qdrant - Vector search engine
+qdrant-client>=1.7.0
+
+# ChromaDB - Embedding database
+chromadb>=1.0.0
 
 # Diagram tooling used by docs/diagram.py
 graphviz>=0.20.1
@@ -19,7 +56,30 @@ matplotlib>=3.7.0
 networkx>=3.1
 diagrams>=0.24.0
 
+# FastAPI for assistant API endpoints (serverless)
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+
+# Pydantic for data validation
+pydantic>=2.5.0
+
+# OpenTelemetry for X-Ray tracing (on-demand logging)
+opentelemetry-api>=1.22.0
+opentelemetry-sdk>=1.22.0
+opentelemetry-instrumentation-fastapi>=0.43b0
+aws-xray-sdk>=2.12.0
+
+# Logging
+python-json-logger>=2.0.7
+
 # Runtime helpers pulled in transitively; keep pinned explicitly
 python-dotenv>=1.0.0
-uvicorn>=0.23.0
 watchdog>=6.0.0
+flask>=3.1.2
+flask-cors>=6.0.1
+requests>=2.31.0
+python-dateutil>=2.8.2
+
+# Browser automation runtime (required by AgentCore Browser quickstart)
+playwright>=1.47
+nest-asyncio>=1.6

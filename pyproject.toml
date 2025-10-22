@@ -1,0 +1,22 @@
+# pyproject.toml
+[build-system]
+requires = ["setuptools>=80"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-builder-application"
+version = "0.1.0"
+description = "AI Agent Builder with Strands Agents and Bedrock AgentCore"
+requires-python = ">=3.11"
+
+# NOTE: Dependencies are managed in requirements.txt for better compatibility
+# This file provides PEP 517/518 build metadata for modern Python tooling
+# Use: pip install -r requirements.txt (NOT pip install -e .)
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+]

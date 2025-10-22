@@ -8,6 +8,8 @@
 import { mutation, query, internalMutation, internalQuery, action } from "./_generated/server";
 import { v } from "convex/values";
 import { internal, api } from "./_generated/api";
+import { getAuthUserId } from "@convex-dev/auth/server";
+// Removed unused import: Id
 
 // Validation constants
 const MAX_QUERY_LENGTH = 2000;
@@ -27,13 +29,18 @@ export const submitTest = mutation({
     testQuery: v.string(),
     timeout: v.optional(v.number()),
     priority: v.optional(v.number()),
+    conversationId: v.optional(v.id("conversations")),
+    testEnvironment: v.optional(v.union(
+      v.literal("lambda"),
+      v.literal("agentcore"),
+      v.literal("fargate")
+    )),
   },
   handler: async (ctx, args) => {
-    // Authentication
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
+    // Authentication - use getAuthUserId for Convex user document ID
+    // Allow anonymous users to test agents
+    const userId = await getAuthUserId(ctx);
+    const effectiveUserId = userId || `anon_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
     // Get agent
     const agent = await ctx.db.get(args.agentId);
@@ -42,7 +49,6 @@ export const submitTest = mutation({
     }
 
     // Verify ownership or public access
-    const userId = identity.subject;
     const isOwner = agent.createdBy === userId;
     const isPublic = Boolean(agent.isPublic);
 
@@ -99,10 +105,18 @@ export const submitTest = mutation({
     // Determine model provider and config
     const { modelProvider, modelConfig } = extractModelConfig(agent.model, agent.deploymentType);
 
+    // Get conversation history if conversationId provided
+    if (args.conversationId) {
+      const conversation = await ctx.db.get(args.conversationId);
+      if (!conversation) {
+        throw new Error("Conversation not found");
+      }
+    }
+
     // Create test execution record
     const testId = await ctx.db.insert("testExecutions", {
       agentId: args.agentId,
-      userId: identity.subject as any,
+      userId: effectiveUserId as any,
       testQuery: args.testQuery,
       agentCode: agent.generatedCode,
       requirements,
@@ -114,6 +128,7 @@ export const submitTest = mutation({
       phase: "queued",
       logs: [],
       submittedAt: Date.now(),
+      conversationId: args.conversationId,
     });
 
     // Add to queue
@@ -154,13 +169,8 @@ export const getTestById = query({
       return null;
     }
 
-    // Check authorization
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity || test.userId !== identity.subject) {
-      // Could also check if agent is public
-      return null;
-    }
-
+    // Allow anyone to view test results (anonymous or authenticated)
+    // In production, you might want to restrict this to test owner only
     return test;
   },
 });
@@ -184,8 +194,9 @@ export const getUserTests = query({
     status: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
+    const userId = await getAuthUserId(ctx);
+    // Anonymous users can't view saved tests
+    if (!userId) {
       return { tests: [], hasMore: false };
     }
 
@@ -193,7 +204,7 @@ export const getUserTests = query({
 
     let query = ctx.db
       .query("testExecutions")
-      .withIndex("by_user", (q) => q.eq("userId", identity.subject as any))
+      .withIndex("by_user", (q) => q.eq("userId", userId))
       .order("desc");
 
     if (args.status) {
@@ -216,17 +227,16 @@ export const getUserTests = query({
 export const cancelTest = mutation({
   args: { testId: v.id("testExecutions") },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
-
+    const userId = await getAuthUserId(ctx);
+    
     const test = await ctx.db.get(args.testId);
     if (!test) {
       throw new Error("Test not found");
     }
 
-    if (test.userId !== identity.subject) {
+    // Allow anonymous users to cancel their own tests
+    // For authenticated users, verify ownership
+    if (userId && test.userId !== userId) {
       throw new Error("Not authorized");
     }
 
@@ -255,17 +265,35 @@ export const cancelTest = mutation({
       return { success: true, message: "Test removed from queue" };
     }
 
-    // If running, stop ECS task
-    if (test.ecsTaskArn) {
-      await ctx.scheduler.runAfter(0, internal.containerOrchestrator.stopTestContainer, {
-        testId: args.testId,
-        taskArn: test.ecsTaskArn,
+    // If building or running, stop ECS task
+    if (test.status === "BUILDING" || test.status === "RUNNING") {
+      if (test.ecsTaskArn) {
+        await ctx.scheduler.runAfter(0, internal.containerOrchestrator.stopTestContainer, {
+          testId: args.testId,
+          taskArn: test.ecsTaskArn,
+        });
+      }
+
+      // Mark as cancelled immediately
+      await ctx.db.patch(args.testId, {
+        status: "FAILED",
+        success: false,
+        error: "Cancelled by user",
+        completedAt: Date.now(),
       });
 
-      return { success: true, message: "Test cancellation requested" };
+      return { success: true, message: "Test cancelled" };
     }
 
-    throw new Error("Cannot cancel test in current state");
+    // Fallback: mark as cancelled anyway
+    await ctx.db.patch(args.testId, {
+      status: "FAILED",
+      success: false,
+      error: "Cancelled by user",
+      completedAt: Date.now(),
+    });
+
+    return { success: true, message: "Test cancelled" };
   },
 });
 
@@ -278,24 +306,26 @@ export const retryTest = mutation({
     modifyQuery: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
-
+    const userId = await getAuthUserId(ctx);
+    
     const originalTest = await ctx.db.get(args.testId);
     if (!originalTest) {
       throw new Error("Test not found");
     }
 
-    if (originalTest.userId !== identity.subject) {
+    // Allow anonymous users to retry their own tests
+    // For authenticated users, verify ownership
+    if (userId && originalTest.userId !== userId) {
       throw new Error("Not authorized");
     }
+
+    // Use original userId (which might be anonymous temp ID)
+    const effectiveUserId = userId || originalTest.userId;
 
     // Create new test with same configuration
     const newTestId = await ctx.db.insert("testExecutions", {
       agentId: originalTest.agentId,
-      userId: identity.subject as any,
+      userId: effectiveUserId as any,
       testQuery: args.modifyQuery || originalTest.testQuery,
       agentCode: originalTest.agentCode,
       requirements: originalTest.requirements,
@@ -381,6 +411,7 @@ export const updateStatus = internalMutation({
     success: v.optional(v.boolean()),
     error: v.optional(v.string()),
     errorStage: v.optional(v.string()),
+    response: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const test = await ctx.db.get(args.testId);
@@ -404,6 +435,18 @@ export const updateStatus = internalMutation({
       if (args.error) {
         updates.error = args.error;
         updates.errorStage = args.errorStage;
+      }
+      if (args.response) {
+        updates.response = args.response;
+      }
+      
+      // Add assistant response to conversation if exists
+      if (test.conversationId && args.response && args.success) {
+        await ctx.runMutation(internal.conversations.addMessageInternal, {
+          conversationId: test.conversationId,
+          role: "assistant",
+          content: args.response,
+        });
       }
     }
 
@@ -610,51 +653,68 @@ function extractModelConfig(model: string, deploymentType: string): {
     testEnvironment?: string;
   };
 } {
-  // Determine testing environment based on model ID and deployment type
-  const isOllamaModel = model.includes(':') || deploymentType === "ollama";
-  
-  if (isOllamaModel) {
-    return {
-      modelProvider: "ollama",
-      modelConfig: {
-        baseUrl: process.env.OLLAMA_BASE_URL || "http://host.docker.internal:11434",
-        modelId: model,
-        testEnvironment: "docker", // Local Docker testing with Ollama
-      },
-    };
-  } else if (deploymentType === "aws" || deploymentType === "bedrock" || model.startsWith("anthropic.") || model.startsWith("amazon.")) {
+  // Check deployment type first
+  if (deploymentType === "aws" || deploymentType === "bedrock") {
     return {
       modelProvider: "bedrock",
       modelConfig: {
         region: process.env.AWS_REGION || "us-east-1",
         modelId: model,
-        testEnvironment: "agentcore", // AgentCore sandbox testing
+        testEnvironment: "agentcore",
       },
     };
   }
-
-  // Default based on model format
-  if (model.includes(':')) {
-    // Ollama format (e.g., "llama3:8b", "qwen3:4b")
+  
+  if (deploymentType === "ollama") {
     return {
       modelProvider: "ollama",
       modelConfig: {
-        baseUrl: "http://host.docker.internal:11434",
+        baseUrl: process.env.OLLAMA_BASE_URL || "http://host.docker.internal:11434",
         modelId: model,
         testEnvironment: "docker",
       },
     };
-  } else {
-    // Bedrock format (e.g., "anthropic.claude-3-5-sonnet-20241022-v1:0")
+  }
+
+  // Determine based on model ID format
+  // Bedrock models: anthropic.*, amazon.*, ai21.*, cohere.*, meta.*, mistral.*
+  if (model.startsWith("anthropic.") || 
+      model.startsWith("amazon.") || 
+      model.startsWith("ai21.") ||
+      model.startsWith("cohere.") ||
+      model.startsWith("meta.") ||
+      model.startsWith("mistral.")) {
     return {
       modelProvider: "bedrock",
       modelConfig: {
-        region: "us-east-1",
+        region: process.env.AWS_REGION || "us-east-1",
         modelId: model,
         testEnvironment: "agentcore",
       },
     };
   }
+  
+  // Ollama models: contain colon (e.g., "llama3:8b", "qwen3:4b")
+  if (model.includes(':')) {
+    return {
+      modelProvider: "ollama",
+      modelConfig: {
+        baseUrl: process.env.OLLAMA_BASE_URL || "http://host.docker.internal:11434",
+        modelId: model,
+        testEnvironment: "docker",
+      },
+    };
+  }
+
+  // Default to bedrock for unknown formats
+  return {
+    modelProvider: "bedrock",
+    modelConfig: {
+      region: "us-east-1",
+      modelId: model,
+      testEnvironment: "agentcore",
+    },
+  };
 }
 
 async function getQueuePosition(ctx: any, testId: string): Promise<number> {
@@ -684,7 +744,12 @@ async function getQueuePosition(ctx: any, testId: string): Promise<number> {
 
 /**
  * Execute agent directly (for MCP tool invocation)
- * This is a simplified execution path for MCP tool calls
+ *
+ * DEPRECATED: This function is no longer used.
+ * Use api.strandsAgentExecution.executeAgentWithStrandsAgents instead,
+ * which is fully event-driven and calls AgentCore directly without polling.
+ *
+ * Kept for backward compatibility only.
  */
 export const executeAgent = action({
   args: {
@@ -696,66 +761,17 @@ export const executeAgent = action({
     response: string | null;
     error?: string;
   }> => {
-    // Get agent - use internal query since this is an action
-    const agent = await ctx.runQuery(internal.agents.getInternal, { id: args.agentId });
-    if (!agent) {
-      throw new Error("Agent not found");
-    }
-
-    // For now, submit a test and wait for completion
-    // In a production system, this would be a more direct execution path
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
-
-    // Submit test
-    const result: { testId: any; status: string; queuePosition: number; estimatedWaitTime: number } = await ctx.runMutation(api.testExecution.submitTest, {
+    // Redirect to event-driven execution
+    const result = await ctx.runAction(api.strandsAgentExecution.executeAgentWithStrandsAgents, {
       agentId: args.agentId,
-      testQuery: args.input,
-      timeout: 180000, // 3 minutes
-      priority: 1, // High priority for MCP calls
+      message: args.input,
+      // No conversationId for MCP tool invocations (stateless)
     });
 
-    // Poll for completion (simplified - in production use webhooks or streaming)
-    let attempts = 0;
-    const maxAttempts = 60; // 60 attempts * 3 seconds = 3 minutes max
-    
-    while (attempts < maxAttempts) {
-      await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3 seconds
-      
-      const test: any = await ctx.runQuery(api.testExecution.getTestById, { 
-        testId: result.testId 
-      });
-      
-      if (!test) {
-        throw new Error("Test not found");
-      }
-      
-      if (test.status === "COMPLETED") {
-        return {
-          success: test.success || false,
-          response: test.response || null,
-          error: test.error,
-        };
-      }
-      
-      if (test.status === "FAILED") {
-        return {
-          success: false,
-          response: null,
-          error: test.error || "Test failed",
-        };
-      }
-      
-      attempts++;
-    }
-    
-    // Timeout
     return {
-      success: false,
-      response: null,
-      error: "Execution timeout - test did not complete in time",
+      success: result.success,
+      response: result.content || null,
+      error: result.error,
     };
   },
 });

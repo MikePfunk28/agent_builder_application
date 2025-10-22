@@ -1,0 +1,417 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/awslabs/goformation/master/schema/cloudformation.schema.json
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Agent Builder - MCP Server on AgentCore Runtime for executing agent tests"
+
+# ============================================================================
+# PARAMETERS
+# ============================================================================
+Parameters:
+  AgentName:
+    Type: String
+    Default: "AgentBuilderMCPServer"
+    Description: "Name for the MCP server runtime"
+    AllowedPattern: "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+
+  NetworkMode:
+    Type: String
+    Default: "PUBLIC"
+    Description: "Network mode for AgentCore resources"
+    AllowedValues:
+      - PUBLIC
+      - PRIVATE
+
+# ============================================================================
+# RESOURCES
+# ============================================================================
+Resources:
+  # ECR Repository for MCP Server Image
+  ECRRepository:
+    Type: AWS::ECR::Repository
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      RepositoryName: !Sub "${AWS::StackName}-mcp-server"
+      ImageTagMutability: MUTABLE
+      EmptyOnDelete: true
+      ImageScanningConfiguration:
+        ScanOnPush: true
+
+  # Cognito User Pool for Authentication
+  CognitoUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub "${AWS::StackName}-user-pool"
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: false
+          RequireLowercase: false
+          RequireNumbers: false
+          RequireSymbols: false
+
+  CognitoUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub "${AWS::StackName}-client"
+      UserPoolId: !Ref CognitoUserPool
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+
+  CognitoUser:
+    Type: AWS::Cognito::UserPoolUser
+    Properties:
+      UserPoolId: !Ref CognitoUserPool
+      Username: agentbuilder
+      MessageAction: SUPPRESS
+
+  # IAM Role for AgentCore Runtime
+  AgentExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-agent-execution-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock-agentcore.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/BedrockAgentCoreFullAccess
+      Policies:
+        - PolicyName: AgentCoreExecutionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecr:BatchGetImage
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetAuthorizationToken
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - logs:*
+                  - xray:*
+                  - cloudwatch:PutMetricData
+                Resource: "*"
+
+  # CodeBuild Role
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-codebuild-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CodeBuildPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:*
+                  - ecr:*
+                Resource: "*"
+
+  # Lambda Role for Custom Resources
+  CustomResourceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-custom-resource-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: CustomResourcePolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - codebuild:*
+                  - cognito-idp:AdminSetUserPassword
+                Resource: "*"
+
+  # Lambda Function to Trigger CodeBuild
+  CodeBuildTriggerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-codebuild-trigger"
+      Handler: index.handler
+      Role: !GetAtt CustomResourceRole.Arn
+      Runtime: python3.11
+      Timeout: 900
+      Code:
+        ZipFile: |
+          import boto3
+          import cfnresponse
+          import time
+
+          def handler(event, context):
+              if event['RequestType'] == 'Delete':
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                  return
+
+              project_name = event['ResourceProperties']['ProjectName']
+              codebuild = boto3.client('codebuild')
+
+              try:
+                  response = codebuild.start_build(projectName=project_name)
+                  build_id = response['build']['id']
+
+                  # Wait for build to complete
+                  while True:
+                      build_response = codebuild.batch_get_builds(ids=[build_id])
+                      status = build_response['builds'][0]['buildStatus']
+
+                      if status == 'SUCCEEDED':
+                          cfnresponse.send(event, context, cfnresponse.SUCCESS, {'BuildId': build_id})
+                          return
+                      elif status in ['FAILED', 'FAULT', 'STOPPED', 'TIMED_OUT']:
+                          cfnresponse.send(event, context, cfnresponse.FAILED, {'Error': f'Build failed: {status}'})
+                          return
+
+                      time.sleep(30)
+
+              except Exception as e:
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {'Error': str(e)})
+
+  # Lambda to Set Cognito Password
+  CognitoPasswordSetterFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-cognito-password-setter"
+      Handler: index.handler
+      Role: !GetAtt CustomResourceRole.Arn
+      Runtime: python3.11
+      Timeout: 300
+      Code:
+        ZipFile: |
+          import boto3
+          import cfnresponse
+
+          def handler(event, context):
+              if event['RequestType'] == 'Delete':
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                  return
+
+              try:
+                  cognito = boto3.client('cognito-idp')
+                  cognito.admin_set_user_password(
+                      UserPoolId=event['ResourceProperties']['UserPoolId'],
+                      Username=event['ResourceProperties']['Username'],
+                      Password=event['ResourceProperties']['Password'],
+                      Permanent=True
+                  )
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+              except Exception as e:
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {'Error': str(e)})
+
+  SetCognitoUserPassword:
+    Type: Custom::CognitoSetPassword
+    DependsOn: CognitoUser
+    Properties:
+      ServiceToken: !GetAtt CognitoPasswordSetterFunction.Arn
+      UserPoolId: !Ref CognitoUserPool
+      Username: agentbuilder
+      Password: AgentBuilder2025!
+
+  # CodeBuild Project to Build MCP Server Image
+  MCPServerImageBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub "${AWS::StackName}-mcp-server-build"
+      ServiceRole: !GetAtt CodeBuildRole.Arn
+      Artifacts:
+        Type: NO_ARTIFACTS
+      Environment:
+        Type: ARM_CONTAINER
+        ComputeType: BUILD_GENERAL1_LARGE
+        Image: aws/codebuild/amazonlinux2-aarch64-standard:3.0
+        PrivilegedMode: true
+        EnvironmentVariables:
+          - Name: AWS_DEFAULT_REGION
+            Value: !Ref AWS::Region
+          - Name: AWS_ACCOUNT_ID
+            Value: !Ref AWS::AccountId
+          - Name: IMAGE_REPO_NAME
+            Value: !Ref ECRRepository
+          - Name: IMAGE_TAG
+            Value: latest
+      Source:
+        Type: NO_SOURCE
+        BuildSpec: |
+          version: 0.2
+          phases:
+            pre_build:
+              commands:
+                - echo Logging in to Amazon ECR...
+                - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
+            build:
+              commands:
+                - echo Building MCP server for agent testing...
+
+                # Create requirements.txt
+                - |
+                  cat > requirements.txt << 'EOF'
+                  mcp>=1.10.0
+                  boto3>=1.35.0
+                  bedrock-agentcore>=0.0.25
+                  strands-agents>=1.0.0
+                  EOF
+
+                # Create mcp_server.py - Agent Execution Server
+                - |
+                  cat > mcp_server.py << 'EOF'
+                  from mcp.server.fastmcp import FastMCP
+                  from strands import Agent
+                  from strands.models import BedrockModel
+                  import boto3
+                  import json
+
+                  mcp = FastMCP(host="0.0.0.0", stateless_http=True)
+
+                  @mcp.tool()
+                  def execute_agent(code: str, input: str, model_id: str, system_prompt: str, conversation_history: list = None) -> dict:
+                      """Execute an agent with the given code and input"""
+                      try:
+                          # Initialize Bedrock model
+                          bedrock = boto3.client('bedrock-runtime')
+                          model = BedrockModel(model_id=model_id, client=bedrock)
+
+                          # Execute agent code
+                          exec_globals = {'Agent': Agent, 'model': model, 'tool': lambda f: f}
+                          exec(code, exec_globals)
+
+                          # Get agent from executed code
+                          agent = exec_globals.get('agent')
+                          if not agent:
+                              return {'success': False, 'error': 'No agent found in code'}
+
+                          # Execute agent
+                          response = agent(input)
+
+                          return {
+                              'success': True,
+                              'result': {
+                                  'response': str(response)
+                              }
+                          }
+                      except Exception as e:
+                          return {'success': False, 'error': str(e)}
+
+                  if __name__ == "__main__":
+                      mcp.run(transport="streamable-http")
+                  EOF
+
+                # Create Dockerfile
+                - |
+                  cat > Dockerfile << 'EOF'
+                  FROM public.ecr.aws/docker/library/python:3.11-slim
+                  WORKDIR /app
+
+                  COPY requirements.txt requirements.txt
+                  RUN pip install --no-cache-dir -r requirements.txt
+
+                  ENV AWS_REGION=us-east-1
+                  ENV AWS_DEFAULT_REGION=us-east-1
+
+                  RUN useradd -m -u 1000 bedrock_agentcore
+                  USER bedrock_agentcore
+
+                  EXPOSE 8000
+
+                  COPY . .
+
+                  CMD ["python", "-m", "mcp_server"]
+                  EOF
+
+                # Build and push image
+                - docker build -t $IMAGE_REPO_NAME:latest .
+                - docker tag $IMAGE_REPO_NAME:latest $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:latest
+                - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:latest
+
+  # Trigger Image Build
+  TriggerImageBuild:
+    Type: Custom::CodeBuildTrigger
+    DependsOn:
+      - ECRRepository
+      - MCPServerImageBuildProject
+      - CodeBuildTriggerFunction
+    Properties:
+      ServiceToken: !GetAtt CodeBuildTriggerFunction.Arn
+      ProjectName: !Ref MCPServerImageBuildProject
+
+  # AgentCore Runtime for MCP Server
+  MCPServerRuntime:
+    Type: AWS::BedrockAgentCore::Runtime
+    DependsOn: TriggerImageBuild
+    Properties:
+      AgentRuntimeName: !Sub
+        - "${StackNameUnderscore}_${AgentName}"
+        - StackNameUnderscore: !Join ["_", !Split ["-", !Ref "AWS::StackName"]]
+      AgentRuntimeArtifact:
+        ContainerConfiguration:
+          ContainerUri: !Sub "${ECRRepository.RepositoryUri}:latest"
+      RoleArn: !GetAtt AgentExecutionRole.Arn
+      NetworkConfiguration:
+        NetworkMode: !Ref NetworkMode
+      ProtocolConfiguration: MCP
+      AuthorizerConfiguration:
+        CustomJWTAuthorizer:
+          AllowedClients:
+            - !Ref CognitoUserPoolClient
+          DiscoveryUrl: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${CognitoUserPool}/.well-known/openid-configuration"
+      Description: "MCP server for Agent Builder testing"
+
+# ============================================================================
+# OUTPUTS
+# ============================================================================
+Outputs:
+  MCPServerRuntimeId:
+    Description: "MCP Server Runtime ID (use this in Convex)"
+    Value: !GetAtt MCPServerRuntime.AgentRuntimeId
+    Export:
+      Name: !Sub "${AWS::StackName}-RuntimeId"
+
+  MCPServerRuntimeArn:
+    Description: "MCP Server Runtime ARN"
+    Value: !GetAtt MCPServerRuntime.AgentRuntimeArn
+
+  CognitoUserPoolId:
+    Description: "Cognito User Pool ID"
+    Value: !Ref CognitoUserPool
+
+  CognitoUserPoolClientId:
+    Description: "Cognito User Pool Client ID"
+    Value: !Ref CognitoUserPoolClient
+
+  TestUsername:
+    Description: "Test username"
+    Value: "agentbuilder"
+
+  TestPassword:
+    Description: "Test password"
+    Value: "AgentBuilder2025!"
+
+  ServerName:
+    Description: "Server name to use in Convex (mcpClient.invokeMCPTool)"
+    Value: "bedrock-agentcore-mcp-server"

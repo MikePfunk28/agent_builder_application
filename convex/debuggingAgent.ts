@@ -1,12 +1,13 @@
 /**
  * Debugging Agent Service
- * 
+ *
  * An AI agent that helps debug deployment and testing issues
  */
 
 import { action, query, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
+import { getAuthUserId } from "@convex-dev/auth/server";
 
 /**
  * Analyze and debug issues with agent testing or deployment
@@ -27,23 +28,24 @@ export const debugIssue = action({
     })),
   },
   handler: async (ctx, args): Promise<any> => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
+    // CRITICAL: Use Convex user document ID, not OAuth provider ID
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
       throw new Error("Not authenticated");
     }
 
     // Gather diagnostic information
     const diagnostics = await gatherDiagnostics(ctx, args);
-    
+
     // Analyze the issue using AI
     const analysis = await analyzeIssue(args, diagnostics);
-    
+
     // Generate recommendations
     const recommendations = await generateRecommendations(analysis, args);
 
-    // Store the debugging session
+    // Store the debugging session - pass Convex user ID
     const debugSessionId: string = await ctx.runMutation(internal.debuggingAgent.createDebugSession, {
-      userId: identity.subject as any,
+      userId: userId,
       issueType: args.issueType,
       analysis,
       recommendations,

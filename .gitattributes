@@ -1,0 +1,34 @@
+# Default: detect text automatically, normalize to LF in repo
+* text=auto
+
+# Force LF for source files (keeps repos portable; Windows editors handle LF fine)
+*.sh   text eol=lf
+*.py   text eol=lf
+*.js   text eol=lf
+*.ts   text eol=lf
+*.tsx  text eol=lf
+*.json text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.md   text eol=lf
+*.yaml text eol=lf
+*.toml text eol=lf
+*.yaml text eol=lf
+
+# CloudFormation & infra
+*.yaml text eol=lf
+*.yml  text eol=lf
+
+# Keep Windows-native endings for scripts that actually need CRLF
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+*.ps1  text eol=crlf
+
+# Binary (never touch line endings)
+*.png  -text
+*.jpg  -text
+*.jpeg -text
+*.gif  -text
+*.pdf  -text
+*.zip  -text
+*.dll  -text

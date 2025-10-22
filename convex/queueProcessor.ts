@@ -94,17 +94,56 @@ export const processQueue = internalAction({
             timestamp: Date.now(),
           });
 
-          // Start ECS task
-          const result = await ctx.runAction(internal.containerOrchestrator.startTestContainer, {
-            testId: test._id,
-            agentCode: test.agentCode,
-            requirements: test.requirements,
-            dockerfile: test.dockerfile,
-            testQuery: test.testQuery,
-            modelProvider: test.modelProvider,
-            modelConfig: test.modelConfig,
-            timeout: test.timeout,
-          });
+          // SMART ROUTING: Bedrock → AgentCore, Ollama → Lambda
+          const agent = await ctx.runQuery(internal.agents.getInternal, { id: test.agentId });
+          const modelId = agent?.model || test.modelConfig?.modelId || '';
+          
+          // Check if Bedrock model (starts with provider prefix)
+          const isBedrockModel = modelId.startsWith('anthropic.') || 
+                                modelId.startsWith('amazon.') || 
+                                modelId.startsWith('ai21.') ||
+                                modelId.startsWith('cohere.') ||
+                                modelId.startsWith('meta.') ||
+                                modelId.startsWith('mistral.');
+          
+          let result;
+          if (isBedrockModel) {
+            // Route to AgentCore Sandbox (fast, serverless, Bedrock only)
+            await ctx.runMutation(internal.testExecution.appendLogs, {
+              testId: test._id,
+              logs: ['🚀 Routing to AgentCore Sandbox (Bedrock model)'],
+              timestamp: Date.now(),
+            });
+            
+            result = await ctx.runAction(internal.agentcoreTestExecution.executeAgentCoreTest, {
+              testId: test._id,
+              agentId: test.agentId,
+              input: test.testQuery,
+              conversationHistory: test.conversationId ? await ctx.runQuery(internal.conversations.getHistory, { conversationId: test.conversationId }) : [],
+            });
+          } else {
+            // Route to ECS Fargate (Docker support for Ollama)
+            await ctx.runMutation(internal.testExecution.appendLogs, {
+              testId: test._id,
+              logs: ['🚀 Routing to ECS Fargate (Ollama model)'],
+              timestamp: Date.now(),
+            });
+
+            result = await ctx.runAction(internal.containerOrchestrator.startTestContainer, {
+              testId: test._id,
+              agentCode: test.agentCode,
+              requirements: test.requirements,
+              dockerfile: test.dockerfile || '',
+              testQuery: test.testQuery,
+              modelProvider: 'ollama',
+              modelConfig: {
+                modelId: modelId,
+                baseUrl: process.env.OLLAMA_BASE_URL || 'http://host.docker.internal:11434',
+                testEnvironment: 'fargate',
+              },
+              timeout: 300000, // 5 minutes
+            });
+          }
 
           if ("error" in result) {
             // Failed to start container
@@ -136,42 +175,19 @@ export const processQueue = internalAction({
                 testId: test._id,
                 priority: queueEntry.priority,
                 attempts: queueEntry.attempts + 1,
-                lastError: result.error,
+                lastError: result.error ?? "",
               });
             }
           } else {
-            // Successfully started
-            console.log(`✅ Container started for test ${test._id}: ${result.taskArn}`);
-
-            // Update test with ECS task info
-            await ctx.runMutation(internal.queueProcessor.updateTestWithTaskInfo, {
-              testId: test._id,
-              taskArn: result.taskArn,
-              taskId: result.taskId,
-              logGroup: result.logGroup,
-              logStream: result.logStream,
-            });
+            // Successfully completed (Lambda returns immediately)
+            console.log(`✅ Lambda test completed for ${test._id}`);
 
             // Remove from queue
             await ctx.runMutation(internal.queueProcessor.removeFromQueue, {
               queueId: queueEntry._id,
             });
 
-            // Update status to RUNNING
-            await ctx.runMutation(internal.testExecution.updateStatus, {
-              testId: test._id,
-              status: "RUNNING",
-            });
-
-            await ctx.runMutation(internal.testExecution.appendLogs, {
-              testId: test._id,
-              logs: [
-                `✅ Container started: ${result.taskId}`,
-                `📊 Logs: ${result.logGroup}/${result.logStream}`,
-                "🤖 Agent loading...",
-              ],
-              timestamp: Date.now(),
-            });
+            // Test status already updated by Lambda execution
           }
         } catch (error: any) {
           console.error(`❌ Error processing test ${queueEntry.testId}:`, error);
@@ -317,7 +333,9 @@ export const updateTestWithTaskInfo = internalMutation({
 });
 
 /**
- * Cleanup abandoned tests (scheduled to run every 15 minutes)
+ * Cleanup abandoned tests (scheduled to run every hour)
+ * 
+ * Cost optimization: Exits early if no tests in queue
  */
 export const cleanupAbandonedTests = internalAction({
   args: {},
@@ -327,6 +345,13 @@ export const cleanupAbandonedTests = internalAction({
     const abandoned = await ctx.runQuery(internal.queueProcessor.queryAbandonedTests, {
       cutoffTime: fifteenMinutesAgo,
     });
+
+    // Exit early if nothing to clean up (saves operations)
+    if (abandoned.length === 0) {
+      return;
+    }
+
+    console.log(`🧹 Found ${abandoned.length} abandoned test(s) to clean up`);
 
     for (const queueEntry of abandoned) {
       console.log(`🧹 Cleaning up abandoned test: ${queueEntry.testId}`);

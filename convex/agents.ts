@@ -68,6 +68,8 @@ export const create = mutation({
       config: v.optional(v.any()),
       requiresPip: v.optional(v.boolean()),
       pipPackages: v.optional(v.array(v.string())),
+      extrasPip: v.optional(v.string()),
+      notSupportedOn: v.optional(v.array(v.string())),
     })),
     generatedCode: v.string(),
     dockerConfig: v.optional(v.string()),
@@ -76,6 +78,13 @@ export const create = mutation({
     exposableAsMCPTool: v.optional(v.boolean()),
     mcpToolName: v.optional(v.string()),
     mcpInputSchema: v.optional(v.any()),
+    mcpServers: v.optional(v.array(v.object({
+      name: v.string(),
+      command: v.string(),
+      args: v.array(v.string()),
+      env: v.optional(v.any()),
+      disabled: v.optional(v.boolean()),
+    }))),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -103,6 +112,8 @@ export const update = mutation({
       config: v.optional(v.any()),
       requiresPip: v.optional(v.boolean()),
       pipPackages: v.optional(v.array(v.string())),
+      extrasPip: v.optional(v.string()),
+      notSupportedOn: v.optional(v.array(v.string())),
     }))),
     generatedCode: v.optional(v.string()),
     dockerConfig: v.optional(v.string()),
@@ -111,6 +122,13 @@ export const update = mutation({
     exposableAsMCPTool: v.optional(v.boolean()),
     mcpToolName: v.optional(v.string()),
     mcpInputSchema: v.optional(v.any()),
+    mcpServers: v.optional(v.array(v.object({
+      name: v.string(),
+      command: v.string(),
+      args: v.array(v.string()),
+      env: v.optional(v.any()),
+      disabled: v.optional(v.boolean()),
+    }))),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);

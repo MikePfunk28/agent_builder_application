@@ -73,8 +73,8 @@ export const BEDROCK_MODELS: Record<string, ModelMetadata> = {
     description: "Latest Claude model with interleaved reasoning, best for complex tasks",
   },
 
-  "anthropic.claude-haiku-4-5-20250514-v1:0": {
-    id: "anthropic.claude-haiku-4-5-20250514-v1:0",
+  "us.anthropic.claude-haiku-4-5-20250514-v1:0": {
+    id: "us.anthropic.claude-haiku-4-5-20250514-v1:0",
     name: "Claude 4.5 Haiku",
     provider: "bedrock",
     providerDisplay: "Anthropic (Bedrock)",
@@ -286,6 +286,276 @@ export const BEDROCK_MODELS: Record<string, ModelMetadata> = {
     type: "image",
     category: "multimodal",
     description: "Generate images with Titan V2",
+  },
+
+  "amazon.titan-text-premier-v1:0": {
+    id: "amazon.titan-text-premier-v1:0",
+    name: "Titan Text Premier",
+    provider: "bedrock",
+    providerDisplay: "Amazon (Bedrock)",
+    capabilities: ["text"],
+    contextWindow: 32000,
+    maxOutput: 3000,
+    category: "balanced",
+    description: "Amazon Titan text model for general use",
+  },
+
+  "amazon.titan-embed-text-v2:0": {
+    id: "amazon.titan-embed-text-v2:0",
+    name: "Titan Embeddings V2",
+    provider: "bedrock",
+    providerDisplay: "Amazon (Bedrock)",
+    capabilities: ["embeddings"],
+    contextWindow: 8192,
+    type: "embedding",
+    category: "embeddings",
+    description: "Generate text embeddings with Titan V2",
+  },
+
+  // ============================================================================
+  // META LLAMA (BEDROCK)
+  // ============================================================================
+  "meta.llama3-3-70b-instruct-v1:0": {
+    id: "meta.llama3-3-70b-instruct-v1:0",
+    name: "Llama 3.3 70B Instruct",
+    provider: "bedrock",
+    providerDisplay: "Meta (Bedrock)",
+    capabilities: ["text"],
+    contextWindow: 128000,
+    maxOutput: 2048,
+    recommended: true,
+    category: "flagship",
+    costPer1MTokens: { input: 0.65, output: 0.65 },
+    description: "Latest Llama 3.3 model with extended context on Bedrock",
+  },
+
+  "meta.llama3-2-90b-instruct-v1:0": {
+    id: "meta.llama3-2-90b-instruct-v1:0",
+    name: "Llama 3.2 90B Instruct",
+    provider: "bedrock",
+    providerDisplay: "Meta (Bedrock)",
+    capabilities: ["text", "vision"],
+    contextWindow: 128000,
+    maxOutput: 2048,
+    category: "multimodal",
+    costPer1MTokens: { input: 1.2, output: 1.2 },
+    description: "Llama 3.2 with vision capabilities on Bedrock",
+  },
+
+  "meta.llama3-2-11b-instruct-v1:0": {
+    id: "meta.llama3-2-11b-instruct-v1:0",
+    name: "Llama 3.2 11B Instruct",
+    provider: "bedrock",
+    providerDisplay: "Meta (Bedrock)",
+    capabilities: ["text", "vision"],
+    contextWindow: 128000,
+    maxOutput: 2048,
+    category: "multimodal",
+    costPer1MTokens: { input: 0.35, output: 0.35 },
+    description: "Compact Llama 3.2 with vision on Bedrock",
+  },
+
+  "meta.llama3-2-3b-instruct-v1:0": {
+    id: "meta.llama3-2-3b-instruct-v1:0",
+    name: "Llama 3.2 3B Instruct",
+    provider: "bedrock",
+    providerDisplay: "Meta (Bedrock)",
+    capabilities: ["text"],
+    contextWindow: 128000,
+    maxOutput: 2048,
+    category: "lightweight",
+    costPer1MTokens: { input: 0.15, output: 0.15 },
+    description: "Lightweight Llama 3.2 on Bedrock",
+  },
+
+  "meta.llama3-2-1b-instruct-v1:0": {
+    id: "meta.llama3-2-1b-instruct-v1:0",
+    name: "Llama 3.2 1B Instruct",
+    provider: "bedrock",
+    providerDisplay: "Meta (Bedrock)",
+    capabilities: ["text"],
+    contextWindow: 128000,
+    maxOutput: 2048,
+    category: "lightweight",
+    costPer1MTokens: { input: 0.1, output: 0.1 },
+    description: "Ultra-compact Llama 3.2 on Bedrock",
+  },
+
+  "meta.llama3-1-405b-instruct-v1:0": {
+    id: "meta.llama3-1-405b-instruct-v1:0",
+    name: "Llama 3.1 405B Instruct",
+    provider: "bedrock",
+    providerDisplay: "Meta (Bedrock)",
+    capabilities: ["text"],
+    contextWindow: 128000,
+    maxOutput: 4096,
+    category: "flagship",
+    costPer1MTokens: { input: 5.32, output: 16.0 },
+    description: "Largest Llama 3.1 model on Bedrock",
+  },
+
+  "meta.llama3-1-70b-instruct-v1:0": {
+    id: "meta.llama3-1-70b-instruct-v1:0",
+    name: "Llama 3.1 70B Instruct",
+    provider: "bedrock",
+    providerDisplay: "Meta (Bedrock)",
+    capabilities: ["text"],
+    contextWindow: 128000,
+    maxOutput: 2048,
+    category: "balanced",
+    costPer1MTokens: { input: 0.99, output: 0.99 },
+    description: "Balanced Llama 3.1 on Bedrock",
+  },
+
+  "meta.llama3-1-8b-instruct-v1:0": {
+    id: "meta.llama3-1-8b-instruct-v1:0",
+    name: "Llama 3.1 8B Instruct",
+    provider: "bedrock",
+    providerDisplay: "Meta (Bedrock)",
+    capabilities: ["text"],
+    contextWindow: 128000,
+    maxOutput: 2048,
+    category: "lightweight",
+    costPer1MTokens: { input: 0.22, output: 0.22 },
+    description: "Compact Llama 3.1 on Bedrock",
+  },
+
+  "meta.llama3-70b-instruct-v1:0": {
+    id: "meta.llama3-70b-instruct-v1:0",
+    name: "Llama 3 70B Instruct",
+    provider: "bedrock",
+    providerDisplay: "Meta (Bedrock)",
+    capabilities: ["text"],
+    contextWindow: 8192,
+    maxOutput: 2048,
+    category: "balanced",
+    costPer1MTokens: { input: 0.99, output: 0.99 },
+    description: "Llama 3 70B on Bedrock",
+  },
+
+  "meta.llama3-8b-instruct-v1:0": {
+    id: "meta.llama3-8b-instruct-v1:0",
+    name: "Llama 3 8B Instruct",
+    provider: "bedrock",
+    providerDisplay: "Meta (Bedrock)",
+    capabilities: ["text"],
+    contextWindow: 8192,
+    maxOutput: 2048,
+    category: "lightweight",
+    costPer1MTokens: { input: 0.22, output: 0.22 },
+    description: "Llama 3 8B on Bedrock",
+  },
+
+  // ============================================================================
+  // MISTRAL AI (BEDROCK)
+  // ============================================================================
+  "mistral.mistral-large-2407-v1:0": {
+    id: "mistral.mistral-large-2407-v1:0",
+    name: "Mistral Large 2",
+    provider: "bedrock",
+    providerDisplay: "Mistral AI (Bedrock)",
+    capabilities: ["text", "coding"],
+    contextWindow: 128000,
+    maxOutput: 8192,
+    recommended: true,
+    category: "flagship",
+    costPer1MTokens: { input: 3.0, output: 9.0 },
+    description: "Mistral's most capable model on Bedrock",
+  },
+
+  "mistral.mistral-small-2402-v1:0": {
+    id: "mistral.mistral-small-2402-v1:0",
+    name: "Mistral Small",
+    provider: "bedrock",
+    providerDisplay: "Mistral AI (Bedrock)",
+    capabilities: ["text"],
+    contextWindow: 32000,
+    maxOutput: 8192,
+    category: "lightweight",
+    costPer1MTokens: { input: 1.0, output: 3.0 },
+    description: "Compact Mistral model on Bedrock",
+  },
+
+  // ============================================================================
+  // AI21 LABS (BEDROCK)
+  // ============================================================================
+  "ai21.jamba-1-5-large-v1:0": {
+    id: "ai21.jamba-1-5-large-v1:0",
+    name: "Jamba 1.5 Large",
+    provider: "bedrock",
+    providerDisplay: "AI21 Labs (Bedrock)",
+    capabilities: ["text"],
+    contextWindow: 256000,
+    maxOutput: 4096,
+    category: "flagship",
+    costPer1MTokens: { input: 2.0, output: 8.0 },
+    description: "AI21's flagship model with massive context window",
+  },
+
+  "ai21.jamba-1-5-mini-v1:0": {
+    id: "ai21.jamba-1-5-mini-v1:0",
+    name: "Jamba 1.5 Mini",
+    provider: "bedrock",
+    providerDisplay: "AI21 Labs (Bedrock)",
+    capabilities: ["text"],
+    contextWindow: 256000,
+    maxOutput: 4096,
+    category: "lightweight",
+    costPer1MTokens: { input: 0.2, output: 0.4 },
+    description: "Compact Jamba model with large context",
+  },
+
+  // ============================================================================
+  // COHERE (BEDROCK)
+  // ============================================================================
+  "cohere.command-r-plus-v1:0": {
+    id: "cohere.command-r-plus-v1:0",
+    name: "Command R+",
+    provider: "bedrock",
+    providerDisplay: "Cohere (Bedrock)",
+    capabilities: ["text"],
+    contextWindow: 128000,
+    maxOutput: 4096,
+    category: "flagship",
+    costPer1MTokens: { input: 3.0, output: 15.0 },
+    description: "Cohere's most capable model on Bedrock",
+  },
+
+  "cohere.command-r-v1:0": {
+    id: "cohere.command-r-v1:0",
+    name: "Command R",
+    provider: "bedrock",
+    providerDisplay: "Cohere (Bedrock)",
+    capabilities: ["text"],
+    contextWindow: 128000,
+    maxOutput: 4096,
+    category: "balanced",
+    costPer1MTokens: { input: 0.5, output: 1.5 },
+    description: "Balanced Cohere model on Bedrock",
+  },
+
+  "cohere.embed-english-v3": {
+    id: "cohere.embed-english-v3",
+    name: "Cohere Embed English V3",
+    provider: "bedrock",
+    providerDisplay: "Cohere (Bedrock)",
+    capabilities: ["embeddings"],
+    contextWindow: 512,
+    type: "embedding",
+    category: "embeddings",
+    description: "English text embeddings from Cohere",
+  },
+
+  "cohere.embed-multilingual-v3": {
+    id: "cohere.embed-multilingual-v3",
+    name: "Cohere Embed Multilingual V3",
+    provider: "bedrock",
+    providerDisplay: "Cohere (Bedrock)",
+    capabilities: ["embeddings"],
+    contextWindow: 512,
+    type: "embedding",
+    category: "embeddings",
+    description: "Multilingual text embeddings from Cohere",
   },
 };
 

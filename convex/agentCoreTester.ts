@@ -6,6 +6,7 @@
 import { action, internalAction } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
+import { getAuthUserId } from "@convex-dev/auth/server";
 
 /**
  * Test agent in Bedrock AgentCore sandbox
@@ -127,12 +128,13 @@ export const createSandboxDeployment = action({
     },
     handler: async (ctx, args): Promise<any> => {
         try {
-            const identity = await ctx.auth.getUserIdentity();
-            if (!identity) {
+            // CRITICAL: Use Convex user document ID, not OAuth provider ID
+            const userId = await getAuthUserId(ctx);
+            if (!userId) {
                 throw new Error("Authentication required");
             }
 
-            // Deploy to AgentCore sandbox
+            // Deploy to AgentCore sandbox - pass Convex user ID
             const deployment = await deployToAgentCoreSandbox({
                 agentCode: args.agentCode,
                 requirements: args.requirements,
@@ -140,7 +142,7 @@ export const createSandboxDeployment = action({
                 tools: args.tools,
                 systemPrompt: args.systemPrompt,
                 region: args.region || "us-east-1",
-                userId: identity.subject,
+                userId: userId,
             });
 
             return {

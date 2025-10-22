@@ -1,10 +1,11 @@
-import { mutation, query, action } from "./_generated/server";
+import { mutation, query, action, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import { api } from "./_generated/api";
+import { getAuthUserId } from "@convex-dev/auth/server";
 
 /**
  * MCP Configuration Management
- * 
+ *
  * This module provides CRUD operations for managing MCP server configurations.
  * It handles:
  * - Listing MCP servers
@@ -15,35 +16,91 @@ import { api } from "./_generated/api";
  */
 
 /**
+ * Built-in MCP servers available to all users
+ */
+const BUILT_IN_MCP_SERVERS = [
+  {
+    _id: "system_bedrock_agentcore" as any,
+    _creationTime: Date.now(),
+    name: "bedrock-agentcore-mcp-server",
+    userId: "system" as any,
+    command: "bedrock-agentcore",
+    args: [],
+    env: {},
+    disabled: false,
+    timeout: 60000,
+    status: "connected",
+    availableTools: [
+      { name: "execute_agent", description: "Execute a strands-agents agent" },
+    ],
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  },
+  {
+    _id: "system_document_fetcher" as any,
+    _creationTime: Date.now(),
+    name: "document-fetcher-mcp-server",
+    userId: "system" as any,
+    command: "uvx",
+    args: ["mcp-document-fetcher"],
+    env: {},
+    disabled: false,
+    timeout: 30000,
+    status: "connected",
+    availableTools: [
+      { name: "fetch_url", description: "Fetch and clean a web page" },
+      { name: "parse_llms_txt", description: "Parse an llms.txt file and extract links" },
+      { name: "fetch_documentation", description: "Fetch multiple documentation pages from llms.txt" },
+    ],
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  },
+  {
+    _id: "system_aws_diagram" as any,
+    _creationTime: Date.now(),
+    name: "aws-diagram-mcp-server",
+    userId: "system" as any,
+    command: "uvx",
+    args: ["awslabs.aws-diagram-mcp-server@latest"],
+    env: {},
+    disabled: false,
+    timeout: 30000,
+    status: "connected",
+    availableTools: [
+      { name: "create_diagram", description: "Create AWS architecture diagram" },
+      { name: "get_resources", description: "Get AWS resources from a region" },
+    ],
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  },
+];
+
+/**
  * List all MCP servers for the current user
+ * Includes built-in system servers + user's custom servers
  */
 export const listMCPServers = query({
   args: {},
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    
-    // Return empty array if not authenticated (instead of throwing error)
-    if (!identity) {
-      return [];
+    // Get Convex user document ID
+    const userId = await getAuthUserId(ctx);
+
+    // Always return built-in servers (available to everyone, including anonymous)
+    const builtInServers = [...BUILT_IN_MCP_SERVERS];
+
+    // If not authenticated, only return built-in servers
+    if (!userId) {
+      return builtInServers;
     }
 
-    // Get user from auth
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_user_id", (q) => q.eq("userId", identity.subject))
-      .first();
-
-    if (!user) {
-      return [];
-    }
-
-    // Get all MCP servers for this user
-    const servers = await ctx.db
+    // Get user's custom MCP servers
+    const userServers = await ctx.db
       .query("mcpServers")
-      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .withIndex("by_user", (q) => q.eq("userId", userId))
       .collect();
 
-    return servers;
+    // Combine built-in + user servers
+    return [...builtInServers, ...userServers];
   },
 });
 
@@ -55,31 +112,65 @@ export const getMCPServerByName = query({
     serverName: v.string(),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    
-    if (!identity) {
-      throw new Error("Not authenticated");
+    // Check if it's a built-in server first
+    const builtInServer = BUILT_IN_MCP_SERVERS.find(s => s.name === args.serverName);
+    if (builtInServer) {
+      return builtInServer;
     }
 
-    // Get user from auth
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_user_id", (q) => q.eq("userId", identity.subject))
-      .first();
+    // For user-specific MCP servers, require authentication
+    const userId = await getAuthUserId(ctx);
 
-    if (!user) {
-      throw new Error("User not found");
+    if (!userId) {
+      throw new Error("Not authenticated");
     }
 
     // Get server by name for this user
     const server = await ctx.db
       .query("mcpServers")
-      .withIndex("by_user_and_name", (q) => 
-        q.eq("userId", user._id).eq("name", args.serverName)
+      .withIndex("by_user_and_name", (q) =>
+        q.eq("userId", userId).eq("name", args.serverName)
       )
       .first();
 
     return server;
+  },
+});
+
+/**
+ * Get a specific MCP server by name (internal - no auth required)
+ * Used by system actions like queue processor
+ */
+export const getMCPServerByNameInternal = internalQuery({
+  args: {
+    serverName: v.string(),
+    userId: v.optional(v.id("users")),
+  },
+  handler: async (ctx, args) => {
+    // Check if it's a built-in server first
+    const builtInServer = BUILT_IN_MCP_SERVERS.find(s => s.name === args.serverName);
+    if (builtInServer) {
+      return builtInServer;
+    }
+
+    if (args.userId) {
+      // Get server by name for specific user
+      const userId = args.userId; // Type narrowing
+      const server = await ctx.db
+        .query("mcpServers")
+        .withIndex("by_user_and_name", (q) =>
+          q.eq("userId", userId).eq("name", args.serverName)
+        )
+        .first();
+      return server;
+    } else {
+      // Get first server by name (for other MCP servers)
+      const server = await ctx.db
+        .query("mcpServers")
+        .filter((q) => q.eq(q.field("name"), args.serverName))
+        .first();
+      return server;
+    }
   },
 });
 
@@ -96,27 +187,18 @@ export const addMCPServer = mutation({
     timeout: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    
-    if (!identity) {
+    // Get Convex user document ID
+    const userId = await getAuthUserId(ctx);
+
+    if (!userId) {
       throw new Error("Not authenticated");
-    }
-
-    // Get user from auth
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_user_id", (q) => q.eq("userId", identity.subject))
-      .first();
-
-    if (!user) {
-      throw new Error("User not found");
     }
 
     // Check if server with this name already exists for this user
     const existingServer = await ctx.db
       .query("mcpServers")
-      .withIndex("by_user_and_name", (q) => 
-        q.eq("userId", user._id).eq("name", args.name)
+      .withIndex("by_user_and_name", (q) =>
+        q.eq("userId", userId).eq("name", args.name)
       )
       .first();
 
@@ -134,7 +216,7 @@ export const addMCPServer = mutation({
     // Create new MCP server
     const serverId = await ctx.db.insert("mcpServers", {
       name: args.name,
-      userId: user._id,
+      userId: userId,
       command: args.command,
       args: args.args,
       env: args.env,
@@ -165,20 +247,11 @@ export const updateMCPServer = mutation({
     }),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    
-    if (!identity) {
+    // Get Convex user document ID
+    const userId = await getAuthUserId(ctx);
+
+    if (!userId) {
       throw new Error("Not authenticated");
-    }
-
-    // Get user from auth
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_user_id", (q) => q.eq("userId", identity.subject))
-      .first();
-
-    if (!user) {
-      throw new Error("User not found");
     }
 
     // Get the server
@@ -189,7 +262,7 @@ export const updateMCPServer = mutation({
     }
 
     // Verify ownership
-    if (server.userId !== user._id) {
+    if (server.userId !== userId) {
       throw new Error("Not authorized to update this MCP server");
     }
 
@@ -197,8 +270,8 @@ export const updateMCPServer = mutation({
     if (args.updates.name && args.updates.name !== server.name) {
       const existingServer = await ctx.db
         .query("mcpServers")
-        .withIndex("by_user_and_name", (q) => 
-          q.eq("userId", user._id).eq("name", args.updates.name!)
+        .withIndex("by_user_and_name", (q) =>
+          q.eq("userId", userId).eq("name", args.updates.name!)
         )
         .first();
 
@@ -232,20 +305,11 @@ export const deleteMCPServer = mutation({
     serverId: v.id("mcpServers"),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    
-    if (!identity) {
+    // Get Convex user document ID
+    const userId = await getAuthUserId(ctx);
+
+    if (!userId) {
       throw new Error("Not authenticated");
-    }
-
-    // Get user from auth
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_user_id", (q) => q.eq("userId", identity.subject))
-      .first();
-
-    if (!user) {
-      throw new Error("User not found");
     }
 
     // Get the server
@@ -256,7 +320,7 @@ export const deleteMCPServer = mutation({
     }
 
     // Verify ownership
-    if (server.userId !== user._id) {
+    if (server.userId !== userId) {
       throw new Error("Not authorized to delete this MCP server");
     }
 
@@ -357,20 +421,11 @@ export const getMCPServerById = query({
     serverId: v.id("mcpServers"),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    
-    if (!identity) {
+    // Get Convex user document ID
+    const userId = await getAuthUserId(ctx);
+
+    if (!userId) {
       throw new Error("Not authenticated");
-    }
-
-    // Get user from auth
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_user_id", (q) => q.eq("userId", identity.subject))
-      .first();
-
-    if (!user) {
-      throw new Error("User not found");
     }
 
     const server = await ctx.db.get(args.serverId);
@@ -380,7 +435,7 @@ export const getMCPServerById = query({
     }
 
     // Verify ownership
-    if (server.userId !== user._id) {
+    if (server.userId !== userId) {
       throw new Error("Not authorized to access this MCP server");
     }
 
