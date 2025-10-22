@@ -6,8 +6,11 @@ strands-agents>=1.0.0
 
 #strands-agents-tools[diagram]==0.24.4
 # Bedrock AgentCore stack
-bedrock-agentcore>=0.1.6
-bedrock-agentcore-starter-toolkit>=0.1.25
+# NOTE: strands-agents-tools (agent-core-code-interpreter extra) currently pins bedrock-agentcore==0.1.0.
+# Align to the legacy runtime so the agent-core interpreter tool remains available until a 1.x-compatible
+# release of strands-agents-tools ships. Starter toolkit version matched to the 0.1.x line.
+bedrock-agentcore==0.1.0
+bedrock-agentcore-starter-toolkit==0.1.24
 
 # ============================================================================
 # AWS SDKs
