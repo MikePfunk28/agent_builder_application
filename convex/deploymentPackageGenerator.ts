@@ -7,7 +7,7 @@ import { action } from "./_generated/server";
 import { v } from "convex/values";
 import { api } from "./_generated/api";
 import { getAuthUserId } from "@convex-dev/auth/server";
-import { isAWSDeployment, isContainerDeployment } from "./constants";
+import { isAWSDeployment, isContainerDeployment, sanitizePythonModuleName } from "./constants";
 import {
   generateRequirementsTxt,
   generateDockerfile,
@@ -22,9 +22,59 @@ import {
 } from "./lib/fileGenerators";
 import { generateCloudFormationTemplate } from "./lib/cloudFormationGenerator";
 
+export type DeploymentPackageOptions = {
+  includeCloudFormation?: boolean;
+  includeCLIScript?: boolean;
+  includeLambdaConfig?: boolean;
+  usePyprojectToml?: boolean;
+  deploymentTarget?: string;
+};
+
+export function assembleDeploymentPackageFiles(agent: any, options: DeploymentPackageOptions = {}) {
+  const deploymentTarget = options.deploymentTarget || agent.deploymentType || "docker";
+  const pythonModuleName = sanitizePythonModuleName(agent.name || "agent");
+  const pythonFileName = `${pythonModuleName}.py`;
+
+  const files: Record<string, string> = {
+    "agent.py": agent.generatedCode,
+    Dockerfile: generateDockerfile(agent),
+    "mcp.json": generateMCPConfig(agent.mcpServers || []),
+  };
+
+  if (pythonFileName !== "agent.py") {
+    files[pythonFileName] = agent.generatedCode;
+  }
+
+  if (options.usePyprojectToml) {
+    files["pyproject.toml"] = generatePyprojectToml(agent.tools, agent.deploymentType, agent.name);
+  } else {
+    files["requirements.txt"] = generateRequirementsTxt(agent.tools, agent.deploymentType);
+  }
+
+  if (deploymentTarget === "lambda" || options.includeLambdaConfig) {
+    files["lambda_handler.py"] = generateLambdaHandler(agent);
+    files["lambda_deploy.sh"] = generateLambdaDeployScript(agent);
+  }
+
+  if (isAWSDeployment(agent.deploymentType) || options.includeCloudFormation) {
+    files["cloudformation.yaml"] = generateCloudFormationTemplate(agent);
+  }
+
+  if (isContainerDeployment(agent.deploymentType) || options.includeCLIScript) {
+    files["deploy.sh"] = generateDeployScript(agent);
+  }
+
+  if (deploymentTarget === "agentcore") {
+    files["agentcore_config.json"] = generateAgentCoreConfig(agent);
+    files["deploy_agentcore.sh"] = generateAgentCoreDeployScript(agent);
+  }
+
+  return { files, deploymentTarget, pythonFileName };
+}
+
 /**
  * Generate complete deployment package with all 4 required files:
- * 1. agent.py - Complete agent implementation
+ * 1. agent.py / <agent_name>.py - Complete agent implementation
  * 2. requirements.txt - Python dependencies
  * 3. Dockerfile - Container image definition
  * 4. mcp.json OR cloudformation.yaml - Infrastructure/MCP config
@@ -61,46 +111,46 @@ export const generateDeploymentPackage = action({
     }
 
     const options = args.options || {};
-    const deploymentTarget = options.deploymentTarget || agent.deploymentType;
+    const { files, deploymentTarget, pythonFileName } = assembleDeploymentPackageFiles(agent, options);
 
-    // Generate core files
-    const files: Record<string, string> = {
-      'agent.py': agent.generatedCode,
-      'Dockerfile': generateDockerfile(agent),
-      'mcp.json': generateMCPConfig(agent.mcpServers || []),
+    files["README.md"] = generateDeploymentReadme(agent, deploymentTarget, {
+      ...options,
+      pythonFileName,
+    });
+
+    return {
+      files,
+      agentName: agent.name,
+      deploymentType: agent.deploymentType,
+      deploymentTarget,
     };
+  },
+});
 
-    // Add requirements.txt OR pyproject.toml
-    if (options.usePyprojectToml) {
-      files['pyproject.toml'] = generatePyprojectToml(agent.tools, agent.deploymentType, agent.name);
-    } else {
-      files['requirements.txt'] = generateRequirementsTxt(agent.tools, agent.deploymentType);
-    }
+/**
+ * Generate deployment package without saving agent
+ * Allows users to download immediately after generating code
+ */
+export const generateDeploymentPackageWithoutSaving = action({
+  args: {
+    agent: v.any(),
+    options: v.optional(v.object({
+      includeCloudFormation: v.optional(v.boolean()),
+      includeCLIScript: v.optional(v.boolean()),
+      includeLambdaConfig: v.optional(v.boolean()),
+      usePyprojectToml: v.optional(v.boolean()),
+      deploymentTarget: v.optional(v.string()),
+    })),
+  },
+  handler: async (ctx, args) => {
+    const agent = args.agent;
+    const options = args.options || {};
+    const { files, deploymentTarget, pythonFileName } = assembleDeploymentPackageFiles(agent, options);
 
-    // Add deployment-specific files
-    if (deploymentTarget === 'lambda' || options.includeLambdaConfig) {
-      files['lambda_handler.py'] = generateLambdaHandler(agent);
-      files['lambda_deploy.sh'] = generateLambdaDeployScript(agent);
-    }
-
-    // Add CloudFormation template for AWS deployments
-    if (isAWSDeployment(agent.deploymentType) || options.includeCloudFormation) {
-      files['cloudformation.yaml'] = generateCloudFormationTemplate(agent);
-    }
-
-    // Add CLI deploy script for container deployments
-    if (isContainerDeployment(agent.deploymentType) || options.includeCLIScript) {
-      files['deploy.sh'] = generateDeployScript(agent);
-    }
-
-    // Add AgentCore-specific files
-    if (deploymentTarget === 'agentcore') {
-      files['agentcore_config.json'] = generateAgentCoreConfig(agent);
-      files['deploy_agentcore.sh'] = generateAgentCoreDeployScript(agent);
-    }
-
-    // Add README with deployment instructions
-    files['README.md'] = generateDeploymentReadme(agent, deploymentTarget, options);
+    files["README.md"] = generateDeploymentReadme(agent, deploymentTarget, {
+      ...options,
+      pythonFileName,
+    });
 
     return {
       files,

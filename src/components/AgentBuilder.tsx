@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useMutation, useAction } from "convex/react";
+import { useMutation, useAction, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { toast } from "sonner";
@@ -15,7 +15,10 @@ import {
   Copy,
   Download,
   TestTube,
-  Network
+  Network,
+  Shield,
+  AlertCircle,
+  CheckCircle
 } from "lucide-react";
 import { ModelSelector } from "./ModelSelector";
 import { ToolSelector } from "./ToolSelector";
@@ -24,6 +27,7 @@ import { AgentTester } from "./AgentTester";
 import { AgentMCPConfig } from "./AgentMCPConfig";
 import { AgentMCPTester } from "./AgentMCPTester";
 import { ArchitecturePreview } from "./ArchitecturePreview";
+import { AWSAuthModal } from "./AWSAuthModal";
 
 interface Tool {
   name: string;
@@ -151,25 +155,57 @@ export function AgentBuilder() {
   };
 
   const generateDeploymentPackage = useAction(api.deploymentPackageGenerator.generateDeploymentPackage);
+  const generateDeploymentPackageWithoutSaving = useAction(api.deploymentPackageGenerator.generateDeploymentPackageWithoutSaving);
 
   const handleDownload = async () => {
-    if (!savedAgentId) {
-      toast.error("Please save the agent first to download the complete deployment package");
+    // Allow download even without saving - generate package on the fly
+    const agentToDownload = savedAgentId || {
+      name: config.name,
+      description: config.description,
+      model: config.model,
+      systemPrompt: config.systemPrompt,
+      tools: config.tools,
+      generatedCode: generatedCode,
+      deploymentType: config.deploymentType,
+      mcpServers: config.mcpConfig?.servers || [],
+    };
+
+    if (!generatedCode) {
+      toast.error("Please generate the agent code first");
       return;
     }
 
     try {
       toast.info("Generating deployment package...");
+
+      const deploymentTarget = config.deploymentType;
+      const includeCLIScript = ["docker", "ollama", "aws"].includes(deploymentTarget);
+
+      let packageData;
       
-      // Generate all 4 required files
-      const packageData = await generateDeploymentPackage({
-        agentId: savedAgentId,
-        options: {
-          includeCloudFormation: config.deploymentType === 'aws',
-          includeCLIScript: config.deploymentType === 'docker' || config.deploymentType === 'ollama',
-          includeLambdaConfig: config.deploymentType === 'lambda',
-        },
-      });
+      if (savedAgentId) {
+        // Use saved agent
+        packageData = await generateDeploymentPackage({
+          agentId: savedAgentId,
+          options: {
+            includeCloudFormation: deploymentTarget === 'aws',
+            includeCLIScript,
+            includeLambdaConfig: deploymentTarget === 'lambda',
+            deploymentTarget,
+          },
+        });
+      } else {
+        // Generate package without saving
+        packageData = await generateDeploymentPackageWithoutSaving({
+          agent: agentToDownload as any,
+          options: {
+            includeCloudFormation: deploymentTarget === 'aws',
+            includeCLIScript,
+            includeLambdaConfig: deploymentTarget === 'lambda',
+            deploymentTarget,
+          },
+        });
+      }
 
       // Create ZIP file with JSZip
       const JSZip = (await import('jszip')).default;
@@ -445,6 +481,7 @@ function DeployStep({
   onDownload: () => void;
 }) {
   const [showAWSDeployment, setShowAWSDeployment] = useState(false);
+  const [showAWSAuthModal, setShowAWSAuthModal] = useState(false);
   const [deploymentConfig, setDeploymentConfig] = useState({
     region: 'us-east-1',
     agentName: config.name.replace(/[^a-zA-Z0-9-]/g, '-').toLowerCase() || 'my-agent',
@@ -453,6 +490,7 @@ function DeployStep({
     enableAutoScaling: true,
   });
   const [isDeploying, setIsDeploying] = useState(false);
+  const hasAWSCredentials = useQuery(api.awsAuth.hasValidAWSCredentials);
 
   const deployToAWS = useMutation(api.awsDeployment.deployToAWS as any);
 
@@ -472,6 +510,17 @@ function DeployStep({
   const handleDeployToAWS = () => {
     if (!savedAgentId) {
       toast.error("Please save the agent first");
+      return;
+    }
+
+    if (hasAWSCredentials === false) {
+      toast.info("Connect your AWS account before deploying.");
+      setShowAWSAuthModal(true);
+      return;
+    }
+
+    if (hasAWSCredentials === undefined) {
+      toast.info("Checking AWS credentials...");
       return;
     }
 
@@ -657,6 +706,34 @@ function DeployStep({
           <h3 className="text-xl font-bold text-orange-400 mb-4">Deploy to AWS AgentCore</h3>
           
           <div className="space-y-4">
+            <div className="flex items-center justify-between gap-4 p-3 bg-black/40 border border-green-900/30 rounded-lg">
+              <div className="flex items-center gap-2 text-sm">
+                {hasAWSCredentials ? (
+                  <>
+                    <CheckCircle className="w-4 h-4 text-green-400" />
+                    <span className="text-green-300">AWS access configured</span>
+                  </>
+                ) : hasAWSCredentials === undefined ? (
+                  <>
+                    <AlertCircle className="w-4 h-4 text-yellow-400 animate-pulse" />
+                    <span className="text-yellow-300">Checking AWS access...</span>
+                  </>
+                ) : (
+                  <>
+                    <AlertCircle className="w-4 h-4 text-red-400" />
+                    <span className="text-red-300">AWS access not configured</span>
+                  </>
+                )}
+              </div>
+              <button
+                onClick={() => setShowAWSAuthModal(true)}
+                className="flex items-center gap-2 px-3 py-2 text-sm bg-green-600 hover:bg-green-700 text-white rounded-md transition-colors"
+              >
+                <Shield className="w-4 h-4" />
+                {hasAWSCredentials ? "Update AWS Access" : "Configure AWS Access"}
+              </button>
+            </div>
+
             {/* Agent Name */}
             <div>
               <label className="block text-sm font-medium text-green-400 mb-2">
@@ -775,6 +852,14 @@ function DeployStep({
           deploymentType={config.deploymentType}
         />
       )}
+
+      <AWSAuthModal
+        isOpen={showAWSAuthModal}
+        onClose={() => setShowAWSAuthModal(false)}
+        onSuccess={() => {
+          toast.success("AWS access configured successfully");
+        }}
+      />
     </div>
   );
 }

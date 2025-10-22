@@ -8,22 +8,29 @@
  * @module
  */
 
+import type * as agentBuilderPrompts from "../agentBuilderPrompts.js";
+import type * as agentBuilderWorkflow from "../agentBuilderWorkflow.js";
+import type * as agentCapabilities from "../agentCapabilities.js";
 import type * as agentCoreTester from "../agentCoreTester.js";
 import type * as agentValidation from "../agentValidation.js";
 import type * as agentcoreDeployment from "../agentcoreDeployment.js";
 import type * as agentcoreMCP from "../agentcoreMCP.js";
 import type * as agentcoreTestExecution from "../agentcoreTestExecution.js";
 import type * as agents from "../agents.js";
+import type * as apiKeys from "../apiKeys.js";
 import type * as auth from "../auth.js";
 import type * as authDebug from "../authDebug.js";
 import type * as authErrorHandler from "../authErrorHandler.js";
+import type * as awsAuth from "../awsAuth.js";
 import type * as awsCrossAccount from "../awsCrossAccount.js";
 import type * as awsDeployment from "../awsDeployment.js";
+import type * as awsDeploymentFlow from "../awsDeploymentFlow.js";
 import type * as awsDiagramGenerator from "../awsDiagramGenerator.js";
 import type * as awsFederatedIdentity from "../awsFederatedIdentity.js";
 import type * as cdkGenerator from "../cdkGenerator.js";
 import type * as cloudFormationGenerator from "../cloudFormationGenerator.js";
 import type * as codeGenerator from "../codeGenerator.js";
+import type * as cognitoAuth from "../cognitoAuth.js";
 import type * as constants from "../constants.js";
 import type * as containerOrchestrator from "../containerOrchestrator.js";
 import type * as conversations from "../conversations.js";
@@ -36,7 +43,9 @@ import type * as diagramGenerator from "../diagramGenerator.js";
 import type * as dockerService from "../dockerService.js";
 import type * as envValidator from "../envValidator.js";
 import type * as errorLogging from "../errorLogging.js";
+import type * as guardrails from "../guardrails.js";
 import type * as http from "../http.js";
+import type * as interleavedReasoning from "../interleavedReasoning.js";
 import type * as lambdaTesting from "../lambdaTesting.js";
 import type * as lib_aws_cloudwatchClient from "../lib/aws/cloudwatchClient.js";
 import type * as lib_aws_ecsClient from "../lib/aws/ecsClient.js";
@@ -57,6 +66,7 @@ import type * as packageMutations from "../packageMutations.js";
 import type * as queueProcessor from "../queueProcessor.js";
 import type * as realAgentTesting from "../realAgentTesting.js";
 import type * as router from "../router.js";
+import type * as strandsAgentExecution from "../strandsAgentExecution.js";
 import type * as templates from "../templates.js";
 import type * as testExecution from "../testExecution.js";
 import type * as toolRegistry from "../toolRegistry.js";
@@ -78,22 +88,29 @@ import type {
  * ```
  */
 declare const fullApi: ApiFromModules<{
+  agentBuilderPrompts: typeof agentBuilderPrompts;
+  agentBuilderWorkflow: typeof agentBuilderWorkflow;
+  agentCapabilities: typeof agentCapabilities;
   agentCoreTester: typeof agentCoreTester;
   agentValidation: typeof agentValidation;
   agentcoreDeployment: typeof agentcoreDeployment;
   agentcoreMCP: typeof agentcoreMCP;
   agentcoreTestExecution: typeof agentcoreTestExecution;
   agents: typeof agents;
+  apiKeys: typeof apiKeys;
   auth: typeof auth;
   authDebug: typeof authDebug;
   authErrorHandler: typeof authErrorHandler;
+  awsAuth: typeof awsAuth;
   awsCrossAccount: typeof awsCrossAccount;
   awsDeployment: typeof awsDeployment;
+  awsDeploymentFlow: typeof awsDeploymentFlow;
   awsDiagramGenerator: typeof awsDiagramGenerator;
   awsFederatedIdentity: typeof awsFederatedIdentity;
   cdkGenerator: typeof cdkGenerator;
   cloudFormationGenerator: typeof cloudFormationGenerator;
   codeGenerator: typeof codeGenerator;
+  cognitoAuth: typeof cognitoAuth;
   constants: typeof constants;
   containerOrchestrator: typeof containerOrchestrator;
   conversations: typeof conversations;
@@ -106,7 +123,9 @@ declare const fullApi: ApiFromModules<{
   dockerService: typeof dockerService;
   envValidator: typeof envValidator;
   errorLogging: typeof errorLogging;
+  guardrails: typeof guardrails;
   http: typeof http;
+  interleavedReasoning: typeof interleavedReasoning;
   lambdaTesting: typeof lambdaTesting;
   "lib/aws/cloudwatchClient": typeof lib_aws_cloudwatchClient;
   "lib/aws/ecsClient": typeof lib_aws_ecsClient;
@@ -127,6 +146,7 @@ declare const fullApi: ApiFromModules<{
   queueProcessor: typeof queueProcessor;
   realAgentTesting: typeof realAgentTesting;
   router: typeof router;
+  strandsAgentExecution: typeof strandsAgentExecution;
   templates: typeof templates;
   testExecution: typeof testExecution;
   toolRegistry: typeof toolRegistry;

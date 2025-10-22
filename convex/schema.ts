@@ -42,6 +42,8 @@ const applicationTables = {
     cloudFormationStackId: v.optional(v.string()),
     ecrRepositoryUri: v.optional(v.string()),
     s3BucketName: v.optional(v.string()),
+    deploymentPackageKey: v.optional(v.string()),
+    awsCallerArn: v.optional(v.string()),
 
     // Status & Progress
     status: v.string(), // "running", "completed", "failed", "CREATING", "ACTIVE", etc.
@@ -111,6 +113,13 @@ const applicationTables = {
     // Auth metadata
     lastSignIn: v.optional(v.number()),
     signInCount: v.optional(v.number()),
+    
+    // AWS Deployment Credentials
+    awsAuthMethod: v.optional(v.union(v.literal("assumeRole"), v.literal("direct"))),
+    awsRoleArn: v.optional(v.string()),
+    awsAccessKeyId: v.optional(v.string()),
+    awsSecretAccessKey: v.optional(v.string()),
+    awsConfiguredAt: v.optional(v.number()),
 
     // AWS Federated Identity (for Cognito users)
     awsIdentityId: v.optional(v.string()), // Cognito Identity Pool ID
@@ -125,6 +134,22 @@ const applicationTables = {
     .index("by_tier", ["tier"])
     .index("by_email", ["email"])
     .index("by_auth_provider", ["authProvider"]),
+
+  // API Keys for external access and usage tracking
+  apiKeys: defineTable({
+    userId: v.id("users"),
+    name: v.string(),
+    description: v.optional(v.string()),
+    keyHash: v.string(),
+    keyPrefix: v.string(),
+    isActive: v.boolean(),
+    testsUsed: v.number(),
+    lastUsed: v.optional(v.number()),
+    createdAt: v.number(),
+    revokedAt: v.optional(v.number()),
+  })
+    .index("by_user", ["userId"])
+    .index("by_hash", ["keyHash"]),
 
   agents: defineTable({
     name: v.string(),
@@ -436,6 +461,30 @@ const applicationTables = {
     .index("by_user", ["userId", "timestamp"])
     .index("by_resource", ["resource", "resourceId"])
     .index("by_timestamp", ["timestamp"]),
+
+  // Interleaved Reasoning Conversations
+  interleavedConversations: defineTable({
+    userId: v.optional(v.id("users")),
+    conversationToken: v.optional(v.string()), // For anonymous users
+    agentId: v.optional(v.id("agents")), // Optional: Associate conversation with specific agent
+    title: v.string(),
+    systemPrompt: v.string(),
+    messages: v.array(v.object({
+      role: v.union(v.literal("user"), v.literal("assistant")),
+      content: v.string(),
+      reasoning: v.optional(v.string()), // Claude's thinking process
+      toolCalls: v.optional(v.any()),
+      timestamp: v.number(),
+    })),
+    contextSize: v.number(), // Size in bytes
+    s3ContextKey: v.optional(v.string()), // S3 key for archived context
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    isActive: v.boolean(),
+  })
+    .index("by_user", ["userId", "updatedAt"])
+    .index("by_token", ["conversationToken"])
+    .index("by_agent", ["agentId", "updatedAt"]),
 
   // Dynamic Tools (Meta-tooling)
   dynamicTools: defineTable({

@@ -112,3 +112,4 @@ tests/
 current_logs.txt
 *.local
 *.md
+agent_builder_full_architecture_with_api_gateway

@@ -132,6 +132,34 @@ export function SignInForm() {
         Sign in with Google
       </button>
       <button
+        className="auth-button flex items-center justify-center gap-2 mt-3 bg-orange-600 hover:bg-orange-700 text-white"
+        onClick={() => {
+          void signIn("cognito").catch((error) => {
+            console.error("Cognito OAuth error:", error);
+            if (error.message?.includes("callback") || error.message?.includes("redirect")) {
+              toast.error("Cognito OAuth callback URL mismatch. Check OAuth app settings.", {
+                description: "Expected callback URL not configured in Cognito app client.",
+              });
+            } else if (error.message?.includes("environment") || error.message?.includes("client")) {
+              toast.error("Cognito OAuth not configured", {
+                description: "Missing COGNITO_ISSUER_URL, COGNITO_CLIENT_ID, or COGNITO_CLIENT_SECRET environment variables.",
+              });
+            } else {
+              toast.error("AWS Cognito authentication failed", {
+                description: error.message || "Please try again or contact support.",
+              });
+            }
+            setShowDebug(true);
+          });
+        }}
+      >
+        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M6.76 10.18c-.18.18-.18.47 0 .65l4.59 4.59c.18.18.47.18.65 0l4.59-4.59c.18-.18.18-.47 0-.65l-.65-.65c-.18-.18-.47-.18-.65 0L12 12.82l-3.29-3.29c-.18-.18-.47-.18-.65 0l-.65.65z"/>
+          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/>
+        </svg>
+        Sign in with AWS Cognito
+      </button>
+      <button
         type="button"
         className="auth-button mt-3 bg-gray-600 hover:bg-gray-700 text-white"
         onClick={() => {
@@ -139,15 +167,13 @@ export function SignInForm() {
           setSubmitting(true);
           void signIn("anonymous")
             .then(() => {
-              toast.success("Signed in as guest");
+              console.log("Anonymous sign-in successful");
             })
             .catch((error: any) => {
               console.error("Anonymous sign-in error:", error);
               toast.error("Failed to sign in as guest", {
                 description: error.message || "Please try again.",
               });
-            })
-            .finally(() => {
               setSubmitting(false);
             });
         }}

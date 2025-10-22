@@ -451,7 +451,7 @@ async function invokeMCPToolDirect(
       new Promise((_, reject) =>
         setTimeout(() => reject(new Error("MCP tool invocation timeout")), timeout)
       ),
-    ]) as any;
+    ]);
 
     // Return the result content
     return result.content?.[0]?.text || result;
@@ -473,10 +473,80 @@ async function invokeMCPToolDirect(
 /**
  * Invoke Bedrock AgentCore directly using AWS SDK
  */
+/**
+ * Invoke Bedrock AgentCore MCP Runtime with Cognito JWT authentication
+ * This calls the actual MCP Runtime HTTP endpoint deployed via CloudFormation
+ */
 async function invokeBedrockAgentCore(parameters: any, timeout: number): Promise<any> {
   try {
+    // Get MCP Runtime endpoint from environment
+    const runtimeEndpoint = process.env.AGENTCORE_MCP_RUNTIME_ENDPOINT;
+
+    if (!runtimeEndpoint) {
+      console.warn("AGENTCORE_MCP_RUNTIME_ENDPOINT not set, falling back to direct Bedrock API");
+      return await invokeBedrockDirect(parameters, timeout);
+    }
+
+    // Get Cognito JWT token
+    const { api } = await import("./_generated/api.js");
+
+    // Import action runner - this is a workaround since we're in a non-Convex context
+    // In production, you'd inject the ctx or use a proper service
+    const tokenResult = await fetch(`${process.env.CONVEX_SITE_URL}/api/cognitoAuth/getCachedCognitoToken`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    }).then(r => r.json()).catch(() => ({ success: false }));
+
+    if (!tokenResult.success || !tokenResult.token) {
+      throw new Error("Failed to get Cognito JWT token");
+    }
+
+    // Make HTTP request to MCP Runtime endpoint
+    const response = await Promise.race([
+      fetch(`${runtimeEndpoint}/mcp/invoke`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${tokenResult.token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          tool: "execute_agent",
+          parameters: {
+            code: parameters.code,
+            input: parameters.input,
+            model_id: parameters.model_id,
+            system_prompt: parameters.system_prompt,
+            conversation_history: parameters.conversation_history || [],
+          },
+        }),
+      }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("MCP Runtime invocation timeout")), timeout)
+      ),
+    ]);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`MCP Runtime returned ${response.status}: ${errorText}`);
+    }
+
+    const result = await response.json();
+
+    return result;
+  } catch (error: any) {
+    console.error("Bedrock AgentCore MCP invocation failed:", error);
+    throw new Error(`MCP Runtime invocation failed: ${error.message}`);
+  }
+}
+
+/**
+ * Fallback: Direct Bedrock API invocation (for when MCP Runtime is not configured)
+ * @deprecated Use MCP Runtime instead
+ */
+async function invokeBedrockDirect(parameters: any, timeout: number): Promise<any> {
+  try {
     const { BedrockRuntimeClient, InvokeModelCommand } = await import("@aws-sdk/client-bedrock-runtime");
-    
+
     const client = new BedrockRuntimeClient({
       region: process.env.AWS_REGION || "us-east-1",
       credentials: {
@@ -492,7 +562,7 @@ async function invokeBedrockAgentCore(parameters: any, timeout: number): Promise
 
     // Build messages array from conversation history
     const messages: any[] = [];
-    
+
     // Add conversation history
     for (const msg of conversationHistory) {
       messages.push({
@@ -500,7 +570,7 @@ async function invokeBedrockAgentCore(parameters: any, timeout: number): Promise
         content: [{ text: msg.content }],
       });
     }
-    
+
     // Add current input
     messages.push({
       role: "user",
@@ -526,14 +596,14 @@ async function invokeBedrockAgentCore(parameters: any, timeout: number): Promise
     // Invoke with timeout
     const response: any = await Promise.race([
       client.send(command),
-      new Promise((_, reject) => 
+      new Promise((_, reject) =>
         setTimeout(() => reject(new Error("Bedrock invocation timeout")), timeout)
       ),
     ]);
 
     // Parse response
     const responseBody = JSON.parse(new TextDecoder().decode(response.body));
-    
+
     // Extract text from response
     const responseText = responseBody.content?.[0]?.text || JSON.stringify(responseBody);
 
@@ -544,7 +614,7 @@ async function invokeBedrockAgentCore(parameters: any, timeout: number): Promise
       stop_reason: responseBody.stop_reason,
     };
   } catch (error: any) {
-    console.error("Bedrock AgentCore invocation failed:", error);
+    console.error("Bedrock direct invocation failed:", error);
     throw new Error(`Bedrock invocation failed: ${error.message}`);
   }
 }

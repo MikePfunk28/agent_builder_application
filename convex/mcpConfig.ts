@@ -16,7 +16,68 @@ import { getAuthUserId } from "@convex-dev/auth/server";
  */
 
 /**
+ * Built-in MCP servers available to all users
+ */
+const BUILT_IN_MCP_SERVERS = [
+  {
+    _id: "system_bedrock_agentcore" as any,
+    _creationTime: Date.now(),
+    name: "bedrock-agentcore-mcp-server",
+    userId: "system" as any,
+    command: "bedrock-agentcore",
+    args: [],
+    env: {},
+    disabled: false,
+    timeout: 60000,
+    status: "connected",
+    availableTools: [
+      { name: "execute_agent", description: "Execute a strands-agents agent" },
+    ],
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  },
+  {
+    _id: "system_document_fetcher" as any,
+    _creationTime: Date.now(),
+    name: "document-fetcher-mcp-server",
+    userId: "system" as any,
+    command: "uvx",
+    args: ["mcp-document-fetcher"],
+    env: {},
+    disabled: false,
+    timeout: 30000,
+    status: "connected",
+    availableTools: [
+      { name: "fetch_url", description: "Fetch and clean a web page" },
+      { name: "parse_llms_txt", description: "Parse an llms.txt file and extract links" },
+      { name: "fetch_documentation", description: "Fetch multiple documentation pages from llms.txt" },
+    ],
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  },
+  {
+    _id: "system_aws_diagram" as any,
+    _creationTime: Date.now(),
+    name: "aws-diagram-mcp-server",
+    userId: "system" as any,
+    command: "uvx",
+    args: ["awslabs.aws-diagram-mcp-server@latest"],
+    env: {},
+    disabled: false,
+    timeout: 30000,
+    status: "connected",
+    availableTools: [
+      { name: "create_diagram", description: "Create AWS architecture diagram" },
+      { name: "get_resources", description: "Get AWS resources from a region" },
+    ],
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  },
+];
+
+/**
  * List all MCP servers for the current user
+ * Includes built-in system servers + user's custom servers
  */
 export const listMCPServers = query({
   args: {},
@@ -24,18 +85,22 @@ export const listMCPServers = query({
     // Get Convex user document ID
     const userId = await getAuthUserId(ctx);
 
-    // Return empty array if not authenticated (instead of throwing error)
+    // Always return built-in servers (available to everyone, including anonymous)
+    const builtInServers = [...BUILT_IN_MCP_SERVERS];
+
+    // If not authenticated, only return built-in servers
     if (!userId) {
-      return [];
+      return builtInServers;
     }
 
-    // Get all MCP servers for this user
-    const servers = await ctx.db
+    // Get user's custom MCP servers
+    const userServers = await ctx.db
       .query("mcpServers")
       .withIndex("by_user", (q) => q.eq("userId", userId))
       .collect();
 
-    return servers;
+    // Combine built-in + user servers
+    return [...builtInServers, ...userServers];
   },
 });
 
@@ -47,7 +112,13 @@ export const getMCPServerByName = query({
     serverName: v.string(),
   },
   handler: async (ctx, args) => {
-    // Get Convex user document ID
+    // Check if it's a built-in server first
+    const builtInServer = BUILT_IN_MCP_SERVERS.find(s => s.name === args.serverName);
+    if (builtInServer) {
+      return builtInServer;
+    }
+
+    // For user-specific MCP servers, require authentication
     const userId = await getAuthUserId(ctx);
 
     if (!userId) {
@@ -76,22 +147,10 @@ export const getMCPServerByNameInternal = internalQuery({
     userId: v.optional(v.id("users")),
   },
   handler: async (ctx, args) => {
-    // Special case: bedrock-agentcore-mcp-server is a built-in system server
-    if (args.serverName === "bedrock-agentcore-mcp-server") {
-      return {
-        _id: "system_bedrock_agentcore" as any,
-        _creationTime: Date.now(),
-        name: "bedrock-agentcore-mcp-server",
-        userId: args.userId || ("system" as any),
-        command: "bedrock-agentcore",
-        args: [],
-        env: {},
-        disabled: false,
-        timeout: 60000,
-        status: "connected",
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      };
+    // Check if it's a built-in server first
+    const builtInServer = BUILT_IN_MCP_SERVERS.find(s => s.name === args.serverName);
+    if (builtInServer) {
+      return builtInServer;
     }
 
     if (args.userId) {

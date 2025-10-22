@@ -3,17 +3,19 @@ import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
 
-import { 
-  CheckCircle, 
-  XCircle, 
+import {
+  CheckCircle,
+  XCircle,
   RefreshCw,
   Play,
   Zap,
   Activity,
-  Network
+  Network,
+  X
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { DiagramViewer } from './DiagramViewer';
+import { SignInForm } from '../SignInForm';
 
 interface DeploymentPanelProps {
   agentId: Id<"agents">;
@@ -206,8 +208,11 @@ function DeploymentCard({ deployment, onViewDiagram }: DeploymentCardProps) {
 export function DeploymentPanel({ agentId, agent }: DeploymentPanelProps) {
   const [isDeploying, setIsDeploying] = useState(false);
   const [showDiagramModal, setShowDiagramModal] = useState(false);
+  const [showLoginModal, setShowLoginModal] = useState(false);
   const [diagramDeploymentId, setDiagramDeploymentId] = useState<Id<"deployments"> | null>(null);
-  
+
+  const currentUser = useQuery(api.auth.loggedInUser);
+
   const [deploymentConfig, setDeploymentConfig] = useState({
     region: 'us-east-1',
     agentName: agent?.name?.replace(/[^a-zA-Z0-9-]/g, '-').toLowerCase() || 'my-agent',
@@ -229,17 +234,19 @@ export function DeploymentPanel({ agentId, agent }: DeploymentPanelProps) {
   const userDeployments = useQuery(api.awsDeployment.listUserDeployments, { limit: 10 });
 
   // Auto-refresh active deployments
-  useEffect(() => {
-    if (userDeployments?.some((d: any) => d.isActive)) {
-      const interval = setInterval(() => {
-        // Trigger re-fetch by updating a dummy state
-      }, 2000);
-      return () => clearInterval(interval);
-    }
-  }, [userDeployments]);
+  // REMOVED: Polling causes MAX_WRITE_OPERATIONS_PER_MINUTE
+  // Convex queries are reactive - they auto-update when data changes
+  // No polling needed!
 
   const handleDeploy = () => {
     if (!agentId) return;
+
+    // Check authentication first
+    if (!currentUser || currentUser.isAnonymous) {
+      setShowLoginModal(true);
+      toast.info("Please sign in to deploy agents to AWS");
+      return;
+    }
 
     setIsDeploying(true);
     void (async () => {
@@ -421,6 +428,29 @@ export function DeploymentPanel({ agentId, agent }: DeploymentPanelProps) {
                 setDiagramDeploymentId(null);
               }}
             />
+          </div>
+        </div>
+      )}
+
+      {/* Login Modal */}
+      {showLoginModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-8 relative">
+            <button
+              onClick={() => setShowLoginModal(false)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <div className="mb-6">
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                Sign in to Deploy
+              </h2>
+              <p className="text-gray-600">
+                Authentication required to deploy agents to your AWS account using federated access
+              </p>
+            </div>
+            <SignInForm />
           </div>
         </div>
       )}

@@ -1,13 +1,13 @@
 # ============================================================================
 # CORE AGENT RUNTIME (AWS Bedrock AgentCore)
 # ============================================================================
-strands-agents-tools[a2a-client,local-chromium-browser,agent-core-code-interpreter,mem0-memory,diagram,rss,use-computer]==0.2.12
+strands-agents-tools[a2a-client,local-chromium-browser,agent-core-code-interpreter,mem0-memory,diagram,rss,use-computer]>=0.2.12
 strands-agents>=1.0.0
 
+#strands-agents-tools[diagram]==0.24.4
 # Bedrock AgentCore stack
-# bedrock-agentcore==0.1.0 is required by strands-agents-tools[agent-core-code-interpreter]
-# Removing bedrock-agentcore-starter-toolkit due to version conflict
-# (it requires bedrock-agentcore>=0.1.7 which conflicts with 0.1.0)
+bedrock-agentcore>=0.1.6
+bedrock-agentcore-starter-toolkit>=0.1.25
 
 # ============================================================================
 # AWS SDKs
@@ -47,7 +47,7 @@ mem0ai>=0.1.0
 qdrant-client>=1.7.0
 
 # ChromaDB - Embedding database
-chromadb>=0.4.0
+chromadb>=1.0.0
 
 # Diagram tooling used by docs/diagram.py
 graphviz>=0.20.1

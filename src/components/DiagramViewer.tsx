@@ -123,8 +123,17 @@ export function DiagramViewer({ deploymentId, onClose }: DiagramViewerProps) {
 
     if (selectedFormat === "mermaid") {
       return (
-        <div className="bg-gray-900 rounded-lg border border-gray-700 p-4">
-          <pre className="text-sm text-gray-100 overflow-auto max-h-[600px]">
+        <div className="bg-gray-900 rounded-lg border border-gray-700 p-4 relative">
+          <button
+            onClick={() => {
+              navigator.clipboard.writeText(diagram.content);
+              // You can add a toast notification here
+            }}
+            className="absolute top-2 right-2 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-xs rounded transition-colors"
+          >
+            Copy Code
+          </button>
+          <pre className="text-sm text-gray-100 overflow-auto max-h-[600px] pr-20">
             <code>{diagram.content}</code>
           </pre>
         </div>

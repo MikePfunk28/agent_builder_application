@@ -188,10 +188,12 @@ http.route({
         );
       }
 
-      // Execute agent with provided arguments
-      const result = await ctx.runAction(api.testExecution.executeAgent, {
+      // Execute agent with provided arguments using event-driven strands-agents path
+      // No polling - calls AgentCore directly
+      const result = await ctx.runAction(api.strandsAgentExecution.executeAgentWithStrandsAgents, {
         agentId: agent._id,
-        input: args?.input || JSON.stringify(args),
+        message: args?.input || JSON.stringify(args),
+        // No conversationId for MCP tool invocations (stateless)
       });
 
       const executionTime = Date.now() - startTime;
@@ -202,12 +204,13 @@ http.route({
         action: "invoke_agent_via_mcp",
         resource: "agent",
         resourceId: agent._id,
-        success: !result.error,
+        success: result.success,
         details: {
           agentId: agent._id,
           agentName: name,
           executionTime,
-          hasError: !!result.error,
+          hasError: !result.success,
+          executionMethod: result.metadata?.executionMethod,
         },
         metadata: {
           agentId: agent._id,
@@ -218,14 +221,14 @@ http.route({
 
       // Return result in MCP protocol format
       return new Response(
-        JSON.stringify({ 
+        JSON.stringify({
           content: [{
             type: "text",
-            text: result.response || result.error || "No response"
+            text: result.content || result.error || "No response"
           }]
         }),
         {
-          status: 200,
+          status: result.success ? 200 : 500,
           headers: {
             "Content-Type": "application/json",
             "Access-Control-Allow-Origin": "*",

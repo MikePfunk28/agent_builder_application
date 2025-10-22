@@ -103,6 +103,9 @@ function generateImports(tools: any[], deploymentType: string, modelId?: string)
     "from typing import Any, Dict, List, Optional, Callable",
     "import logging",
     "",
+    "# Bedrock AgentCore Runtime",
+    "from bedrock_agentcore.runtime import BedrockAgentCoreApp",
+    "",
     "# Strands Agents imports",
     "from strandsagents import agent, Agent, tool",
   ];
@@ -373,6 +376,20 @@ ${params.map((p: any) => `        "${p.name}": {
     }`
     : '{}';
   
+  // Generate helpful implementation guidance based on parameters
+  const paramsList = params.length > 0
+    ? params.map((p: any) => `${p.name}: ${p.description || 'parameter value'}`).join('\n    #   ')
+    : 'No parameters defined';
+
+  const exampleLogic = tool.config?.exampleImplementation ||
+    (params.length > 0
+      ? `# Example: Process the parameters
+        # Access parameters: ${params.map((p: any) => p.name).join(', ')}
+        # Perform your custom logic here
+        # Return a string result`
+      : `# Implement your custom tool logic here
+        # Return a string result`);
+
   return `@tool(
     name="${tool.name}",
     description="${description}",
@@ -381,17 +398,26 @@ ${params.map((p: any) => `        "${p.name}": {
 async def ${functionName}(${paramSignature}) -> str:
     """
     ${description}
-    
+
     This is a custom tool function that can be invoked by the agent.
-    Implement your custom logic here.
+
+    Parameters:
+    ${paramsList}
+
+    Returns:
+        str: Result of the tool execution
     """
     try:
         logger.info(f"Executing custom tool: ${tool.name}")
-        
-        # TODO: Implement custom tool logic here
-        # This is a placeholder implementation
-        result = f"Tool ${tool.name} executed with parameters: {locals()}"
-        
+
+        ${exampleLogic}
+
+        # Placeholder implementation - replace with your actual logic
+        result = f"Tool ${tool.name} executed successfully"
+        ${params.length > 0 ? `
+        # Available parameters: ${params.map((p: any) => p.name).join(', ')}
+        logger.debug(f"Parameters: {locals()}")` : ''}
+
         return result
     except Exception as e:
         logger.error(f"Error in custom tool ${tool.name}: {str(e)}")
@@ -562,80 +588,180 @@ function getToolClassName(toolType: string): string {
 
 function generateDeploymentConfig(deploymentType: string, tools: any[], agentName: string): string {
   const className = agentName.replace(/[^a-zA-Z0-9]/g, "") + "Agent";
-  
+
   switch (deploymentType) {
     case "aws":
       return `
-# AWS Deployment Configuration
+# AWS Deployment Configuration with Bedrock AgentCore
+app = BedrockAgentCoreApp()
+
+# Global agent variable
+agent_instance = None
+
+@app.entrypoint
+async def agent_entrypoint(payload):
+    """
+    Bedrock AgentCore entrypoint for agent execution.
+    This function is called by AgentCore when the agent is invoked.
+
+    Args:
+        payload: Dictionary containing the user input and context
+            - prompt: The user's input message
+            - conversation_history: Optional conversation history
+            - context: Optional additional context
+
+    Returns:
+        The agent's response as a string
+    """
+    global agent_instance
+
+    logger.info("AgentCore entrypoint called")
+
+    # Initialize agent on first invocation
+    if agent_instance is None:
+        logger.info("Initializing ${className}...")
+        agent_instance = ${className}()
+        logger.info("Agent initialized successfully")
+
+    # Extract user input from payload
+    user_input = payload.get("prompt", "")
+    if not user_input:
+        raise ValueError("No 'prompt' field in payload")
+
+    logger.info(f"Processing user input: {user_input[:100]}...")
+
+    # Get conversation history if provided
+    conversation_history = payload.get("conversation_history", [])
+    context = payload.get("context", {})
+
+    try:
+        # Run the agent with the user input
+        response = await agent_instance.run(user_input, context=context)
+        logger.info("Agent response generated successfully")
+        return response
+    except Exception as e:
+        logger.error(f"Error in agent processing: {str(e)}", exc_info=True)
+        raise
+
 if __name__ == "__main__":
-    async def main():
-        """Deploy agent to AWS"""
-        # Initialize Bedrock client with retry configuration
-        config = Config(
-            region_name=os.getenv("AWS_REGION", "us-east-1"),
-            retries={'max_attempts': 3, 'mode': 'adaptive'}
-        )
-        bedrock = boto3.client('bedrock-runtime', config=config)
-        
-        # Create agent instance
-        agent = ${className}()
-        logger.info("Agent initialized for AWS deployment")
-        
-        # Example: Process a test message
-        response = await agent.run("Hello, I need help with a task.")
-        print(f"Agent Response: {response}")
-    
-    asyncio.run(main())`;
+    # Run the AgentCore app
+    app.run()`;
     
     case "ollama":
       return `
-# Ollama Deployment Configuration
-if __name__ == "__main__":
-    async def main():
-        """Run agent with Ollama"""
-        # Initialize Ollama client
+# Ollama Deployment Configuration with Bedrock AgentCore
+app = BedrockAgentCoreApp()
+
+# Global agent variable
+agent_instance = None
+
+@app.entrypoint
+async def agent_entrypoint(payload):
+    """
+    Bedrock AgentCore entrypoint for Ollama-based agent execution.
+    This function is called by AgentCore when the agent is invoked.
+
+    Args:
+        payload: Dictionary containing the user input and context
+            - prompt: The user's input message
+            - conversation_history: Optional conversation history
+            - context: Optional additional context
+
+    Returns:
+        The agent's response as a string
+    """
+    global agent_instance
+
+    logger.info("AgentCore entrypoint called (Ollama)")
+
+    # Initialize agent on first invocation
+    if agent_instance is None:
         ollama_host = os.getenv("OLLAMA_HOST", "localhost:11434")
-        logger.info(f"Connecting to Ollama at {ollama_host}")
-        
-        # Create agent instance
-        agent = ${className}()
-        logger.info("Agent initialized for Ollama deployment")
-        
-        # Example: Process a test message
-        response = await agent.run("Hello, I need help with a task.")
-        print(f"Agent Response: {response}")
-    
-    asyncio.run(main())`;
+        logger.info(f"Initializing ${className} with Ollama at {ollama_host}...")
+        agent_instance = ${className}()
+        logger.info("Agent initialized successfully with Ollama")
+
+    # Extract user input from payload
+    user_input = payload.get("prompt", "")
+    if not user_input:
+        raise ValueError("No 'prompt' field in payload")
+
+    logger.info(f"Processing user input: {user_input[:100]}...")
+
+    # Get conversation history if provided
+    conversation_history = payload.get("conversation_history", [])
+    context = payload.get("context", {})
+
+    try:
+        # Run the agent with the user input
+        response = await agent_instance.run(user_input, context=context)
+        logger.info("Agent response generated successfully")
+        return response
+    except Exception as e:
+        logger.error(f"Error in agent processing: {str(e)}", exc_info=True)
+        raise
+
+if __name__ == "__main__":
+    # Run the AgentCore app
+    app.run()`;
     
     case "docker":
       return `
-# Docker Deployment Configuration
+# Docker Deployment Configuration with Bedrock AgentCore
+app = BedrockAgentCoreApp()
+
+# Global agent variable
+agent_instance = None
+
+@app.entrypoint
+async def agent_entrypoint(payload):
+    """
+    Bedrock AgentCore entrypoint for Docker-based agent execution.
+    This function is called by AgentCore when the agent is invoked.
+
+    Args:
+        payload: Dictionary containing the user input and context
+            - prompt: The user's input message
+            - conversation_history: Optional conversation history
+            - context: Optional additional context
+
+    Returns:
+        The agent's response as a string
+    """
+    global agent_instance
+
+    logger.info("AgentCore entrypoint called (Docker)")
+
+    # Initialize agent on first invocation
+    if agent_instance is None:
+        logger.info("Initializing ${className}...")
+        agent_instance = ${className}()
+        logger.info("Agent initialized successfully in Docker")
+
+    # Extract user input from payload
+    user_input = payload.get("prompt", "")
+    if not user_input:
+        raise ValueError("No 'prompt' field in payload")
+
+    logger.info(f"Processing user input: {user_input[:100]}...")
+
+    # Get conversation history if provided
+    conversation_history = payload.get("conversation_history", [])
+    context = payload.get("context", {})
+
+    try:
+        # Run the agent with the user input
+        response = await agent_instance.run(user_input, context=context)
+        logger.info("Agent response generated successfully")
+        return response
+    except Exception as e:
+        logger.error(f"Error in agent processing: {str(e)}", exc_info=True)
+        raise
+
 if __name__ == "__main__":
-    async def main():
-        """Run agent in Docker container"""
-        # Create agent instance
-        agent = ${className}()
-        logger.info("Agent initialized for Docker deployment")
-        
-        # Start FastAPI server or other deployment method
-        # Example: Interactive mode for testing
-        print("Agent ready. Type 'quit' or 'exit' to stop.")
-        while True:
-            try:
-                user_input = input("\nYou: ")
-                if user_input.lower() in ['quit', 'exit']:
-                    break
-                
-                response = await agent.run(user_input)
-                print(f"\nAgent: {response}")
-            except KeyboardInterrupt:
-                print("\nShutting down...")
-                break
-            except Exception as e:
-                logger.error(f"Error: {e}")
-    
-    asyncio.run(main())`;
-    
+    # Run the AgentCore app
+    app.run()`;
+
     default:
       return `
 # Local Development Configuration

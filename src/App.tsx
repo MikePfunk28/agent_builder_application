@@ -8,11 +8,13 @@ import { AgentDashboard } from "./components/AgentDashboard";
 import { MCPManagementPanel } from "./components/MCPManagementPanel";
 import { ErrorLogsPanel } from "./components/ErrorLogsPanel";
 import { AuditLogsPanel } from "./components/AuditLogsPanel";
+import { AIAgentBuilder } from "./components/AIAgentBuilder";
+import { InterleavedChat } from "./components/InterleavedChat";
 import { useState } from "react";
-import { Bot, Home, Server, AlertCircle, FileText } from "lucide-react";
+import { Bot, Home, Server, AlertCircle, FileText, Sparkles, MessageSquare } from "lucide-react";
 
 export default function App() {
-  const [currentView, setCurrentView] = useState<"dashboard" | "builder" | "mcp" | "errors" | "audit" | "settings">("dashboard");
+  const [currentView, setCurrentView] = useState<"dashboard" | "builder" | "aiBuilder" | "chat" | "mcp" | "errors" | "audit" | "settings">("dashboard");
 
   return (
     <div className="min-h-screen bg-black text-green-400">
@@ -48,6 +50,28 @@ export default function App() {
               >
                 <Bot className="w-4 h-4" />
                 Builder
+              </button>
+              <button
+                onClick={() => setCurrentView("aiBuilder")}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
+                  currentView === "aiBuilder" 
+                    ? "bg-green-900/30 text-green-400" 
+                    : "text-green-600 hover:text-green-400"
+                }`}
+              >
+                <Sparkles className="w-4 h-4" />
+                AI Builder
+              </button>
+              <button
+                onClick={() => setCurrentView("chat")}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
+                  currentView === "chat" 
+                    ? "bg-green-900/30 text-green-400" 
+                    : "text-green-600 hover:text-green-400"
+                }`}
+              >
+                <MessageSquare className="w-4 h-4" />
+                Chat
               </button>
               <button
                 onClick={() => setCurrentView("mcp")}
@@ -126,6 +150,13 @@ function Content({ currentView }: { currentView: string }) {
   switch (currentView) {
     case "builder":
       return <AgentBuilder />;
+    case "aiBuilder":
+      return <AIAgentBuilder onAgentsCreated={(agents) => {
+        console.log("AI-generated agents:", agents);
+        // TODO: Navigate to builder with pre-filled agents
+      }} />;
+    case "chat":
+      return <InterleavedChat />;
     case "mcp":
       return <MCPManagementPanel />;
     case "errors":

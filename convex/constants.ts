@@ -58,6 +58,22 @@ export function sanitizeAgentName(name: string): string {
 }
 
 /**
+ * Sanitize agent name for use as a Python module/file name
+ */
+export function sanitizePythonModuleName(name: string): string {
+  const normalized = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+
+  if (!normalized) {
+    return "agent";
+  }
+
+  return /^[a-z_]/.test(normalized) ? normalized : `agent_${normalized}`;
+}
+
+/**
  * Check if deployment type is AWS-based
  */
 export function isAWSDeployment(deploymentType: string): boolean {

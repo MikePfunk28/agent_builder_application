@@ -128,14 +128,11 @@ export const startTestContainer = internalAction({
       console.log(`✅ ECS task started: ${taskArn}`);
       console.log(`📊 Log stream: ${logGroup}/${logStream}`);
 
-      // Schedule log polling to start
-      await ctx.scheduler.runAfter(2000, internal.containerOrchestrator.pollLogs, {
-        testId: args.testId,
-        logGroup,
-        logStream,
-      });
-
-      // Schedule timeout handler
+      // REMOVED: Log polling causes excessive operations
+      // Instead, logs should be fetched on-demand when user views them
+      // Or use CloudWatch Events to push log updates
+      
+      // Schedule timeout handler (single timeout, not recurring - OK)
       await ctx.scheduler.runAfter(args.timeout, internal.containerOrchestrator.handleTimeout, {
         testId: args.testId,
         taskArn,
@@ -157,9 +154,10 @@ export const startTestContainer = internalAction({
 });
 
 /**
- * Poll CloudWatch Logs for real-time log streaming
+ * Fetch CloudWatch Logs (on-demand, NOT polling)
+ * Call this when user requests logs, not automatically
  */
-export const pollLogs = internalAction({
+export const fetchLogs = internalAction({
   args: {
     testId: v.id("testExecutions"),
     logGroup: v.string(),
@@ -226,26 +224,11 @@ export const pollLogs = internalAction({
         }
       }
 
-      // Schedule next poll in 2 seconds
-      await ctx.scheduler.runAfter(2000, internal.containerOrchestrator.pollLogs, {
-        testId: args.testId,
-        logGroup: args.logGroup,
-        logStream: args.logStream,
-      });
+      // REMOVED: Polling every 2 seconds causes excessive operations
+      // Logs should be fetched on-demand when user views them
     } catch (error: any) {
-      console.error("❌ Log polling error:", error);
-
-      // Retry with exponential backoff (up to 3 attempts)
-      const test = await ctx.runQuery(internal.testExecution.getTestByIdInternal, { testId: args.testId });
-      const attempts = (test?.logs?.filter((l: string) => l.includes("Log polling error")).length || 0) + 1;
-
-      if (attempts < 3) {
-        await ctx.scheduler.runAfter(Math.min(5000 * attempts, 15000), internal.containerOrchestrator.pollLogs, {
-          testId: args.testId,
-          logGroup: args.logGroup,
-          logStream: args.logStream,
-        });
-      }
+      console.error("❌ Log fetch error:", error);
+      // No retry - logs should be fetched on-demand
     }
   },
 });
