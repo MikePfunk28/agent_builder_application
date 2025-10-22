@@ -1,13 +1,14 @@
 # ============================================================================
 # CORE AGENT RUNTIME (AWS Bedrock AgentCore)
 # ============================================================================
-# NOTE: agent-core-code-interpreter pins bedrock-agentcore==0.1.0
-strands-agents-tools[a2a-client,local-chromium-browser,agent-core-code-interpreter,mem0-memory,diagram,rss,use-computer]>=0.2.12
+# NOTE: agent-core-code-interpreter extra removed - it pins bedrock-agentcore==0.1.0
+# The code_interpreter tool is available in base strands-agents-tools (no extra needed)
+strands-agents-tools[a2a-client,local-chromium-browser,mem0-memory,diagram,rss,use-computer]>=0.2.12
 strands-agents>=1.0.0
 
-# Bedrock AgentCore stack - pinned to 0.1.0 for agent-core-code-interpreter compatibility
-bedrock-agentcore==0.1.0
-bedrock-agentcore-starter-toolkit==0.1.24
+# Bedrock AgentCore stack - latest versions
+bedrock-agentcore>=0.1.6
+bedrock-agentcore-starter-toolkit>=0.1.25
 
 # ============================================================================
 # AWS SDKs

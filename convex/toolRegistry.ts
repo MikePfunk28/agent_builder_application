@@ -247,7 +247,7 @@ export const STRANDS_TOOLS_REGISTRY: Record<string, StrandsToolMetadata> = {
     description: "Isolated sandbox for safe code execution",
     category: "code_interpretation",
     basePip: "strands-agents-tools",
-    extrasPip: "agent-core-code-interpreter",
+    // NOTE: No extrasPip needed - code_interpreter is in base package
     importPath: "from strands_tools import code_interpreter",
     docsUrl: "https://github.com/strands-agents/tools",
     exampleUsage: "code_interpreter.run('print(\"Hello World\")')",
