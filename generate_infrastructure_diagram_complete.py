@@ -1,6 +1,6 @@
 """
 Agent Builder Application - Infrastructure Diagram Generator
-Complete AWS infrastructure visualization
+Complete infrastructure visualization with Cloudflare, Convex, AWS, and AgentCore
 
 Run this script to generate a comprehensive architecture diagram:
     python generate_infrastructure_diagram_complete.py
@@ -12,200 +12,330 @@ Requirements:
 from diagrams import Diagram, Cluster, Edge
 from diagrams.aws.compute import ECS, Lambda, Fargate, ECR
 from diagrams.aws.database import Dynamodb
-from diagrams.aws.network import ELB, Route53, VPC, PrivateSubnet, PublicSubnet, InternetGateway, NATGateway, CloudFront
+from diagrams.aws.network import ELB, VPC, PrivateSubnet, PublicSubnet, InternetGateway, NATGateway
 from diagrams.aws.storage import S3
 from diagrams.aws.integration import SQS
 from diagrams.aws.management import Cloudwatch, Cloudformation, SystemsManager, CloudwatchLogs
 from diagrams.aws.devtools import Codebuild
+from diagrams.aws.devtools import XRay
 from diagrams.aws.security import IAM, SecretsManager, Cognito
 from diagrams.aws.ml import Bedrock
-from diagrams.aws.general import User
+from diagrams.aws.general import User, Client
 from diagrams.saas.cdn import Cloudflare
+from diagrams.onprem.client import Users
 
 
 def generate_complete_infrastructure():
-    """Generate complete Agent Builder infrastructure diagram"""
+    """Generate complete Agent Builder infrastructure diagram with all panels"""
 
     with Diagram(
-        "Agent Builder Application - Complete AWS Infrastructure",
+        "Agent Builder Application - Complete Infrastructure",
         show=False,
         direction="TB",
         filename="agent_builder_complete_infrastructure",
-        outformat="png"
+        outformat="png",
+        graph_attr={"splines": "ortho", "nodesep": "1.0", "ranksep": "1.0"}
     ):
 
         # Users
-        users = User("Platform Users")
+        users = Users("Platform\nUsers")
         
-        # Frontend
-        with Cluster("Frontend Layer (Cloudflare)"):
-            cloudflare = Cloudflare("Cloudflare\nPages")
-            cdn = CloudFront("CDN +\nDDoS Protection")
-            frontend = Lambda("React + Vite\nSPA")
-            dns = Route53("Route53\nDNS")        # Authentication
-        with Cluster("Authentication"):
-            auth = Cognito("AWS Cognito\nOAuth 2.0")
-            fed_identity = IAM("Federated\nIdentity")
+        # Frontend Layer (Cloudflare Pages)
+        with Cluster("Frontend - Cloudflare Pages\n(ai-forge.mikepfunk.com)"):
+            with Cluster("UI Panels"):
+                chat_ui = Client("Chat\nPanel")
+                builder_ui = Client("Agent Builder\nWalkthrough")
+                automated_ui = Client("Agent Builder\nAutomated")
+                monitor_ui = Client("Monitoring\nPanel")
+                audit_ui = Client("Auditing\nPanel")
+                mcp_panel = Client("MCP Server\nManagement")
 
-        # Backend
-        with Cluster("Backend Services (Convex Serverless)"):
-            api = Lambda("API\nGateway")
-            convex_backend = Lambda("Convex\nBackend")
-            convex_db = Dynamodb("Convex\nDatabase")
+            with Cluster("Three Chat Systems"):
+                regular_chat = Client("Regular Chat\n(Standard UI)")
+                interleaved_chat = Client("Interleaved Chat\n(Reasoning Visible)")
+                conversation_chat = Client("Conversation Chat\n(Multi-turn)")
 
-        # Agent Management
-        with Cluster("Agent Builder System"):
-            agent_builder = Lambda("Agent\nBuilder")
-            code_gen = Lambda("Code\nGenerator")
-            validator = Lambda("Agent\nValidator")
-            mcp_integration = Lambda("MCP\nIntegration")
+            cloudflare_cdn = Cloudflare("Cloudflare CDN\n+ DDoS + DNS + SSL")
+            frontend_app = Client("React + Vite\nSPA")
+            dns = Cloudflare("DNS\nai-forge.mikepfunk.com")
+        
+        # Authentication Layer
+        with Cluster("Authentication (Web Identity Federation)"):
+            with Cluster("OAuth Providers"):
+                cognito = Cognito("AWS Cognito\nUser Pool")
+                github_oauth = IAM("GitHub OAuth\n(3 callback URLs)")
+                google_oauth = IAM("Google OAuth\n(3 callback URLs)")
 
+            with Cluster("Identity Federation"):
+                convex_auth = Lambda("Convex Auth\n(getAuthUserId)")
+                sts_assume = IAM("STS AssumeRole\nWebIdentity")
+                temp_creds = IAM("Temporary\nCredentials (1hr)")
+
+            with Cluster("Access Control"):
+                user_check = Lambda("User ID\nValidation")
+                role_check = Lambda("Role-Based\nAccess")
+
+        # Convex Backend
+        with Cluster("Backend - Convex Serverless\n(resolute-kudu-325.convex.cloud)"):
+            with Cluster("Core Services"):
+                convex_api = Lambda("Convex\nAPI Gateway")
+                convex_functions = Lambda("Convex\nFunctions")
+                convex_realtime = Lambda("Real-time\nSubscriptions")
+            
+            with Cluster("Database & Memory Architecture"):
+                convex_db = Lambda("Convex DB\n(14+ Tables)")
+
+                with Cluster("Memory Tiers"):
+                    stm_memory = Lambda("STM (<8KB)\nShort-term")
+                    ltm_memory = Lambda("LTM (>8KB)\nLong-term")
+                    memory_router = Lambda("Memory\nRouter")
+
+                with Cluster("Core Tables"):
+                    agents_table = Dynamodb("agents")
+                    conversations_table = Dynamodb("conversations")
+                    interleaved_table = Dynamodb("interleavedMessages")
+                    deployments_table = Dynamodb("deployments")
+                    mcp_config_table = Dynamodb("mcpServerConfigs")
+            
+            with Cluster("Agent Management"):
+                agent_builder = Lambda("Agent\nBuilder")
+                code_generator = Lambda("Code\nGenerator")
+                validator = Lambda("Validator")
+                deploy_router = Lambda("Deployment\nRouter")
+
+                with Cluster("Deployment Package (4 Files)"):
+                    agent_py = Lambda("agent.py\n(@agent decorator)")
+                    requirements_txt = Lambda("requirements.txt\n(pip deps)")
+                    dockerfile = Lambda("Dockerfile\n(container)")
+                    cloudformation_yaml = Lambda("cloudformation.yaml\n(IaC)")
+                    mcp_json = Lambda("mcp.json\n(MCP config)")
+                    diagram_png = Lambda("diagram.png\n(architecture)")
+            
+            with Cluster("MCP Servers (11 Configured)"):
+                mcp_aws_diagram = Lambda("aws-diagram\n(Architecture)")
+                mcp_aws_cognito = Lambda("aws-cognito\n(Auth)")
+                mcp_strands_docs = Lambda("strands-docs\n(SDK Docs)")
+                mcp_bedrock_docs = Lambda("bedrock-agentcore-docs\n(AgentCore)")
+                mcp_document = Lambda("document-fetcher\n(Web Scraping)")
+                mcp_s3 = Lambda("s3\n(Storage)")
+                mcp_dynamodb = Lambda("dynamodb\n(Database)")
+                mcp_knowledge = Lambda("knowledge-bases\n(RAG)")
+                mcp_cloudformation = Lambda("cloudformation\n(IaC)")
+                mcp_ecs = Lambda("ecs\n(Containers)")
+                mcp_iam = Lambda("iam\n(Security)")
+
+            with Cluster("Tool Registry (50+ Strands Tools)"):
+                tool_registry = Lambda("Tool Registry\n(toolRegistry.ts)")
+
+                with Cluster("Tool Categories"):
+                    rag_tools = Lambda("RAG & Memory\n(5 tools)")
+                    file_tools = Lambda("File Operations\n(3 tools)")
+                    shell_tools = Lambda("Shell & System\n(4 tools)")
+                    code_tools = Lambda("Code Interpretation\n(2 tools)")
+                    web_tools = Lambda("Web & Network\n(5 tools)")
+                    multimodal_tools = Lambda("Multi-modal\n(6 tools)")
+                    aws_tools = Lambda("AWS Services\n(1 tool)")
+                    agent_tools = Lambda("Agents & Workflows\n(12 tools)")
+
+            with Cluster("Model Registry (49 Models)"):
+                model_registry = Lambda("Model Registry\n(modelRegistry.ts)")
+
+                with Cluster("Model Providers"):
+                    bedrock_provider = Bedrock("AWS Bedrock\n(29 models)")
+                    anthropic_provider = Lambda("Anthropic\n(8 models)")
+                    openai_provider = Lambda("OpenAI\n(6 models)")
+                    other_providers = Lambda("Others\n(6 models)")
+
+        # Rate-Limited External APIs
+        with Cluster("Rate-Limited External APIs"):
+            anthropic_api = Lambda("Anthropic API\n(Rate Limited)")
+            openai_api = Lambda("OpenAI API\n(Rate Limited)")
+            bedrock_api = Bedrock("Bedrock API\n(Throttled)")
+
+            with Cluster("API Quotas"):
+                anthropic_quota = Lambda("200 req/min\n2000 req/day")
+                openai_quota = Lambda("500 req/min\n10K req/day")
+                bedrock_quota = Lambda("100 TPS\nPer model")
+
+        # AWS Services Layer
+        with Cluster("AWS Backend & AI Services"):
+            # Storage
+            with Cluster("Storage (S3)"):
+                s3_ltm = S3("LTM Storage\n(>8KB)")
+                s3_artifacts = S3("Agent\nArtifacts")
+                s3_packages = S3("Deployment\nPackages")
+            
+            # AI Services
+            with Cluster("AI Services"):
+                bedrock_agentcore = Bedrock("Bedrock\nAgentCore")
+                bedrock_models = Bedrock("Bedrock\nModels")
+                strands_agents = Lambda("Strands\nAgents SDK")
+            
+            # Deployment Tiers (Testing vs Deployment)
+            with Cluster("TESTING ENVIRONMENT (Tier 1)"):
+                with Cluster("Tier 1 - Freemium (Platform AgentCore)"):
+                    tier1_runtime = Bedrock("AgentCore\nRuntime")
+                    tier1_memory = Lambda("AgentCore\nMemory")
+                    tier1_gateway = Lambda("AgentCore\nGateway")
+                    tier1_limit = Lambda("10 tests/month\n$0 cost")
+                    tier1_label = Lambda("⚠️ TESTING ONLY\nNot for production")
+
+                    with Cluster("Testing Features"):
+                        test_sandbox = Lambda("Isolated\nSandbox")
+                        test_metrics = Lambda("Test\nMetrics")
+                        test_quota = Lambda("Quota\nTracking")
+            
+            # Deployment Infrastructure (Tier 2)
+            with Cluster("DEPLOYMENT ENVIRONMENT (Tier 2 & 3)"):
+                with Cluster("Tier 2 - Personal AWS (User Fargate)"):
+                    with Cluster("VPC Infrastructure"):
+                        vpc = VPC("VPC")
+                        igw = InternetGateway("Internet\nGateway")
+                        alb = ELB("Application\nLoad Balancer")
+
+                    with Cluster("ECS Fargate"):
+                        ecs_cluster = ECS("ECS\nCluster")
+                        fargate_task = Fargate("Fargate\nTask")
+                        ecr_repo = ECR("ECR\nRepository")
+
+                    tier2_limit = Lambda("Unlimited\n$40-110/mo")
+                    tier2_label = Lambda("✅ PRODUCTION\nUser AWS Account")
+
+                # Tier 3 - Enterprise
+                with Cluster("Tier 3 - Enterprise (SSO + Multi-tenant)"):
+                    tier3_sso = IAM("AWS SSO\nIdentity Center")
+                    tier3_org = SystemsManager("AWS\nOrganizations")
+                    tier3_multi = Lambda("Multi-user\nManagement")
+                    tier3_limit = Lambda("Unlimited\nCustom pricing")
+                    tier3_label = Lambda("✅ PRODUCTION\nEnterprise SSO")
+            
+            # Monitoring & Logging
+            with Cluster("Monitoring & Observability"):
+                cloudwatch = Cloudwatch("CloudWatch\nMetrics")
+                cloudwatch_logs = CloudwatchLogs("CloudWatch\nLogs")
+                xray = XRay("AWS X-Ray\nTracing")
+                otel = Lambda("OpenTelemetry\nOTEL")
+                audit_logs = CloudwatchLogs("Audit\nLogs")
+
+                with Cluster("Convex Quota Monitoring"):
+                    write_quota = Lambda("Write Ops\n1/turn (optimized)")
+                    read_quota = Lambda("Read Ops\nEvent-driven")
+                    quota_alerts = Lambda("Quota\nAlerts")
+
+        # Data Flows
+        users >> dns >> cloudflare_cdn >> frontend_app
+
+        # UI Panels to Frontend
+        [chat_ui, builder_ui, automated_ui, monitor_ui, audit_ui, mcp_panel] >> frontend_app
+
+        # Three Chat Systems
+        [regular_chat, interleaved_chat, conversation_chat] >> frontend_app
+        
+        # Authentication Flow
+        frontend_app >> convex_auth
+        convex_auth >> cognito
+        cognito >> [github_oauth, google_oauth]
+        cognito >> sts_assume >> temp_creds
+        temp_creds >> [user_check, role_check]
+        [user_check, role_check] >> convex_functions
+        
+        # Frontend to Convex
+        frontend_app >> convex_api
+        convex_api >> convex_functions
+        convex_functions >> convex_db
+        convex_functions >> convex_realtime
+        
+        # Memory Architecture
+        convex_db >> memory_router
+        memory_router >> Edge(label="<8KB") >> stm_memory
+        memory_router >> Edge(label=">8KB") >> ltm_memory
+        stm_memory >> convex_db
+        ltm_memory >> s3_ltm
+
+        # Core Tables
+        convex_db >> [agents_table, conversations_table, interleaved_table,
+                     deployments_table, mcp_config_table]
+        
+        # Agent Building Flow
+        convex_functions >> agent_builder
+        agent_builder >> code_generator
+        code_generator >> validator
+        validator >> [agent_py, requirements_txt, dockerfile, cloudformation_yaml, mcp_json, diagram_png]
+        [agent_py, requirements_txt, dockerfile, cloudformation_yaml, mcp_json, diagram_png] >> deploy_router
+        
+        # MCP Servers Integration
+        convex_functions >> [mcp_aws_diagram, mcp_aws_cognito, mcp_strands_docs,
+                            mcp_bedrock_docs, mcp_document, mcp_s3, mcp_dynamodb,
+                            mcp_knowledge, mcp_cloudformation, mcp_ecs, mcp_iam]
+
+        # Tool Registry & Model Registry
+        convex_functions >> tool_registry
+        tool_registry >> [rag_tools, file_tools, shell_tools, code_tools,
+                         web_tools, multimodal_tools, aws_tools, agent_tools]
+
+        convex_functions >> model_registry
+        model_registry >> [bedrock_provider, anthropic_provider, openai_provider, other_providers]
+
+        # Rate-Limited API Calls
+        model_registry >> Edge(label="Route calls") >> [anthropic_api, openai_api, bedrock_api]
+
+        anthropic_api >> anthropic_quota
+        openai_api >> openai_quota
+        bedrock_api >> bedrock_quota
+
+        # Quota monitoring feedback
+        [anthropic_quota, openai_quota, bedrock_quota] >> quota_alerts
+        
         # Deployment Tiers
-        with Cluster("Deployment Orchestration"):
-            deploy_router = Lambda("Deployment\nRouter")
+        deploy_router >> Edge(label="Tier 1\nFreemium") >> tier1_runtime
+        deploy_router >> Edge(label="Tier 2\nPersonal") >> ecs_cluster
+        deploy_router >> Edge(label="Tier 3\nEnterprise") >> tier3_sso
+        
+        # Tier 1 - AgentCore Integration
+        tier1_runtime >> bedrock_models
+        tier1_runtime >> tier1_memory
+        tier1_runtime >> tier1_gateway
+        tier1_runtime >> strands_agents
 
-            # Tier 1 - Freemium
-            with Cluster("Tier 1 - Freemium (Platform)"):
-                platform_agent = Bedrock("Bedrock\nAgentCore")
-                platform_logs = CloudwatchLogs("Platform\nLogs")
-                platform_metrics = Cloudwatch("Platform\nMetrics")
-
-            # Tier 2 - Personal AWS
-            with Cluster("Tier 2 - Personal AWS Account"):
-                cfn = Cloudformation("CloudFormation\nStack")
-
-                with Cluster("VPC Infrastructure"):
-                    vpc = VPC("VPC\n10.0.0.0/16")
-                    igw = InternetGateway("Internet\nGateway")
-
-                    with Cluster("Public Subnets"):
-                        pub_sub1 = PublicSubnet("Public\nSubnet 1")
-                        pub_sub2 = PublicSubnet("Public\nSubnet 2")
-                    
-                    with Cluster("NAT Gateways"):
-                        nat1 = NATGateway("NAT\nGateway 1")
-                        nat2 = NATGateway("NAT\nGateway 2")
-                    
-                    with Cluster("Private Subnets"):
-                        priv_sub1 = PrivateSubnet("Private\nSubnet 1")
-                        priv_sub2 = PrivateSubnet("Private\nSubnet 2")
-                    
-                    alb = ELB("Application\nLoad Balancer")
-
-                with Cluster("ECS Fargate Cluster"):
-                    ecs_cluster = ECS("ECS\nCluster")
-                    fargate1 = Fargate("Fargate\nTask 1")
-                    fargate2 = Fargate("Fargate\nTask 2")
-                    fargate3 = Fargate("Fargate\nTask 3")
-
-                ecr_repo = ECR("ECR\nRepository")
-                user_logs = CloudwatchLogs("User\nLogs")
-                user_metrics = Cloudwatch("User\nMetrics")
-
-            # Tier 3 - Enterprise
-            with Cluster("Tier 3 - Enterprise SSO"):
-                sso = IAM("AWS SSO\nIdentity Center")
-                org = SystemsManager("AWS\nOrganizations")
-
-        # Infrastructure as Code
-        with Cluster("Infrastructure as Code"):
-            cdk_gen = Codebuild("CDK\nGenerator")
-            cfn_template = Cloudformation("CloudFormation\nTemplates")
-
-        # Storage
-        with Cluster("Storage Layer"):
-            s3_artifacts = S3("Agent\nArtifacts")
-            s3_packages = S3("Deployment\nPackages")
-            s3_diagrams = S3("Architecture\nDiagrams")
-
+        # Testing workflow
+        tier1_runtime >> [test_sandbox, test_metrics, test_quota]
+        test_quota >> Edge(label="10/month limit") >> tier1_limit
+        
+        # Tier 2 - Fargate Deployment
+        ecs_cluster >> fargate_task
+        ecs_cluster >> ecr_repo
+        fargate_task >> [s3_artifacts, s3_packages]
+        
+        # Tier 3 - Enterprise
+        tier3_sso >> tier3_org
+        tier3_org >> [tier1_runtime, ecs_cluster]
+        tier3_multi >> [tier1_runtime, ecs_cluster]
+        
+        # AWS Authentication
+        temp_creds >> [ecs_cluster, s3_ltm, tier1_runtime, tier3_sso, s3_artifacts, s3_packages]
+        
         # Monitoring
-        with Cluster("Monitoring & Observability"):
-            cw_logs = CloudwatchLogs("Centralized\nLogs")
-            cw_metrics = Cloudwatch("Metrics &\nDashboards")
-            cw_alarms = Cloudwatch("Alarms &\nNotifications")
+        [fargate_task, tier1_runtime, convex_functions] >> cloudwatch_logs
+        cloudwatch_logs >> cloudwatch
+        convex_functions >> audit_logs
+        audit_logs >> monitor_ui
+        audit_logs >> audit_ui
 
-        # Security
-        with Cluster("Security & Secrets"):
-            secrets = SecretsManager("Secrets\nManager")
-            params = SystemsManager("Parameter\nStore")
-            iam_roles = IAM("IAM\nRoles")
+        # OTEL & X-Ray Tracing
+        [fargate_task, tier1_runtime] >> otel
+        otel >> xray
+        xray >> cloudwatch
+        xray >> monitor_ui
 
-        # Testing System
-        with Cluster("Testing Infrastructure"):
-            test_queue = SQS("Test\nQueue")
-            test_executor = Lambda("Test\nExecutor")
-            test_results = Dynamodb("Test\nResults")
+        # Convex Quota Monitoring
+        convex_functions >> write_quota
+        convex_functions >> read_quota
+        [write_quota, read_quota] >> quota_alerts
+        quota_alerts >> monitor_ui
 
-        # User flow
-        users >> cloudflare >> cdn >> dns >> frontend
-        frontend >> auth >> fed_identity
-        frontend >> convex_backend >> api
-        convex_backend >> convex_db
-        
-        # Agent building flow
-        api >> agent_builder >> code_gen
-        code_gen >> mcp_integration
-        mcp_integration >> validator
-        validator >> deploy_router
-        
-        # Tier 1 deployment
-        deploy_router >> Edge(label="Freemium\n(10 tests/mo)") >> platform_agent
-        platform_agent >> platform_logs >> platform_metrics
-        
-        # Tier 2 deployment
-        deploy_router >> Edge(label="Personal AWS\n(Unlimited)") >> cfn
-        cfn >> ecr_repo
-        cfn >> vpc
-        vpc >> igw
-        vpc >> pub_sub1
-        vpc >> pub_sub2
-        vpc >> priv_sub1
-        vpc >> priv_sub2
-        pub_sub1 >> nat1
-        pub_sub2 >> nat2
-        nat1 >> priv_sub1
-        nat2 >> priv_sub2
-        igw >> alb
-        alb >> ecs_cluster
-        ecr_repo >> ecs_cluster
-        ecs_cluster >> fargate1
-        ecs_cluster >> fargate2
-        ecs_cluster >> fargate3
-        fargate1 >> user_logs
-        fargate2 >> user_logs
-        fargate3 >> user_logs
-        user_logs >> user_metrics
-
-        # Tier 3 deployment
-        deploy_router >> Edge(label="Enterprise\n(SSO)") >> sso
-        sso >> org >> cfn
-
-        # Storage connections
-        code_gen >> s3_artifacts
-        deploy_router >> s3_packages
-        cfn >> s3_diagrams
-
-        # Monitoring connections
-        platform_agent >> cw_logs
-        fargate1 >> cw_logs
-        fargate2 >> cw_logs
-        fargate3 >> cw_logs
-        cw_logs >> cw_metrics >> cw_alarms
-        
-        # Security connections
-        convex_backend >> secrets
-        api >> secrets
-        deploy_router >> secrets
-        platform_agent >> params
-        ecs_cluster >> params
-        ecs_cluster >> iam_roles
-        platform_agent >> iam_roles        # Testing flow
-        validator >> test_queue >> test_executor
-        test_executor >> test_results
-        test_executor >> cw_logs
-
-        # IaC flow
-        agent_builder >> cdk_gen >> cfn_template >> cfn
+        # Event-Driven Architecture (No Polling)
+        convex_realtime >> Edge(label="WebSocket\nLive Queries") >> frontend_app
+        [regular_chat, interleaved_chat, conversation_chat] >> Edge(label="Event-driven\n1 write/turn") >> convex_db
 
 
 def generate_tier_comparison():
@@ -350,37 +480,109 @@ def generate_security_architecture():
         [cognito, iam_roles] >> audit_logs
 
 
+def generate_comprehensive_features():
+    """Generate comprehensive features diagram showing all components"""
+
+    with Diagram(
+        "Agent Builder - Comprehensive Features & Components",
+        show=False,
+        direction="TB",
+        filename="agent_builder_comprehensive_features",
+        outformat="png"
+    ):
+
+        with Cluster("Frontend Features"):
+            three_chats = Client("3 Chat Systems\n(Regular/Interleaved/Conversation)")
+            six_panels = Client("6 UI Panels\n(Chat/Builder/Auto/Monitor/Audit/MCP)")
+
+        with Cluster("MCP Integration"):
+            eleven_servers = Lambda("11 MCP Servers\n(AWS/Docs/Tools)")
+
+        with Cluster("Registries"):
+            model_reg = Bedrock("49 Models\n(Bedrock/Anthropic/OpenAI)")
+            tool_reg = Lambda("50+ Tools\n(8 Categories)")
+
+        with Cluster("Memory System"):
+            stm = Lambda("STM <8KB\nConvex")
+            ltm = S3("LTM >8KB\nS3")
+
+        with Cluster("Deployment Options"):
+            test_tier = Bedrock("Testing\n10 tests/mo")
+            personal_tier = Fargate("Personal\n$40-110/mo")
+            enterprise_tier = IAM("Enterprise\nCustom")
+
+        with Cluster("Package Contents"):
+            six_files = Lambda("6 Files\nagent.py/requirements.txt\nDockerfile/CFN\nmcp.json/diagram.png")
+
+        # Connections
+        three_chats >> eleven_servers
+        six_panels >> eleven_servers
+        eleven_servers >> model_reg
+        eleven_servers >> tool_reg
+        model_reg >> stm
+        model_reg >> ltm
+        tool_reg >> stm
+        tool_reg >> ltm
+        stm >> six_files
+        ltm >> six_files
+        six_files >> test_tier
+        six_files >> personal_tier
+        six_files >> enterprise_tier
+
+
 if __name__ == "__main__":
     print("Generating Agent Builder infrastructure diagrams...")
     print()
-    print("⚠️  Note: Make sure Graphviz is installed and in your PATH")
+    print("NOTE: Make sure Graphviz is installed and in your PATH")
     print("   Install: choco install graphviz")
     print("   Or download from: https://graphviz.org/download/")
     print("   Add to PATH: C:\\Program Files\\Graphviz\\bin")
     print()
-    
+
     try:
         print("1. Complete Infrastructure Diagram...")
         generate_complete_infrastructure()
-        print("   ✓ Generated: agent_builder_complete_infrastructure.png")
-        
+        print("   [OK] Generated: agent_builder_complete_infrastructure.png")
+
         print("2. Tier Comparison Diagram...")
         generate_tier_comparison()
-        print("   ✓ Generated: agent_builder_tier_comparison.png")
-        
+        print("   [OK] Generated: agent_builder_tier_comparison.png")
+
         print("3. Deployment Flow Diagram...")
         generate_deployment_flow()
-        print("   ✓ Generated: agent_builder_deployment_flow.png")
-        
+        print("   [OK] Generated: agent_builder_deployment_flow.png")
+
         print("4. Security Architecture Diagram...")
         generate_security_architecture()
-        print("   ✓ Generated: agent_builder_security.png")
-        
+        print("   [OK] Generated: agent_builder_security.png")
+
+        print("5. Comprehensive Features Diagram...")
+        generate_comprehensive_features()
+        print("   [OK] Generated: agent_builder_comprehensive_features.png")
+
         print()
-        print("✅ All diagrams generated successfully!")
-        print("📁 Diagrams saved in current directory")
+        print("SUCCESS: All diagrams generated successfully!")
+        print("LOCATION: Diagrams saved in current directory")
+        print()
+        print("Diagram Summary:")
+        print("   - Complete Infrastructure: Full system architecture")
+        print("   - Tier Comparison: 3 deployment tiers (Testing/Personal/Enterprise)")
+        print("   - Deployment Flow: Step-by-step Tier 2 deployment")
+        print("   - Security Architecture: Auth, access control, secrets")
+        print("   - Comprehensive Features: All components at a glance")
+        print()
+        print("Key Features Included:")
+        print("   [x] Three Chat Systems (Regular/Interleaved/Conversation)")
+        print("   [x] 11 MCP Servers (AWS services + documentation)")
+        print("   [x] 49 Models across 4 providers")
+        print("   [x] 50+ Strands Tools in 8 categories")
+        print("   [x] Rate-limited external APIs with quota tracking")
+        print("   [x] Memory architecture (STM <8KB / LTM >8KB)")
+        print("   [x] Testing vs Deployment environment separation")
+        print("   [x] 6-file deployment packages")
+        print("   [x] Event-driven architecture (1 write/turn)")
     except Exception as e:
-        print(f"\n❌ Error generating diagrams: {e}")
+        print(f"\nERROR: Failed to generate diagrams: {e}")
         print("\nTroubleshooting:")
         print("1. Install Graphviz: choco install graphviz")
         print("2. Add to PATH: C:\\Program Files\\Graphviz\\bin")
