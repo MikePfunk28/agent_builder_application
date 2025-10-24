@@ -2,6 +2,10 @@
 
 A comprehensive platform for building, testing, and deploying AI agents with support for multiple LLM providers (AWS Bedrock, Ollama), deployment tiers (AgentCore, Fargate), and MCP (Model Context Protocol) integration.
 
+## Try it out:
+https://ai-forge.mikepfunk.com
+
+
 ## ✅ Infrastructure Verified & Updated
 
 **Three Chat System**:
@@ -186,13 +190,13 @@ A comprehensive platform for building, testing, and deploying AI agents with sup
 - **Tech**: React 19, Vite, TypeScript, TailwindCSS
 
 **Backend**:
-- **Platform**: Convex serverless (`resolute-kudu-325.convex.cloud`)
+- **Platform**: Convex serverless (`{{convex-cloud-url}}.convex.cloud`)
 - **API Domain**: Custom domain `api.mikepfunk.com` (via Cloudflare DNS)
 - **Database**: Convex with 14+ tables and built-in indexes
 - **Real-time**: WebSocket subscriptions for live updates
 
 **Authentication**:
-- **Primary**: AWS Cognito User Pool (`us-east-1_hMFTc7CNL`)
+- **Primary**: AWS Cognito User Pool (`us-east-1_{{hash}}`)
 - **OAuth Providers**: GitHub, Google
 - **Federation**: STS AssumeRoleWithWebIdentity for temporary AWS credentials
 - **NO static AWS access keys** - all credentials are temporary
@@ -365,8 +369,8 @@ npx convex dev
 Create `.env.local`:
 ```bash
 # Convex Configuration
-VITE_CONVEX_URL=https://resolute-kudu-325.convex.cloud
-CONVEX_SITE_URL=https://resolute-kudu-325.convex.site
+VITE_CONVEX_URL=https://{{convex-cloud-url}}.convex.cloud
+CONVEX_SITE_URL=https://{{convex-site-url}}.convex.site
 
 # OAuth - GitHub
 AUTH_GITHUB_ID=your_github_client_id
@@ -415,7 +419,7 @@ npm test
 
 2. **Configure environment variables**
    ```
-   VITE_CONVEX_URL=https://resolute-kudu-325.convex.cloud
+   VITE_CONVEX_URL=https://{{convex-cloud-url}}.convex.cloud
    ```
 
 3. **Deploy**
@@ -504,9 +508,10 @@ Proprietary - All rights reserved
 ## 🔗 Links
 
 - **Production**: https://ai-forge.mikepfunk.com
-- **Convex Dashboard**: https://dashboard.convex.dev/d/resolute-kudu-325
+- **Strands-Agents**: https://strandsagents.com/latest/
 - **Convex Docs**: https://docs.convex.dev
 - **Convex Auth**: https://auth.convex.dev
+- **Bedrock Agent-Core**: https://docs.aws.amazon.com/bedrock-agentcore/
 
 ## 📝 Notes
 
