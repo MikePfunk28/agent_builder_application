@@ -445,9 +445,9 @@ npx convex env set AUTH_GOOGLE_SECRET "your_value"
 
 Configure these callback URLs in your OAuth providers:
 
-**GitHub**: https://resolute-kudu-325.convex.site/api/auth/callback/github
-**Google**: https://resolute-kudu-325.convex.site/api/auth/callback/google
-**Cognito**: https://resolute-kudu-325.convex.site/api/auth/callback/cognito
+**GitHub**: https://{{convex-site-url}}.convex.site/api/auth/callback/github
+**Google**: https://{{convex-site-url}}.convex.site/api/auth/callback/google
+**Cognito**: https://{{convex-site-url}}.convex.site/api/auth/callback/cognito
 
 ## 🔐 Security
 
