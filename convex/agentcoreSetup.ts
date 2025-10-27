@@ -150,7 +150,7 @@ export const executeAgentTest = action({
         timeout: 60000,
       });
 
-      // Execute via AgentCore MCP (using existing mcpClient)
+      // Execute via AgentCore MCP
       const result: any = await ctx.runAction(api.mcpClient.invokeMCPTool, {
         serverName: "bedrock-agentcore-mcp-server",
         toolName: "execute_agent",

@@ -113,7 +113,12 @@ const applicationTables = {
     // Auth metadata
     lastSignIn: v.optional(v.number()),
     signInCount: v.optional(v.number()),
-    
+
+    // Usage Tracking
+    lastTestAt: v.optional(v.number()), // Last test execution timestamp
+    totalTokensUsed: v.optional(v.number()), // Total tokens consumed across all tests
+    totalExecutionTime: v.optional(v.number()), // Total execution time in milliseconds
+
     // AWS Deployment Credentials
     awsAuthMethod: v.optional(v.union(v.literal("assumeRole"), v.literal("direct"))),
     awsRoleArn: v.optional(v.string()),
@@ -201,6 +206,16 @@ const applicationTables = {
     exposableAsMCPTool: v.optional(v.boolean()),
     mcpToolName: v.optional(v.string()),
     mcpInputSchema: v.optional(v.any()),
+
+    // Dynamic Model Switching (Unified Modality Switching)
+    enableDynamicModelSwitching: v.optional(v.boolean()),
+    modelSwitchingConfig: v.optional(v.object({
+      preferCost: v.optional(v.boolean()),
+      preferSpeed: v.optional(v.boolean()),
+      preferCapability: v.optional(v.boolean()),
+      minComplexityForSonnet: v.optional(v.number()),
+      minComplexityForOpus: v.optional(v.number()),
+    })),
 
     // Architecture & Deployment Metadata
     diagramUrl: v.optional(v.string()),

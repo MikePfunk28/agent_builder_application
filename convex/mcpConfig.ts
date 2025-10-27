@@ -36,6 +36,7 @@ const BUILT_IN_MCP_SERVERS = [
     createdAt: Date.now(),
     updatedAt: Date.now(),
   },
+
   {
     _id: "system_document_fetcher" as any,
     _creationTime: Date.now(),

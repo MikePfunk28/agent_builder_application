@@ -84,6 +84,16 @@ async function deployTier1(ctx: any, args: any, userId: any): Promise<any> {
       throw new Error("Agent not found");
     }
 
+    // Validate model for AgentCore (Bedrock only)
+    if (!agent.model?.includes(".")) {
+      return {
+        success: false,
+        error: "Invalid model format",
+        message: "AgentCore requires AWS Bedrock models (e.g., anthropic.claude-sonnet-4-5). Upgrade to Personal tier for Ollama support.",
+        upgradeUrl: "/settings/aws",
+      };
+    }
+
     // Extract dependencies from agent tools
     const dependencies: string[] = [];
     for (const tool of agent.tools || []) {

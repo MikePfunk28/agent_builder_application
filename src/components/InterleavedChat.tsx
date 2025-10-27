@@ -205,7 +205,7 @@ export function InterleavedChat({ onNavigate }: InterleavedChatProps) {
                   {conv.title}
                 </div>
                 <div className="text-xs text-green-600 mt-1">
-                  {conv.messages.length} messages
+                  {conv.messages?.length || 0} messages
                 </div>
               </button>
             ))}

@@ -520,3 +520,6 @@ Proprietary - All rights reserved
 - Agent deployments use AWS (AgentCore or Fargate)
 - MCP integration enables agent-to-agent communication
 - Meta-tooling allows agents to create their own tools
+
+## Security
+[![Codacy Badge](https://app.codacy.com/project/badge/Grade/13bcb475933b44fca1e7f27dcdbb9078)](https://app.codacy.com?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)

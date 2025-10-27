@@ -505,7 +505,7 @@ async function generateDeploymentArtifacts(agent: any, config: any) {
   const requirements = generateAgentCoreRequirements(agent.tools);
 
   // Generate Dockerfile
-  const dockerfile = generateAgentCoreDockerfile();
+  const dockerfile = generateAgentCoreDockerfile(agent);
 
   // Generate AgentCore configuration
   const agentCoreConfig = generateAgentCoreConfig(agent, config);
@@ -599,34 +599,37 @@ function generateAgentCoreRequirements(tools: any[]): string {
   return Array.from(packages).join("\\n");
 }
 
-function generateAgentCoreDockerfile(): string {
+function generateAgentCoreDockerfile(agent: any): string {
+  const isOllamaModel = !agent.model?.includes(".");
+  
+  if (isOllamaModel) {
+    return `FROM ollama/ollama:latest
+
+RUN apt-get update && apt-get install -y python3.11 python3-pip curl && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY requirements.txt agent.py ./
+RUN pip3 install --no-cache-dir -r requirements.txt
+
+RUN echo '#!/bin/bash\nollama serve &\nsleep 5\nollama pull ${agent.model}\npython3 agent.py' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
+
+EXPOSE 8080 11434
+ENTRYPOINT ["/app/entrypoint.sh"]
+`;
+  }
+
   return `FROM python:3.11-slim
 
-# System dependencies
-RUN apt-get update && apt-get install -y \\
-    gcc \\
-    g++ \\
-    curl \\
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y gcc g++ curl && rm -rf /var/lib/apt/lists/*
 
-# Create app directory
 WORKDIR /app
-
-# Copy and install requirements
-COPY requirements.txt .
+COPY requirements.txt agent.py ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy agent code
-COPY agent.py .
-
-# Create non-root user
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
 USER appuser
 
-# Expose port for AgentCore Runtime
 EXPOSE 8080
-
-# Run AgentCore agent
 CMD ["python", "agent.py"]
 `;
 }

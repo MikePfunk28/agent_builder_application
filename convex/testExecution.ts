@@ -3,13 +3,14 @@
  *
  * Manages the complete lifecycle of agent tests from submission to completion.
  * Provides real-time log streaming and test management.
+ *
+ * Cost-optimized execution: Direct Bedrock → Lambda backup → No MCP complexity
  */
 
 import { mutation, query, internalMutation, internalQuery, action } from "./_generated/server";
 import { v } from "convex/values";
 import { internal, api } from "./_generated/api";
 import { getAuthUserId } from "@convex-dev/auth/server";
-// Removed unused import: Id
 
 // Validation constants
 const MAX_QUERY_LENGTH = 2000;
@@ -19,6 +20,21 @@ const MAX_DOCKERFILE_SIZE = 5 * 1024; // 5KB
 const MIN_TIMEOUT = 10000; // 10 seconds
 const MAX_TIMEOUT = 600000; // 10 minutes
 const MAX_CONCURRENT_TESTS = parseInt(process.env.MAX_CONCURRENT_TESTS || "10");
+
+// Cost calculation helper
+function calculateBedrockCost(usage: any, modelId: string): number {
+  const pricing: Record<string, { input: number; output: number }> = {
+    "anthropic.claude-3-5-sonnet-20241022-v2:0": { input: 0.003, output: 0.015 },
+    "anthropic.claude-3-haiku-20240307-v1:0": { input: 0.00025, output: 0.00125 },
+    "amazon.titan-text-premier-v1:0": { input: 0.0005, output: 0.0015 },
+  };
+
+  const modelPricing = pricing[modelId] || pricing["anthropic.claude-3-5-sonnet-20241022-v2:0"];
+  const inputCost = (usage.inputTokens || 0) / 1000 * modelPricing.input;
+  const outputCost = (usage.outputTokens || 0) / 1000 * modelPricing.output;
+
+  return Math.round((inputCost + outputCost) * 100); // Return cents
+}
 
 /**
  * Submit a new agent test
@@ -61,7 +77,7 @@ export const submitTest = mutation({
       agentId: args.agentId,
       allowing: "all authenticated users"
     });
-    
+
     // Authorization is relaxed for development
     // In production, uncomment this to enforce strict ownership:
     // if (!isOwner && !isPublic) {
@@ -228,7 +244,7 @@ export const cancelTest = mutation({
   args: { testId: v.id("testExecutions") },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
-    
+
     const test = await ctx.db.get(args.testId);
     if (!test) {
       throw new Error("Test not found");
@@ -307,7 +323,7 @@ export const retryTest = mutation({
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
-    
+
     const originalTest = await ctx.db.get(args.testId);
     if (!originalTest) {
       throw new Error("Test not found");
@@ -439,7 +455,7 @@ export const updateStatus = internalMutation({
       if (args.response) {
         updates.response = args.response;
       }
-      
+
       // Add assistant response to conversation if exists
       if (test.conversationId && args.response && args.success) {
         await ctx.runMutation(internal.conversations.addMessageInternal, {
@@ -664,7 +680,7 @@ function extractModelConfig(model: string, deploymentType: string): {
       },
     };
   }
-  
+
   if (deploymentType === "ollama") {
     return {
       modelProvider: "ollama",
@@ -678,8 +694,8 @@ function extractModelConfig(model: string, deploymentType: string): {
 
   // Determine based on model ID format
   // Bedrock models: anthropic.*, amazon.*, ai21.*, cohere.*, meta.*, mistral.*
-  if (model.startsWith("anthropic.") || 
-      model.startsWith("amazon.") || 
+  if (model.startsWith("anthropic.") ||
+      model.startsWith("amazon.") ||
       model.startsWith("ai21.") ||
       model.startsWith("cohere.") ||
       model.startsWith("meta.") ||
@@ -693,7 +709,7 @@ function extractModelConfig(model: string, deploymentType: string): {
       },
     };
   }
-  
+
   // Ollama models: contain colon (e.g., "llama3:8b", "qwen3:4b")
   if (model.includes(':')) {
     return {
@@ -743,35 +759,50 @@ async function getQueuePosition(ctx: any, testId: string): Promise<number> {
 }
 
 /**
- * Execute agent directly (for MCP tool invocation)
- *
- * DEPRECATED: This function is no longer used.
- * Use api.strandsAgentExecution.executeAgentWithStrandsAgents instead,
- * which is fully event-driven and calls AgentCore directly without polling.
- *
- * Kept for backward compatibility only.
+ * Increment user usage counter (internal)
+ * Tracks successful test executions only
  */
-export const executeAgent = action({
+export const incrementUserUsage = internalMutation({
   args: {
-    agentId: v.id("agents"),
-    input: v.string(),
+    userId: v.id("users"),
+    testId: v.id("testExecutions"),
+    usage: v.optional(v.object({
+      inputTokens: v.number(),
+      outputTokens: v.number(),
+      totalTokens: v.number(),
+    })),
+    executionTime: v.optional(v.number()),
+    executionMethod: v.optional(v.string()),
   },
-  handler: async (ctx, args): Promise<{
-    success: boolean;
-    response: string | null;
-    error?: string;
-  }> => {
-    // Redirect to event-driven execution
-    const result = await ctx.runAction(api.strandsAgentExecution.executeAgentWithStrandsAgents, {
-      agentId: args.agentId,
-      message: args.input,
-      // No conversationId for MCP tool invocations (stateless)
+  handler: async (ctx, args) => {
+    const user = await ctx.db.get(args.userId);
+    if (!user) return;
+
+    const newTestsCount = (user.testsThisMonth || 0) + 1;
+
+    await ctx.db.patch(args.userId, {
+      testsThisMonth: newTestsCount,
+      lastTestAt: Date.now(),
+      totalTokensUsed: (user.totalTokensUsed || 0) + (args.usage?.totalTokens || 0),
+      totalExecutionTime: (user.totalExecutionTime || 0) + (args.executionTime || 0),
     });
 
-    return {
-      success: result.success,
-      response: result.content || null,
-      error: result.error,
-    };
+    // LOG ONLY WHEN USED (no background processes)
+    await ctx.runMutation(api.auditLogs.logEvent, {
+      eventType: "test_execution",
+      userId: args.userId,
+      action: "test_completed",
+      resource: "test_execution",
+      resourceId: args.testId,
+      success: true,
+      details: {
+        tier: user.tier,
+        testsThisMonth: newTestsCount,
+        tokenUsage: args.usage,
+        executionTime: args.executionTime,
+        executionMethod: args.executionMethod,
+        estimatedCost: args.usage ? calculateBedrockCost(args.usage, "claude-3-5-sonnet") : 0,
+      },
+    });
   },
 });
