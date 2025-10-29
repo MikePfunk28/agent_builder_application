@@ -104,6 +104,9 @@ const applicationTables = {
     upgradedAt: v.optional(v.number()),
     createdAt: v.optional(v.number()),
     isAnonymous: v.optional(v.boolean()), // For anonymous users
+    deviceId: v.optional(v.string()), // Browser fingerprint for anonymous users
+    mergedInto: v.optional(v.id("users")), // If anonymous account was merged
+    mergedAt: v.optional(v.number()), // When account was merged
 
     // OAuth provider-specific fields
     locale: v.optional(v.string()), // Google: user's locale (e.g., "en-US")
@@ -138,7 +141,8 @@ const applicationTables = {
   })
     .index("by_tier", ["tier"])
     .index("by_email", ["email"])
-    .index("by_auth_provider", ["authProvider"]),
+    .index("by_auth_provider", ["authProvider"])
+    .index("by_device_id", ["deviceId"]),
 
   // API Keys for external access and usage tracking
   apiKeys: defineTable({
@@ -161,6 +165,7 @@ const applicationTables = {
     description: v.optional(v.string()),
     model: v.string(),
     modelProvider: v.optional(v.string()), // "bedrock", "ollama", "openai", etc.
+    ollamaEndpoint: v.optional(v.string()), // e.g., "http://localhost:11434"
     systemPrompt: v.string(),
     tools: v.array(v.object({
       name: v.string(),
@@ -265,6 +270,29 @@ const applicationTables = {
     .index("by_user", ["userId"])
     .index("by_agent", ["agentId"])
     .index("by_agent_user", ["agentId", "userId"]),
+
+  // Conversation Analysis for Agent Improvement
+  conversationAnalyses: defineTable({
+    conversationId: v.id("conversations"),
+    agentId: v.id("agents"),
+    analysis: v.any(), // Detailed analysis object from conversationAnalysis.ts
+    createdAt: v.number(),
+  })
+    .index("by_conversation", ["conversationId"])
+    .index("by_agent", ["agentId"])
+    .index("by_created", ["createdAt"]),
+
+  // Agent Improvement History
+  agentImprovementHistory: defineTable({
+    agentId: v.id("agents"),
+    conversationId: v.id("conversations"),
+    improvementPlan: v.any(),
+    changes: v.array(v.string()), // List of changes applied
+    appliedAt: v.number(),
+  })
+    .index("by_agent", ["agentId"])
+    .index("by_conversation", ["conversationId"])
+    .index("by_applied", ["appliedAt"]),
 
   // Containerized Agent Testing System
   testExecutions: defineTable({
@@ -477,6 +505,35 @@ const applicationTables = {
     .index("by_resource", ["resource", "resourceId"])
     .index("by_timestamp", ["timestamp"]),
 
+  // Agent Build Sessions (Automated Builder with Woz Questions)
+  agentBuildSessions: defineTable({
+    userId: v.id("users"),
+    status: v.string(), // "gathering_requirements" | "ready_to_generate" | "completed"
+    currentQuestion: v.number(),
+    agentRequirements: v.object({
+      agentType: v.union(v.string(), v.null()),
+      targetUsers: v.union(v.string(), v.null()),
+      problems: v.array(v.string()),
+      tools: v.array(v.string()),
+      tone: v.union(v.string(), v.null()),
+      testingPreference: v.union(v.string(), v.null()),
+      domainKnowledge: v.union(v.string(), v.null()),
+      knowledgeBase: v.union(v.string(), v.null()),
+      documentUrls: v.array(v.string()),
+    }),
+    conversationHistory: v.array(v.object({
+      role: v.union(v.literal("user"), v.literal("assistant")),
+      content: v.string(),
+      reasoning: v.optional(v.string()),
+      timestamp: v.number(),
+    })),
+    generatedAgentConfig: v.optional(v.any()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["userId", "updatedAt"])
+    .index("by_status", ["status", "updatedAt"]),
+
   // Interleaved Reasoning Conversations
   interleavedConversations: defineTable({
     userId: v.optional(v.id("users")),
@@ -576,9 +633,60 @@ const applicationTables = {
     .index("by_active", ["isActive"])
     .index("by_public", ["isPublic"]),
 
+  // Rate Limiting System
+  rateLimitEntries: defineTable({
+    userId: v.string(),
+    action: v.string(),
+    requests: v.array(v.number()), // Timestamps of requests in current window
+    blockedUntil: v.optional(v.number()), // Timestamp when block expires
+    lastRequest: v.number(), // Timestamp of last request
+  })
+    .index("by_user_action", ["userId", "action"])
+    .index("by_user", ["userId"])
+    .index("by_action", ["action"]),
+
 };
 
 export default defineSchema({
+  workflows: defineTable({
+    name: v.string(),
+    userId: v.string(),
+    templateId: v.string(),
+    nodes: v.array(v.any()),
+    edges: v.array(v.any()),
+    status: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number()
+  }).index("by_user", ["userId"]).index("by_template", ["templateId"]),
+
+  workflowExecutions: defineTable({
+    workflowId: v.id("workflows"),
+    userId: v.string(),
+    input: v.any(),
+    output: v.any(),
+    executionLog: v.array(v.any()),
+    duration: v.number(),
+    status: v.string(),
+    createdAt: v.number()
+  }).index("by_workflow", ["workflowId"]).index("by_user", ["userId"]),
+
+  // Workflow Templates (pre-built agent workflows)
+  workflowTemplates: defineTable({
+    name: v.string(),
+    description: v.string(),
+    category: v.string(), // "Support", "Development", "Research", "Reasoning", etc.
+    icon: v.string(),
+    difficulty: v.string(), // "Beginner", "Intermediate", "Advanced", "Expert"
+    nodes: v.array(v.any()), // Visual scripting nodes with tool configs
+    connections: v.array(v.any()), // Connections between nodes
+    isOfficial: v.boolean(), // Official templates from us
+    usageCount: v.number(), // Track popularity
+    createdAt: v.number(),
+  })
+    .index("by_category", ["category"])
+    .index("by_popularity", ["usageCount"])
+    .index("by_official", ["isOfficial"]),
+
   ...authTables,
   ...applicationTables,
 });

@@ -74,6 +74,29 @@ const BUILT_IN_MCP_SERVERS = [
     createdAt: Date.now(),
     updatedAt: Date.now(),
   },
+  {
+    _id: "system_ollama" as any,
+    _creationTime: Date.now(),
+    name: "ollama-mcp-server",
+    userId: "system" as any,
+    command: "node",
+    args: ["C:/Users/mikep/mcp-server/ollama-mcp/build/index.js"],
+    env: {
+      OLLAMA_HOST: "http://127.0.0.1:11434"
+    },
+    disabled: false,
+    timeout: 60000,
+    status: "connected",
+    availableTools: [
+      { name: "chat_completion", description: "Chat with Ollama models" },
+      { name: "list", description: "List available Ollama models" },
+      { name: "pull", description: "Pull an Ollama model" },
+      { name: "show", description: "Show model information" },
+      { name: "serve", description: "Serve Ollama model" },
+    ],
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  },
 ];
 
 /**

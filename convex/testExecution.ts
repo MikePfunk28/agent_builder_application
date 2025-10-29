@@ -21,6 +21,11 @@ const MIN_TIMEOUT = 10000; // 10 seconds
 const MAX_TIMEOUT = 600000; // 10 minutes
 const MAX_CONCURRENT_TESTS = parseInt(process.env.MAX_CONCURRENT_TESTS || "10");
 
+// Rate Limiting Constants
+const FREE_TESTS_PER_MONTH = 50; // Freemium users get 50 free tests per month
+const PERSONAL_TESTS_PER_MONTH = 1000; // Personal tier gets 1000 tests per month
+const ENTERPRISE_UNLIMITED = true; // Enterprise has no limits
+
 // Cost calculation helper
 function calculateBedrockCost(usage: any, modelId: string): number {
   const pricing: Record<string, { input: number; output: number }> = {
@@ -54,9 +59,12 @@ export const submitTest = mutation({
   },
   handler: async (ctx, args) => {
     // Authentication - use getAuthUserId for Convex user document ID
-    // Allow anonymous users to test agents
     const userId = await getAuthUserId(ctx);
-    const effectiveUserId = userId || `anon_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    // SECURITY: Require authentication for testing
+    if (!userId) {
+      throw new Error("Authentication required. Please sign in to test agents.");
+    }
 
     // Get agent
     const agent = await ctx.db.get(args.agentId);
@@ -64,25 +72,59 @@ export const submitTest = mutation({
       throw new Error("Agent not found");
     }
 
-    // Verify ownership or public access
+    // SECURITY: Verify ownership
     const isOwner = agent.createdBy === userId;
     const isPublic = Boolean(agent.isPublic);
 
-    // Allow testing for authenticated users (development mode)
-    console.log("Authorization check:", {
-      userId,
-      agentCreatedBy: agent.createdBy,
-      isOwner,
-      isPublic,
-      agentId: args.agentId,
-      allowing: "all authenticated users"
-    });
+    if (!isOwner && !isPublic) {
+      throw new Error("Not authorized to test this agent. You can only test agents you created or public agents.");
+    }
 
-    // Authorization is relaxed for development
-    // In production, uncomment this to enforce strict ownership:
-    // if (!isOwner && !isPublic) {
-    //   throw new Error("Not authorized to test this agent");
-    // }
+    // Determine model provider EARLY to check if it's Ollama
+    // Ollama models are FREE (run locally), so no rate limiting needed!
+    const isOllamaModel = agent.model.includes(':') || agent.deploymentType === "ollama";
+
+    // RATE LIMITING: Only for Bedrock/cloud models (Ollama is FREE and unlimited!)
+    if (!isOllamaModel) {
+      const user = await ctx.db.get(userId);
+      if (!user) {
+        throw new Error("User not found");
+      }
+
+      // ANONYMOUS USER PROTECTION: Block anonymous users from cloud testing to prevent abuse
+      // Anonymous users can still use Ollama for unlimited FREE testing
+      if (user.isAnonymous) {
+        throw new Error(
+          `Anonymous users cannot use cloud models to prevent abuse. ` +
+          `Please sign in with GitHub or Google for cloud testing, ` +
+          `or use Ollama models for unlimited FREE testing without sign-in.`
+        );
+      }
+
+      const userTier = user.tier || "freemium";
+      const testsThisMonth = user.testsThisMonth || 0;
+
+      // Check rate limits based on tier (only for cloud models)
+      if (userTier === "freemium" && testsThisMonth >= FREE_TESTS_PER_MONTH) {
+        throw new Error(
+          `Free cloud test limit reached (${FREE_TESTS_PER_MONTH} tests/month). ` +
+          `You can: 1) Use Ollama models for unlimited FREE testing, ` +
+          `2) Upgrade to Personal tier, or 3) Deploy to your AWS account.`
+        );
+      }
+
+      if (userTier === "personal" && testsThisMonth >= PERSONAL_TESTS_PER_MONTH) {
+        throw new Error(
+          `Personal tier cloud test limit reached (${PERSONAL_TESTS_PER_MONTH} tests/month). ` +
+          `You can: 1) Use Ollama models for unlimited FREE testing, ` +
+          `2) Upgrade to Enterprise, or 3) Deploy to your AWS account.`
+        );
+      }
+
+      // Enterprise tier has no limits (ENTERPRISE_UNLIMITED is checked implicitly)
+    }
+
+    const effectiveUserId = userId;
 
     // Validate test query
     if (!args.testQuery || args.testQuery.length < 1 || args.testQuery.length > MAX_QUERY_LENGTH) {
@@ -158,6 +200,17 @@ export const submitTest = mutation({
 
     // Update test status to QUEUED
     await ctx.db.patch(testId, { status: "QUEUED" });
+
+    // RATE LIMITING: Increment user's test count ONLY for cloud models (not Ollama)
+    if (!isOllamaModel) {
+      const user = await ctx.db.get(userId);
+      if (user) {
+        await ctx.db.patch(userId, {
+          testsThisMonth: (user.testsThisMonth || 0) + 1,
+          lastTestAt: Date.now(),
+        });
+      }
+    }
 
     // Trigger queue processor immediately (on-demand processing to save costs)
     await ctx.scheduler.runAfter(0, internal.queueProcessor.processQueue);
@@ -245,15 +298,19 @@ export const cancelTest = mutation({
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
 
+    // SECURITY: Require authentication
+    if (!userId) {
+      throw new Error("Authentication required. Please sign in to cancel tests.");
+    }
+
     const test = await ctx.db.get(args.testId);
     if (!test) {
       throw new Error("Test not found");
     }
 
-    // Allow anonymous users to cancel their own tests
-    // For authenticated users, verify ownership
-    if (userId && test.userId !== userId) {
-      throw new Error("Not authorized");
+    // SECURITY: Verify ownership
+    if (test.userId !== userId) {
+      throw new Error("Not authorized to cancel this test.");
     }
 
     if (test.status === "COMPLETED" || test.status === "FAILED") {
@@ -324,19 +381,52 @@ export const retryTest = mutation({
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
 
+    // SECURITY: Require authentication
+    if (!userId) {
+      throw new Error("Authentication required. Please sign in to retry tests.");
+    }
+
     const originalTest = await ctx.db.get(args.testId);
     if (!originalTest) {
       throw new Error("Test not found");
     }
 
-    // Allow anonymous users to retry their own tests
-    // For authenticated users, verify ownership
-    if (userId && originalTest.userId !== userId) {
-      throw new Error("Not authorized");
+    // SECURITY: Verify ownership
+    if (originalTest.userId !== userId) {
+      throw new Error("Not authorized to retry this test.");
     }
 
-    // Use original userId (which might be anonymous temp ID)
-    const effectiveUserId = userId || originalTest.userId;
+    // Check if this is an Ollama test (FREE and unlimited!)
+    const agent = await ctx.db.get(originalTest.agentId);
+    const isOllamaModel = agent ? (agent.model.includes(':') || agent.deploymentType === "ollama") : false;
+
+    // RATE LIMITING: Only for cloud models (Ollama is FREE!)
+    if (!isOllamaModel) {
+      const user = await ctx.db.get(userId);
+      if (!user) {
+        throw new Error("User not found");
+      }
+
+      const userTier = user.tier || "freemium";
+      const testsThisMonth = user.testsThisMonth || 0;
+
+      // Check rate limits
+      if (userTier === "freemium" && testsThisMonth >= FREE_TESTS_PER_MONTH) {
+        throw new Error(
+          `Free cloud test limit reached (${FREE_TESTS_PER_MONTH} tests/month). ` +
+          `Use Ollama models for unlimited FREE testing, upgrade to Personal tier, or deploy to your AWS account.`
+        );
+      }
+
+      if (userTier === "personal" && testsThisMonth >= PERSONAL_TESTS_PER_MONTH) {
+        throw new Error(
+          `Personal tier cloud test limit reached (${PERSONAL_TESTS_PER_MONTH} tests/month). ` +
+          `Use Ollama models for unlimited FREE testing, upgrade to Enterprise, or deploy to your AWS account.`
+        );
+      }
+    }
+
+    const effectiveUserId = userId;
 
     // Create new test with same configuration
     const newTestId = await ctx.db.insert("testExecutions", {
@@ -365,6 +455,17 @@ export const retryTest = mutation({
     });
 
     await ctx.db.patch(newTestId, { status: "QUEUED" });
+
+    // RATE LIMITING: Increment user's test count ONLY for cloud models (not Ollama)
+    if (!isOllamaModel) {
+      const user = await ctx.db.get(userId);
+      if (user) {
+        await ctx.db.patch(userId, {
+          testsThisMonth: (user.testsThisMonth || 0) + 1,
+          lastTestAt: Date.now(),
+        });
+      }
+    }
 
     // Trigger queue processor immediately (on-demand processing)
     await ctx.scheduler.runAfter(0, internal.queueProcessor.processQueue);

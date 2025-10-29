@@ -143,18 +143,57 @@ export function InterleavedChat({ onNavigate }: InterleavedChatProps) {
     }
   };
 
+  // Block access if no agents
+  if (agents.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-[calc(100vh-8rem)]">
+        <div className="bg-yellow-900/20 border border-yellow-600/30 rounded-lg p-8 max-w-2xl">
+          <div className="flex items-start gap-4">
+            <div className="p-3 bg-yellow-600/20 rounded-lg">
+              <Bot className="w-6 h-6 text-yellow-400" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold text-yellow-400 mb-2">
+                No Agents Yet
+              </h2>
+              <p className="text-yellow-300/70 mb-4">
+                The Chat is for testing and refining your existing agents. You need to create an agent first!
+              </p>
+              <div className="space-y-2 text-sm text-yellow-300/70">
+                <p><strong>To get started:</strong></p>
+                <ol className="list-decimal list-inside space-y-1 ml-4">
+                  <li>Use the <strong>AI Builder</strong> to create an agent through guided questions</li>
+                  <li>Or use the <strong>Manual Builder</strong> for full control</li>
+                  <li>Then come back here to test and refine your agent</li>
+                </ol>
+              </div>
+              {onNavigate && (
+                <div className="mt-6 flex gap-3">
+                  <button
+                    onClick={() => onNavigate("aiBuilder")}
+                    className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+                  >
+                    Go to AI Builder
+                  </button>
+                  <button
+                    onClick={() => onNavigate("builder")}
+                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                  >
+                    Go to Manual Builder
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-[calc(100vh-8rem)] gap-4">
       {/* Sidebar - Agents & Conversations */}
       <div className="w-80 bg-gray-900/50 border border-green-900/30 rounded-xl p-4 overflow-y-auto">
-        <button
-          onClick={() => void handleCreateConversation()}
-          className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg mb-4 flex items-center justify-center gap-2"
-        >
-          <MessageSquare className="w-4 h-4" />
-          New Chat
-        </button>
-
         {/* Your Agents */}
         {agents.length > 0 && (
           <div className="mb-6">

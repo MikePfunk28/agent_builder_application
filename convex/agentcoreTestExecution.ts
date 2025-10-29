@@ -61,28 +61,42 @@ export const executeAgentCoreTest = internalAction({
         return { success: false, error: "Usage limit exceeded" };
       }
 
-      // PRIMARY: Direct Bedrock API (cheapest)
-      let result = await executeViaDirectBedrock({
-        input: args.input,
-        modelId: agent.model,
-        systemPrompt: agent.systemPrompt,
-        conversationHistory: args.conversationHistory,
-      });
-
+      // Route based on model provider
+      let result;
       let executionMethod = "bedrock";
 
-      // BACKUP: Lambda with @app.entrypoint if Bedrock fails
-      if (!result.success) {
-        console.log(`Bedrock failed, trying Lambda backup for test ${args.testId}`);
-
-        result = await executeViaLambda({
-          agentCode: agent.generatedCode,
+      // Check if agent uses Ollama
+      if (agent.modelProvider === "ollama") {
+        result = await executeViaOllama({
           input: args.input,
           modelId: agent.model,
-          tools: agent.tools || [],
+          systemPrompt: agent.systemPrompt,
+          ollamaEndpoint: agent.ollamaEndpoint || "http://localhost:11434",
+          conversationHistory: args.conversationHistory,
+        });
+        executionMethod = "ollama";
+      } else {
+        // PRIMARY: Direct Bedrock API (cheapest)
+        result = await executeViaDirectBedrock({
+          input: args.input,
+          modelId: agent.model,
+          systemPrompt: agent.systemPrompt,
+          conversationHistory: args.conversationHistory,
         });
 
-        executionMethod = result.success ? "lambda" : "failed";
+        // BACKUP: Lambda with @app.entrypoint if Bedrock fails
+        if (!result.success) {
+          console.log(`Bedrock failed, trying Lambda backup for test ${args.testId}`);
+
+          result = await executeViaLambda({
+            agentCode: agent.generatedCode,
+            input: args.input,
+            modelId: agent.model,
+            tools: agent.tools || [],
+          });
+
+          executionMethod = result.success ? "lambda" : "failed";
+        }
       }
 
       const executionTime = Date.now() - startTime;
@@ -302,6 +316,81 @@ async function executeViaDirectBedrock(params: {
     return {
       success: false,
       error: `Bedrock API failed: ${error.message}`,
+    };
+  }
+}
+
+/**
+ * Execute via Ollama (local model)
+ * Uses OpenAI-compatible API
+ */
+async function executeViaOllama(params: {
+  input: string;
+  modelId: string;
+  systemPrompt: string;
+  ollamaEndpoint: string;
+  conversationHistory?: any[];
+}): Promise<{ success: boolean; result?: any; error?: string }> {
+  try {
+    // Build messages array
+    const messages: any[] = [];
+
+    // Add conversation history if provided (last 5 messages for context)
+    if (params.conversationHistory) {
+      for (const msg of params.conversationHistory.slice(-5)) {
+        messages.push({
+          role: msg.role === "assistant" ? "assistant" : "user",
+          content: msg.content,
+        });
+      }
+    }
+
+    // Add system message and current input
+    messages.unshift({
+      role: "system",
+      content: params.systemPrompt,
+    });
+
+    messages.push({
+      role: "user",
+      content: params.input,
+    });
+
+    // Call Ollama's OpenAI-compatible endpoint
+    const response = await fetch(`${params.ollamaEndpoint}/v1/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: params.modelId,
+        messages: messages,
+        temperature: 0.7,
+        max_tokens: 4096,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Ollama API failed: ${response.status} ${errorText}`);
+    }
+
+    const data = await response.json();
+
+    const responseText = data.choices?.[0]?.message?.content || "";
+
+    return {
+      success: true,
+      result: {
+        response: responseText,
+        usage: data.usage || {},
+        modelId: params.modelId,
+      },
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      error: `Ollama execution failed: ${error.message}`,
     };
   }
 }

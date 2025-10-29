@@ -20,12 +20,12 @@ export const createConversation = mutation({
     title: v.optional(v.string()),
     systemPrompt: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx: any, args: { title?: string; systemPrompt?: string }): Promise<{ conversationId: string; conversationToken?: string }> => {
     const userId = await getAuthUserId(ctx);
-    
+
     // Generate token for anonymous users
-    const conversationToken = userId 
-      ? undefined 
+    const conversationToken = userId
+      ? undefined
       : `anon_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
     const conversationId = await ctx.db.insert("interleavedConversations", {
@@ -47,22 +47,20 @@ YOU HAVE UNLIMITED CAPABILITIES to accomplish this:
 - Performance and cost analysis
 
 YOUR WORKFLOW:
-1. Deeply understand requirements through questions
-2. Research and analyze best approaches
-3. Design optimal agent architecture
-4. Create necessary tools and integrations
-5. Generate complete, production-ready code
-6. Validate implementation quality
+- Test agents by simulating real-world scenarios and edge cases
+- Provide detailed feedback on agent performance and behavior
+- Suggest specific improvements when agents fail or underperform
+- Help users understand agent capabilities and limitations
+- Analyze conversation patterns to identify optimization opportunities
 
-AGENT BUILDING PRINCIPLES:
-- Build intelligent, workflow-oriented agents (not simple chatbots)
-- Create custom tools when needed using @tool decorator
-- Include preprocessing/postprocessing hooks for complex logic
-- Generate ALL 4 required files: agent.py, mcp.json, Dockerfile, cloudformation.yaml
-- Ensure production-ready code with error handling and logging
-- Optimize for performance, cost, and scalability
+AGENT TESTING PRINCIPLES:
+- Thoroughly test all agent capabilities and tools
+- Document unexpected behaviors and edge cases
+- Provide actionable recommendations for improvements
+- Help users iterate and refine their agents
+- Consider cost, performance, and accuracy tradeoffs
 
-Think deeply, research thoroughly, and build exceptional agents.`,
+Think deeply about agent behavior and provide thoughtful testing insights.`,
       messageCount: 0,
       contextSize: 0,
       s3ContextKey: undefined,
@@ -84,7 +82,7 @@ export const sendMessage: any = action({
     conversationToken: v.optional(v.string()),
     message: v.string(),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx: any, args: any): Promise<any> => {
     const userId = await getAuthUserId(ctx);
 
     // Get conversation
@@ -141,11 +139,11 @@ export const sendMessage: any = action({
       conversationId: args.conversationId,
       messages: [
         {
-          role: "user" as const,
+          role: "user",
           content: args.message,
         },
         {
-          role: "assistant" as const,
+          role: "assistant",
           content: response.content,
           reasoning: response.reasoning,
           toolCalls: response.toolCalls,
@@ -180,12 +178,12 @@ export const getUserMessageCount = internalQuery({
     if (args.userId) {
       conversations = await ctx.db
         .query("interleavedConversations")
-        .withIndex("by_user", (q) => q.eq("userId", args.userId!))
+        .withIndex("by_user", (q) => q.eq("userId", args.userId))
         .collect();
     } else if (args.conversationToken) {
       const conversation = await ctx.db
         .query("interleavedConversations")
-        .withIndex("by_token", (q) => q.eq("conversationToken", args.conversationToken!))
+        .withIndex("by_token", (q) => q.eq("conversationToken", args.conversationToken))
         .first();
       if (conversation) {
         conversations = [conversation];
@@ -245,7 +243,7 @@ async function invokeClaudeWithInterleavedThinking(
 
   // Build messages array
   const messages: any[] = [];
-  
+
   // Add conversation history
   for (const msg of history) {
     messages.push({

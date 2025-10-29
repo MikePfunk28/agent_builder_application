@@ -129,3 +129,7 @@ evaluators/tool_eval.py
 langchain_chain.py
 mydiagram.py
 diagrams/Web Application Architecture..png
+evaluators/db_tool.py
+ARCHITECTURE_DIAGRAM.txt
+OLLAMA_QUICK_SUMMARY.txt
+mcp.json

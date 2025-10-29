@@ -1,212 +1,285 @@
 /**
- * AI-Powered Agent Builder
- * Uses Claude Haiku to automatically design optimal agents
+ * AI-Powered Agent Builder with Woz-Style Questions
+ * Sequential conversational flow with interleaved reasoning
  */
 
-import { useState } from "react";
-import { useAction } from "convex/react";
+import { useState, useEffect, useRef } from "react";
+import { useAction, useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { toast } from "sonner";
-import { Sparkles, Zap, TrendingUp, DollarSign, Cpu, Target } from "lucide-react";
+import { Sparkles, Send, Brain, Lightbulb, CheckCircle2, ArrowRight } from "lucide-react";
+import type { Id } from "../../convex/_generated/dataModel";
 
-export function AIAgentBuilder({ onAgentsCreated }: { onAgentsCreated: (agents: any[]) => void }) {
-  const [requirement, setRequirement] = useState("");
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [result, setResult] = useState<any>(null);
+export function AIAgentBuilder({ onAgentsCreated }: { onAgentsCreated?: (agents: any[]) => void }) {
+  const [currentSessionId, setCurrentSessionId] = useState<Id<"agentBuildSessions"> | null>(null);
+  const [initialDescription, setInitialDescription] = useState("");
+  const [currentResponse, setCurrentResponse] = useState("");
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [hasStarted, setHasStarted] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
-  const designAgent = useAction(api.metaAgent.designAgent);
+  const createSession = useMutation(api.automatedAgentBuilder.createBuildSession);
+  const processResponse = useAction(api.automatedAgentBuilder.processResponse);
+  const generateAgent = useAction(api.automatedAgentBuilder.generateAgentFromSession);
+  const session = useQuery(
+    api.automatedAgentBuilder.getBuildSession,
+    currentSessionId ? { sessionId: currentSessionId } : "skip"
+  );
 
-  const handleAnalyze = async () => {
-    if (!requirement.trim()) {
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [session?.conversationHistory]);
+
+  const handleStart = async () => {
+    if (!initialDescription.trim()) {
       toast.error("Please describe what you want your agent to do");
       return;
     }
 
-    setIsAnalyzing(true);
+    setIsProcessing(true);
     try {
-      const response = await designAgent({
-        userRequirement: requirement,
-        maxBudgetPoints: 300,
+      const { sessionId } = await createSession({
+        initialDescription: initialDescription.trim(),
       });
 
-      if (response.success) {
-        setResult(response);
-        toast.success(`Designed ${response.agents.length} optimal agent(s)!`);
-      } else {
-        toast.error(response.error || "Failed to design agent");
+      setCurrentSessionId(sessionId);
+      setHasStarted(true);
+
+      // Process initial description to get first question
+      const response = await processResponse({
+        sessionId,
+        userResponse: initialDescription.trim(),
+      });
+
+      if (response.readyToGenerate) {
+        toast.success("I have everything I need to build your agent!");
       }
     } catch (error: any) {
-      toast.error("Failed to analyze requirements");
+      toast.error("Failed to start building session");
       console.error(error);
     } finally {
-      setIsAnalyzing(false);
+      setIsProcessing(false);
     }
   };
 
-  const handleCreateAgents = () => {
-    if (result?.agents) {
-      onAgentsCreated(result.agents);
-      toast.success("Agents created! You can now customize them.");
+  const handleSendResponse = async () => {
+    if (!currentResponse.trim() || !currentSessionId) return;
+
+    setIsProcessing(true);
+    const userMessage = currentResponse.trim();
+    setCurrentResponse("");
+
+    try {
+      const response = await processResponse({
+        sessionId: currentSessionId,
+        userResponse: userMessage,
+      });
+
+      if (response.readyToGenerate) {
+        toast.success("Perfect! I have everything I need to build your agent!");
+      }
+    } catch (error: any) {
+      toast.error("Failed to process response");
+      console.error(error);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleGenerate = async () => {
+    if (!currentSessionId) return;
+
+    setIsProcessing(true);
+    try {
+      const result = await generateAgent({
+        sessionId: currentSessionId,
+      });
+
+      toast.success("Agent generated successfully!");
+
+      // Navigate to manual builder or notify parent
+      if (onAgentsCreated) {
+        onAgentsCreated([{ id: result.agentId }]);
+      }
+    } catch (error: any) {
+      toast.error("Failed to generate agent");
+      console.error(error);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      if (hasStarted) {
+        handleSendResponse();
+      } else {
+        handleStart();
+      }
     }
   };
 
   return (
-    <div className="space-y-6">
+    <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="bg-gradient-to-r from-purple-900/20 to-blue-900/20 border border-purple-600/30 rounded-lg p-6">
+      <div className="bg-gradient-to-r from-purple-900/20 to-blue-900/20 border border-purple-600/30 rounded-lg p-6 mb-6">
         <div className="flex items-start gap-4">
           <div className="p-3 bg-purple-600/20 rounded-lg">
             <Sparkles className="w-6 h-6 text-purple-400" />
           </div>
           <div className="flex-1">
             <h2 className="text-2xl font-bold text-purple-400 mb-2">
-              AI-Powered Agent Builder
+              AI Agent Builder
             </h2>
             <p className="text-purple-300/70 text-sm">
-              Describe what you want to accomplish, and our AI will design the optimal agent(s) for you.
-              Uses Claude Haiku to analyze requirements and select the best models within your 300-point budget.
+              Let's build your perfect agent together! I'll ask you a few smart questions to understand exactly what you need.
             </p>
           </div>
         </div>
       </div>
 
-      {/* Input Section */}
-      <div className="bg-gray-900/50 border border-green-900/30 rounded-lg p-6">
-        <label className="block text-sm font-medium text-green-400 mb-2">
-          What do you want your agent to do?
-        </label>
-        <textarea
-          value={requirement}
-          onChange={(e) => setRequirement(e.target.value)}
-          placeholder="Example: I need a FedRAMP compliance consultant that can access FedRAMP documentation, analyze security requirements, and provide implementation guidance..."
-          rows={6}
-          className="w-full px-4 py-3 bg-black border border-green-900/30 rounded-lg text-green-400 placeholder-green-600 focus:border-green-400 focus:ring-1 focus:ring-green-400 outline-none transition-colors resize-none"
-        />
+      {/* Chat Interface */}
+      {!hasStarted ? (
+        /* Initial Input */
+        <div className="flex-1 flex flex-col justify-center max-w-3xl mx-auto w-full">
+          <div className="bg-gray-900/50 border border-green-900/30 rounded-lg p-6">
+            <label className="block text-sm font-medium text-green-400 mb-2">
+              What do you want your agent to do?
+            </label>
+            <textarea
+              value={initialDescription}
+              onChange={(e) => setInitialDescription(e.target.value)}
+              onKeyDown={handleKeyPress}
+              placeholder="Example: I need a customer support agent that can handle inquiries about our SaaS product..."
+              rows={6}
+              className="w-full px-4 py-3 bg-black border border-green-900/30 rounded-lg text-green-400 placeholder-green-600 focus:border-green-400 focus:ring-1 focus:ring-green-400 outline-none transition-colors resize-none"
+            />
 
-        <button
-          onClick={handleAnalyze}
-          disabled={isAnalyzing || !requirement.trim()}
-          className="mt-4 flex items-center gap-2 px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        >
-          {isAnalyzing ? (
-            <>
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
-              Analyzing with Claude Haiku...
-            </>
-          ) : (
-            <>
-              <Sparkles className="w-4 h-4" />
-              Design Optimal Agent(s)
-            </>
-          )}
-        </button>
-      </div>
-
-      {/* Results */}
-      {result && (
-        <div className="space-y-4">
-          {/* Analysis Summary */}
-          <div className="bg-blue-900/20 border border-blue-600/30 rounded-lg p-6">
-            <h3 className="text-lg font-semibold text-blue-400 mb-3">AI Analysis</h3>
-            <p className="text-blue-300 text-sm mb-4">{result.reasoning}</p>
-
-            {/* Budget Display */}
-            <div className="grid grid-cols-3 gap-4">
-              <div className="bg-black/50 rounded-lg p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <Target className="w-4 h-4 text-green-400" />
-                  <span className="text-xs text-gray-400">Total Points</span>
-                </div>
-                <div className="text-2xl font-bold text-green-400">
-                  {result.totalPoints}
-                </div>
-                <div className="text-xs text-gray-500">/ 300 max</div>
-              </div>
-
-              <div className="bg-black/50 rounded-lg p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <Cpu className="w-4 h-4 text-purple-400" />
-                  <span className="text-xs text-gray-400">Agents</span>
-                </div>
-                <div className="text-2xl font-bold text-purple-400">
-                  {result.agents.length}
-                </div>
-                <div className="text-xs text-gray-500">designed</div>
-              </div>
-
-              <div className="bg-black/50 rounded-lg p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <TrendingUp className="w-4 h-4 text-blue-400" />
-                  <span className="text-xs text-gray-400">Efficiency</span>
-                </div>
-                <div className="text-2xl font-bold text-blue-400">
-                  {Math.round((result.totalPoints / 300) * 100)}%
-                </div>
-                <div className="text-xs text-gray-500">budget used</div>
-              </div>
-            </div>
+            <button
+              onClick={handleStart}
+              disabled={isProcessing || !initialDescription.trim()}
+              className="mt-4 flex items-center gap-2 px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {isProcessing ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+                  Starting...
+                </>
+              ) : (
+                <>
+                  <ArrowRight className="w-4 h-4" />
+                  Let's Build!
+                </>
+              )}
+            </button>
           </div>
-
-          {/* Agent Cards */}
-          <div className="space-y-3">
-            <h3 className="text-lg font-semibold text-green-400">Designed Agents</h3>
-            {result.agents.map((agent: any, index: number) => (
+        </div>
+      ) : (
+        /* Conversation View */
+        <div className="flex-1 flex flex-col min-h-0">
+          {/* Messages */}
+          <div className="flex-1 overflow-y-auto space-y-4 mb-4">
+            {session?.conversationHistory.map((msg, index) => (
               <div
                 key={index}
-                className="bg-gray-900/50 border border-green-900/30 rounded-lg p-4"
+                className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
               >
-                <div className="flex items-start justify-between mb-3">
-                  <div>
-                    <h4 className="font-semibold text-green-400">{agent.name}</h4>
-                    <p className="text-sm text-green-600 font-mono">{agent.model}</p>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-sm font-medium text-purple-400">
-                      {agent.score.totalScore} points
+                <div
+                  className={`max-w-[80%] rounded-lg p-4 ${
+                    msg.role === "user"
+                      ? "bg-green-900/30 border border-green-600/30"
+                      : "bg-blue-900/30 border border-blue-600/30"
+                  }`}
+                >
+                  {/* Show thinking/reasoning for AI messages */}
+                  {msg.role === "assistant" && msg.reasoning && (
+                    <div className="mb-3 p-3 bg-black/50 rounded border border-purple-600/20">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Brain className="w-4 h-4 text-purple-400" />
+                        <span className="text-xs font-medium text-purple-400">Thinking...</span>
+                      </div>
+                      <p className="text-xs text-purple-300/70 italic">{msg.reasoning}</p>
                     </div>
-                    <div className="text-xs text-gray-500">
-                      Cost: {agent.score.costScore} | Size: {agent.score.sizeScore} | Ability: {agent.score.abilityScore}
-                    </div>
-                  </div>
-                </div>
+                  )}
 
-                <div className="bg-black/50 rounded p-3 mb-3">
-                  <div className="text-xs text-gray-400 mb-1">System Prompt:</div>
-                  <div className="text-sm text-green-300">{agent.systemPrompt}</div>
-                </div>
+                  {/* Message content */}
+                  <div
+                    className={`text-sm whitespace-pre-wrap ${
+                      msg.role === "user" ? "text-green-300" : "text-blue-300"
+                    }`}
+                  >
+                    {msg.content}
+                  </div>
 
-                <div className="flex items-center gap-4 text-xs">
-                  <div className="flex items-center gap-1">
-                    <DollarSign className="w-3 h-3 text-yellow-400" />
-                    <span className="text-gray-400">
-                      ${agent.score.costPerMToken}/M tokens
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Zap className="w-3 h-3 text-blue-400" />
-                    <span className="text-gray-400">
-                      {agent.deploymentType === "aws" ? "Bedrock" : "Ollama"}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Cpu className="w-3 h-3 text-purple-400" />
-                    <span className="text-gray-400">
-                      {agent.tools.length} tools
-                    </span>
+                  <div className="text-xs text-gray-500 mt-2">
+                    {new Date(msg.timestamp).toLocaleTimeString()}
                   </div>
                 </div>
               </div>
             ))}
+            <div ref={chatEndRef} />
           </div>
 
-          {/* Create Button */}
-          <button
-            onClick={handleCreateAgents}
-            className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-          >
-            <Sparkles className="w-4 h-4" />
-            Create These Agents
-          </button>
+          {/* Input Area */}
+          {session?.status === "ready_to_generate" ? (
+            /* Ready to Generate */
+            <div className="bg-green-900/20 border border-green-600/30 rounded-lg p-6">
+              <div className="flex items-start gap-4">
+                <CheckCircle2 className="w-6 h-6 text-green-400 flex-shrink-0 mt-1" />
+                <div className="flex-1">
+                  <h3 className="text-lg font-semibold text-green-400 mb-2">
+                    Ready to Generate!
+                  </h3>
+                  <p className="text-green-300/70 text-sm mb-4">
+                    I have all the information I need to build your perfect agent.
+                  </p>
+                  <button
+                    onClick={handleGenerate}
+                    disabled={isProcessing}
+                    className="flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {isProcessing ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <Lightbulb className="w-4 h-4" />
+                        Generate Agent
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* Continue Conversation */
+            <div className="bg-gray-900/50 border border-green-900/30 rounded-lg p-4">
+              <div className="flex gap-2">
+                <textarea
+                  value={currentResponse}
+                  onChange={(e) => setCurrentResponse(e.target.value)}
+                  onKeyDown={handleKeyPress}
+                  placeholder="Type your answer... (Enter to send, Shift+Enter for new line)"
+                  rows={2}
+                  className="flex-1 px-4 py-3 bg-black border border-green-900/30 rounded-lg text-green-400 placeholder-green-600 focus:border-green-400 focus:ring-1 focus:ring-green-400 outline-none transition-colors resize-none"
+                />
+                <button
+                  onClick={handleSendResponse}
+                  disabled={isProcessing || !currentResponse.trim()}
+                  className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                >
+                  {isProcessing ? (
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+                  ) : (
+                    <Send className="w-4 h-4" />
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

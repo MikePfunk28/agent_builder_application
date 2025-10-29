@@ -1,10 +1,12 @@
 # ============================================================================
 # CORE AGENT RUNTIME (AWS Bedrock AgentCore)
 # ============================================================================
-# NOTE: agent-core-code-interpreter extra removed - it pins bedrock-agentcore==0.1.0
-# The code_interpreter tool is available in base strands-agents-tools (no extra needed)
-strands-agents-tools[a2a-client,local-chromium-browser,mem0-memory,diagram,rss,use-computer]>=0.2.12
+# Strands Agents - Core framework
+strandsagents>=1.0.0
 strands-agents>=1.0.0
+
+# Strands Tools - All extras for comprehensive tool support
+strands-agents-tools[a2a-client,local-chromium-browser,mem0-memory,diagram,rss,use-computer,agent-core-memory,agent-core-browser]>=0.2.12
 
 # Bedrock AgentCore stack - latest versions
 bedrock-agentcore>=0.1.6
@@ -63,13 +65,37 @@ uvicorn[standard]>=0.27.0
 # Pydantic for data validation
 pydantic>=2.5.0
 
-# OpenTelemetry for X-Ray tracing (on-demand logging)
+# ============================================================================
+# SECURITY
+# ============================================================================
+# Cryptography for secure operations
+cryptography>=42.0.0
+
+# Input validation and sanitization
+bleach>=6.1.0
+
+# Rate limiting
+slowapi>=0.1.9
+
+# Security headers
+secure>=0.3.0
+
+# ============================================================================
+# OBSERVABILITY (OpenTelemetry + AWS X-Ray)
+# ============================================================================
+# OpenTelemetry for distributed tracing (vendor-neutral)
 opentelemetry-api>=1.22.0
 opentelemetry-sdk>=1.22.0
 opentelemetry-instrumentation-fastapi>=0.43b0
-aws-xray-sdk>=2.12.0
 
-# Logging
+# AWS X-Ray SDK and OTEL exporter
+aws-xray-sdk>=2.12.0
+opentelemetry-sdk-extension-aws>=2.0.1
+
+# OTEL exports to: AWS X-Ray (via opentelemetry-sdk-extension-aws)
+# View traces in: AWS Console → X-Ray → Service Map
+
+# Logging (with security audit support)
 python-json-logger>=2.0.7
 
 # Runtime helpers pulled in transitively; keep pinned explicitly
@@ -83,3 +109,9 @@ python-dateutil>=2.8.2
 # Browser automation runtime (required by AgentCore Browser quickstart)
 playwright>=1.47
 nest-asyncio>=1.6
+
+# Ollama for local model support (Tier 2 deployments)
+ollama>=0.12.3
+
+# UTCP for agent communication
+strands-utcp>=0.1.0
