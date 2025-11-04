@@ -133,3 +133,4 @@ evaluators/db_tool.py
 ARCHITECTURE_DIAGRAM.txt
 OLLAMA_QUICK_SUMMARY.txt
 mcp.json
+tmp_write_check.txt

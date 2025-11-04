@@ -193,9 +193,8 @@ async function executeSequential(
 }
 */
 
-// TODO: Implement these internal mutations when multiAgentSessions and multiAgentResults tables are added to schema
+// Multi-agent session management mutations (NOW ENABLED with schema tables)
 
-/*
 export const createSession = internalMutation({
   args: {
     parentAgentId: v.id("agents"),
@@ -245,12 +244,14 @@ export const recordAgentResult = internalMutation({
     status: v.string(),
   },
   handler: async (ctx, args) => {
+    const startedAt = Date.now();
     await ctx.db.insert("multiAgentResults", {
       sessionId: args.sessionId,
       agentId: args.agentId,
       conversationId: args.conversationId,
       result: args.result,
       status: args.status,
+      startedAt,
       completedAt: Date.now(),
     });
   },
@@ -265,7 +266,7 @@ export const completeSession = internalMutation({
     await ctx.db.patch(args.sessionId, {
       status: "completed",
       completedAt: Date.now(),
+      result: args.results,
     });
   },
 });
-*/

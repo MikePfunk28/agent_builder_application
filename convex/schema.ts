@@ -645,6 +645,39 @@ const applicationTables = {
     .index("by_user", ["userId"])
     .index("by_action", ["action"]),
 
+  // Multi-Agent Sessions (Swarm/Graph/Workflow patterns)
+  multiAgentSessions: defineTable({
+    parentAgentId: v.id("agents"),
+    parentConversationId: v.optional(v.id("interleavedConversations")),
+    pattern: v.string(), // "swarm" | "graph" | "workflow"
+    executionMode: v.string(), // "parallel" | "sequential" | "mixed"
+    agentIds: v.array(v.id("agents")),
+    status: v.string(), // "running" | "completed" | "failed"
+    startedAt: v.number(),
+    completedAt: v.optional(v.number()),
+    result: v.optional(v.any()),
+  })
+    .index("by_parent_agent", ["parentAgentId"])
+    .index("by_parent_conversation", ["parentConversationId"])
+    .index("by_pattern", ["pattern", "startedAt"])
+    .index("by_status", ["status", "startedAt"]),
+
+  // Multi-Agent Results (individual agent outputs in multi-agent sessions)
+  multiAgentResults: defineTable({
+    sessionId: v.id("multiAgentSessions"),
+    agentId: v.id("agents"),
+    conversationId: v.id("interleavedConversations"),
+    result: v.any(),
+    status: v.string(), // "running" | "completed" | "failed"
+    startedAt: v.number(),
+    completedAt: v.number(),
+    executionTime: v.optional(v.number()),
+    error: v.optional(v.string()),
+  })
+    .index("by_session", ["sessionId", "completedAt"])
+    .index("by_agent", ["agentId", "completedAt"])
+    .index("by_status", ["status", "completedAt"]),
+
 };
 
 export default defineSchema({

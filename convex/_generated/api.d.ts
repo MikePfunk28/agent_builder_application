@@ -106,6 +106,7 @@ import type * as users from "../users.js";
 import type * as workflowExecutor from "../workflowExecutor.js";
 import type * as workflowTemplateSeeder from "../workflowTemplateSeeder.js";
 import type * as workflowTemplates from "../workflowTemplates.js";
+import type * as workflows from "../workflows.js";
 
 import type {
   ApiFromModules,
@@ -220,6 +221,7 @@ declare const fullApi: ApiFromModules<{
   workflowExecutor: typeof workflowExecutor;
   workflowTemplateSeeder: typeof workflowTemplateSeeder;
   workflowTemplates: typeof workflowTemplates;
+  workflows: typeof workflows;
 }>;
 declare const fullApiWithMounts: typeof fullApi;
 
