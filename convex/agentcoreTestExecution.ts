@@ -84,9 +84,15 @@ export const executeAgentCoreTest = internalAction({
           conversationHistory: args.conversationHistory,
         });
 
-        // BACKUP: Lambda with @app.entrypoint if Bedrock fails
+        // BACKUP: Lambda with @app.entrypoint if Bedrock fails or SDK misbehaves
         if (!result.success) {
-          console.log(`Bedrock failed, trying Lambda backup for test ${args.testId}`);
+          if (shouldFallbackToLambda(result.error)) {
+            console.warn(
+              `Bedrock SDK failure detected (${result.error}). Falling back to Lambda for test ${args.testId}`
+            );
+          } else {
+            console.log(`Bedrock failed, trying Lambda backup for test ${args.testId}`);
+          }
 
           result = await executeViaLambda({
             agentCode: agent.generatedCode,
@@ -143,6 +149,7 @@ export const executeAgentCoreTest = internalAction({
     } catch (error: any) {
       const executionTime = Date.now() - startTime;
 
+      console.error("executeAgentCoreTest failed:", error);
       await ctx.runMutation(internal.testExecution.updateStatus, {
         testId: args.testId,
         status: "FAILED",
@@ -313,11 +320,20 @@ async function executeViaDirectBedrock(params: {
       },
     };
   } catch (error: any) {
+    console.error("Bedrock direct invoke failed:", error);
+    const message = error instanceof Error ? error.message : String(error);
     return {
       success: false,
-      error: `Bedrock API failed: ${error.message}`,
+      error: `Bedrock API failed: ${message}`,
     };
   }
+}
+
+function shouldFallbackToLambda(errorMessage?: string) {
+  if (!errorMessage) {
+    return false;
+  }
+  return /is not a constructor/i.test(errorMessage) || /bedrock runtime failed/i.test(errorMessage);
 }
 
 /**

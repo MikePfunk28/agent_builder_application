@@ -2,8 +2,10 @@
 # CORE AGENT RUNTIME (AWS Bedrock AgentCore)
 # ============================================================================
 # Strands Agents - Core framework
-strandsagents>=1.0.0
-strands-agents>=1.0.0
+# NOTE: These packages are private and break public builds.
+# Install them manually from the internal registry when available.
+# strandsagents>=1.0.0
+# strands-agents>=1.0.0
 
 # Strands Tools - All extras for comprehensive tool support
 strands-agents-tools[a2a-client,local-chromium-browser,mem0-memory,diagram,rss,use-computer,agent-core-memory,agent-core-browser]>=0.2.12
