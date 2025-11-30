@@ -125,6 +125,29 @@ export default function App() {
               </p>
             </div>
             <SignInForm />
+            
+            {/* Privacy Policy and Terms of Service Links */}
+            <div className="mt-8 pt-6 border-t border-green-900/30">
+              <div className="flex items-center justify-center gap-4 text-sm">
+                <a
+                  href="https://mikepfunk.com/privacy"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-green-600 hover:text-green-400 transition-colors underline"
+                >
+                  Privacy Policy
+                </a>
+                <span className="text-green-900">•</span>
+                <a
+                  href="https://mikepfunk.com/tos"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-green-600 hover:text-green-400 transition-colors underline"
+                >
+                  Terms of Service
+                </a>
+              </div>
+            </div>
           </div>
         </Unauthenticated>
 
