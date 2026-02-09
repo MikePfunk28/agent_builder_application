@@ -141,7 +141,7 @@ const applicationTables = {
     awsCredentialsUpdatedAt: v.optional(v.number()),
   })
     .index("by_tier", ["tier"])
-    .index("email", ["email"])
+    .index("by_email", ["email"])
     .index("by_auth_provider", ["authProvider"])
     .index("by_device_id", ["deviceId"]),
 
@@ -673,7 +673,7 @@ const applicationTables = {
     result: v.any(),
     status: v.string(), // "running" | "completed" | "failed"
     startedAt: v.number(),
-    completedAt: v.number(),
+    completedAt: v.optional(v.number()),
     executionTime: v.optional(v.number()),
     error: v.optional(v.string()),
   })
@@ -765,7 +765,7 @@ export default defineSchema({
 
   // Tool memory storage for memory tools (short-term, long-term, semantic)
   toolMemory: defineTable({
-    userId: v.string(),
+    userId: v.string(), // Auth identity string (e.g. "anonymous"), not v.id("users") — see resolveUserId() in tools.ts
     memoryType: v.string(), // "short_term" | "long_term" | "semantic"
     key: v.string(),
     value: v.string(), // JSON-stringified for safety

@@ -89,19 +89,20 @@ export const search = internalQuery({
   handler: async (ctx, args) => {
     const limit = args.maxItems || 20;
 
+    // Over-fetch to account for expired entries that will be filtered out
     const entries = await ctx.db
       .query("toolMemory")
       .withIndex("by_type", (q) =>
         q.eq("userId", args.userId).eq("memoryType", args.memoryType)
       )
       .order("desc")
-      .take(limit);
+      .take(limit * 3);
 
-    // Filter expired entries
+    // Filter expired entries, then limit to requested count
     const now = Date.now();
-    return entries.filter(
-      (entry) => !entry.ttl || now - entry.updatedAt <= entry.ttl * 1000
-    );
+    return entries
+      .filter((entry) => !entry.ttl || now - entry.updatedAt <= entry.ttl * 1000)
+      .slice(0, limit);
   },
 });
 

@@ -2013,7 +2013,7 @@ describe("Deployment Integration Tests", () => {
       const user = await t.run(async (ctx) => {
         return await ctx.db
           .query("users")
-          .withIndex("email", (q) => q.eq("email", "personal1@example.com"))
+          .withIndex("by_email", (q) => q.eq("email", "personal1@example.com"))
           .first();
       });
 

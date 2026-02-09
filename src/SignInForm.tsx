@@ -42,6 +42,7 @@ export function SignInForm() {
           name="email"
           placeholder="Email"
           required
+          autoComplete="email"
         />
         <input
           className="auth-input-field"

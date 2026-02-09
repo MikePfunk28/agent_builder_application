@@ -48,7 +48,7 @@ export const executeWorkflow = action({
     const hasRouterNodes = nodes.some((n) => n.data.type === "Router");
 
     // 3. CHOOSE EXECUTION STRATEGY
-    if (hasPromptNodes && hasModelNodes) {
+    if (hasPromptNodes && hasModelNodes && !hasRouterNodes) {
       // Use message composer for Prompt + Model workflows
       return await executePromptModelWorkflow(ctx, { nodes, edges, input, runtimeInputs, startTime });
     } else if (hasRouterNodes) {
@@ -140,6 +140,10 @@ async function executeRoutedWorkflow(
 
   if (entryNodes.length === 0) {
     throw new Error("No entry point found in workflow");
+  }
+
+  if (entryNodes.length > 1) {
+    throw new Error(`Workflow has ${entryNodes.length} entry points (nodes with no incoming edges). Expected exactly one.`);
   }
 
   // Execute starting from entry point
@@ -260,11 +264,13 @@ async function executeDAGWorkflow(
   if (outputNodes.length === 0) {
     // No explicit output, execute all nodes
     await Promise.all(nodes.map((n) => executeNodeRecursive(n.id)));
-    // Return last executed result
-    const lastNode = nodes[nodes.length - 1];
+    // Return the last node that was actually executed (by execution order)
+    const lastExecutedNodeId = executionLog.length > 0
+      ? executionLog[executionLog.length - 1].nodeId
+      : nodes[nodes.length - 1].id;
     return {
       success: true,
-      result: nodeResults.get(lastNode.id),
+      result: nodeResults.get(lastExecutedNodeId),
       executionLog,
       executionTime: Date.now() - startTime,
     };

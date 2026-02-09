@@ -267,7 +267,7 @@ async function executeViaDirectBedrock(params: {
         "command-r-plus": "cohere.command-r-plus-v1:0",
         "command-r": "cohere.command-r-v1:0",
       };
-      modelId = modelMap[params.modelId] || "us.anthropic.claude-3-5-haiku-20241022-v1:0";
+      modelId = modelMap[params.modelId] || process.env.AGENT_BUILDER_MODEL_ID || "us.anthropic.claude-haiku-4-5-20250514-v1:0";
     }
 
     // Build conversation using Converse API (works with ALL Bedrock models)

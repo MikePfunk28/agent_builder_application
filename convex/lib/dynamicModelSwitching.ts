@@ -32,10 +32,10 @@ export interface ModelTier {
 export const MODEL_TIERS: Record<string, ModelTier> = {
   // Fast & Cheap
   haiku: {
-    name: "Claude 3.5 Haiku",
-    modelId: "us.anthropic.claude-3-5-haiku-20241022-v1:0",
-    costPer1KInput: 0.0008,
-    costPer1KOutput: 0.004,
+    name: "Claude 4.5 Haiku",
+    modelId: "us.anthropic.claude-haiku-4-5-20250514-v1:0",
+    costPer1KInput: 0.001,
+    costPer1KOutput: 0.005,
     maxTokens: 8000,
     speedRating: 1,
     capabilityRating: 1,

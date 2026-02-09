@@ -77,8 +77,8 @@ export const MULTI_PLATFORM_MODELS: Record<string, ModelCapabilities> = {
   // AWS Bedrock - Claude
   "bedrock-haiku": {
     provider: "aws-bedrock",
-    modelId: "us.anthropic.claude-3-5-haiku-20241022-v1:0",
-    name: "Claude 3.5 Haiku (Bedrock)",
+    modelId: "us.anthropic.claude-haiku-4-5-20250514-v1:0",
+    name: "Claude 4.5 Haiku (Bedrock)",
     modality: "text",
     costPer1KTokens: 0.0008,
     averageLatency: 800,

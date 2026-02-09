@@ -45,6 +45,18 @@ async function resolveUserId(ctx: any): Promise<string> {
 }
 
 /* ──────────────────────────────────────────────────────────────
+ * Helper: safely parse JSON from memory store values.
+ * Returns raw string if parsing fails (corrupted data).
+ * ────────────────────────────────────────────────────────────── */
+function safeJsonParse(value: string): unknown {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
+/* ──────────────────────────────────────────────────────────────
  * Helper: invoke a model and return the text response.
  * Builds a ComposedMessages payload for executeComposedMessages.
  * The model arg is expected to be a Bedrock model ID.
@@ -160,7 +172,7 @@ export const shortTermMemory = action({
           key: args.key,
         });
         return {
-          result: entry ? JSON.parse(entry.value) : null,
+          result: entry ? safeJsonParse(entry.value) : null,
           key: args.key,
         };
       }
@@ -174,7 +186,7 @@ export const shortTermMemory = action({
         return {
           results: entries.map((e: MemoryEntry) => ({
             key: e.key,
-            value: JSON.parse(e.value),
+            value: safeJsonParse(e.value),
             updatedAt: e.updatedAt,
           })),
           query: args.key,
@@ -209,7 +221,7 @@ export const longTermMemory = action({
     key: v.string(),
     value: v.optional(v.any()),
     metadata: v.optional(v.any()),
-    enableVersioning: v.optional(v.boolean()),
+    enableVersioning: v.optional(v.boolean()), // Reserved: version history not yet implemented
   },
   handler: async (ctx, args): Promise<unknown> => {
     const userId = await resolveUserId(ctx);
@@ -240,9 +252,9 @@ export const longTermMemory = action({
           key: args.key,
         });
         return {
-          result: entry ? JSON.parse(entry.value) : null,
+          result: entry ? safeJsonParse(entry.value) : null,
           key: args.key,
-          metadata: entry?.metadata ? JSON.parse(entry.metadata) : null,
+          metadata: entry?.metadata ? safeJsonParse(entry.metadata) : null,
         };
       }
 
@@ -255,8 +267,8 @@ export const longTermMemory = action({
         return {
           results: entries.map((e: MemoryEntry) => ({
             key: e.key,
-            value: JSON.parse(e.value),
-            metadata: e.metadata ? JSON.parse(e.metadata) : null,
+            value: safeJsonParse(e.value),
+            metadata: e.metadata ? safeJsonParse(e.metadata) : null,
             updatedAt: e.updatedAt,
           })),
           query: args.key,
@@ -289,8 +301,8 @@ export const semanticMemory = action({
   args: {
     query: v.string(),
     topK: v.optional(v.number()),
-    similarityThreshold: v.optional(v.number()),
-    filters: v.optional(v.record(v.string(), v.string())),
+    similarityThreshold: v.optional(v.number()), // Reserved: used when vector DB is connected
+    filters: v.optional(v.record(v.string(), v.string())), // Reserved: used when vector DB is connected
   },
   handler: async (ctx, args): Promise<unknown> => {
     const userId = await resolveUserId(ctx);
@@ -318,7 +330,7 @@ export const semanticMemory = action({
     return {
       results: scored.map((item: { entry: MemoryEntry; score: number }) => ({
         key: item.entry.key,
-        value: JSON.parse(item.entry.value),
+        value: safeJsonParse(item.entry.value),
         score: item.score,
       })),
       relevanceScores: scored.map((item: { entry: MemoryEntry; score: number }) => item.score),
@@ -352,7 +364,7 @@ export const selfConsistency = action({
 
     // Generate multiple reasoning paths with different temperatures
     for (let i = 0; i < numPaths; i++) {
-      const temperature = 0.5 + (i * 0.15);
+      const temperature = Math.min(1.0, 0.5 + (i * 0.15));
       const prompt = `Solve the following problem step by step. Show your reasoning, then give a final answer on the last line prefixed with "ANSWER: ".\n\nProblem: ${args.problem}`;
 
       try {
@@ -407,29 +419,34 @@ export const treeOfThoughts = action({
     let bestPath: string[] = [args.problem];
     let bestScore = 0;
 
-    // Breadth-first expansion
-    let frontier = [args.problem];
+    // Breadth-first expansion with path tracking
+    let frontier: Array<{ thought: string; path: string[] }> = [
+      { thought: args.problem, path: [args.problem] },
+    ];
 
     for (let depth = 0; depth < maxDepth && frontier.length > 0; depth++) {
-      const nextFrontier: string[] = [];
+      const nextFrontier: Array<{ thought: string; path: string[] }> = [];
 
-      for (const thought of frontier.slice(0, branchingFactor)) {
+      for (const { thought, path } of frontier.slice(0, branchingFactor)) {
         const expandPrompt = `Given this reasoning step:\n"${thought}"\n\nGenerate ${branchingFactor} possible next reasoning steps. Number them 1), 2), etc. Then rate which is most promising on a scale of 0-10 after "SCORE: ".`;
 
         try {
           const response = await invokeLLM(args.model, expandPrompt, { temperature: 0.8, maxTokens: 1024 });
           explored.push(response);
 
-          // Extract numbered items as next thoughts
+          // Extract numbered items as next thoughts with path tracking
           const items = response.match(/\d\)\s*(.+)/g) || [];
-          nextFrontier.push(...items.map((item) => item.replace(/^\d\)\s*/, "").trim()));
+          nextFrontier.push(...items.map((item) => {
+            const cleaned = item.replace(/^\d\)\s*/, "").trim();
+            return { thought: cleaned, path: [...path, cleaned] };
+          }));
 
           // Extract score
           const scoreMatch = response.match(/SCORE:\s*(\d+)/i);
           const score = scoreMatch ? parseInt(scoreMatch[1], 10) : 5;
           if (score > bestScore) {
             bestScore = score;
-            bestPath = [...bestPath, thought];
+            bestPath = path;
           }
         } catch (error: any) {
           explored.push(`Expansion failed: ${error.message}`);
@@ -538,17 +555,24 @@ export const mapReduce = action({
       chunks.push(args.data.slice(i, i + chunkSize));
     }
 
-    // MAP phase: Process each chunk with actual LLM calls
-    const mapResults = await Promise.all(
-      chunks.map(async (chunk, index) => {
-        const prompt = `${args.mapPrompt}\n\nData chunk ${index + 1}:\n${JSON.stringify(chunk, null, 2)}`;
-        try {
-          return await invokeLLM(args.model, prompt, { temperature: 0.3, maxTokens: 2048 });
-        } catch (error: any) {
-          return `Chunk ${index + 1} failed: ${error.message}`;
-        }
-      })
-    );
+    // MAP phase: Process chunks in batches to limit concurrency
+    const MAP_CONCURRENCY = 5;
+    const mapResults: string[] = [];
+    for (let i = 0; i < chunks.length; i += MAP_CONCURRENCY) {
+      const batch = chunks.slice(i, i + MAP_CONCURRENCY);
+      const batchResults = await Promise.all(
+        batch.map(async (chunk, batchIdx) => {
+          const index = i + batchIdx;
+          const prompt = `${args.mapPrompt}\n\nData chunk ${index + 1}:\n${JSON.stringify(chunk, null, 2)}`;
+          try {
+            return await invokeLLM(args.model, prompt, { temperature: 0.3, maxTokens: 2048 });
+          } catch (error: any) {
+            return `Chunk ${index + 1} failed: ${error.message}`;
+          }
+        })
+      );
+      mapResults.push(...batchResults);
+    }
 
     // REDUCE phase: Aggregate results with LLM
     let finalResult: string;

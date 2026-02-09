@@ -5,7 +5,7 @@ on:
     branches:
       - main
   schedule:
-    - cron: '0 0 * * 0'  # Every Sunday at midnight UTC
+    - cron: "0 0 * * 0" # Every Sunday at midnight UTC
   issues:
     types: [opened, reopened]
   pull_request:
@@ -16,84 +16,115 @@ jobs:
   setup-project:
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: Set up GitHub CLI
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y gh
+      - name: Set up GitHub CLI
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gh
+          # Verify gh CLI version is compatible (>=2.21.0) for native 'gh project' commands
+          version=$(gh --version | head -n1 | awk '{print $3}' 2>/dev/null || echo "0.0.0")
+          major=$(echo "$version" | cut -d. -f1)
+          minor=$(echo "$version" | cut -d. -f2)
+          if [ "$major" -lt 2 ] || { [ "$major" -eq 2 ] && [ "$minor" -lt 21 ]; }; then
+            echo "gh CLI >= 2.21.0 required. Current: $version" >&2
+            exit 1
+          fi
 
-    - name: Install GH Projects extension
-      run: gh extension install github/gh-projects
+      - name: Authenticate GH CLI
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh auth login --with-token <<< "${GH_TOKEN}"
 
-    - name: Authenticate GH CLI
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: gh auth login --with-token <<< "${GH_TOKEN}"
+      - name: Create Project with description
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PROJECT_NAME="Auto Project"
+          PROJECT_DESC="Automated project for task management with weekly iterations"
 
-    - name: Create Project with description
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        PROJECT_NAME="Auto Project"
-        PROJECT_DESC="Automated project for task management with weekly iterations"
-        
-        # Check if project exists
-        PROJECT_ID=$(gh projects list --owner ${{ github.repository_owner }} --format json | jq -r ".[] | select(.title == \"$PROJECT_NAME\") | .id" 2>/dev/null || echo "")
-        
-        if [ -z "$PROJECT_ID" ]; then
-          echo "Creating new project..."
-          gh projects create "$PROJECT_NAME" --owner ${{ github.repository_owner }}
-          PROJECT_ID=$(gh projects list --owner ${{ github.repository_owner }} --format json | jq -r ".[] | select(.title == \"$PROJECT_NAME\") | .id")
-        fi
-        
-        echo "PROJECT_ID=$PROJECT_ID" >> $GITHUB_ENV
+          # Check if project exists
+          PROJECT_ID=$(gh project list --owner ${{ github.repository_owner }} --format json 2>/dev/null | jq -r ".[] | select(.title == \"$PROJECT_NAME\") | .id" || echo "")
 
-    - name: Add Board, Table, Timeline views
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        PROJECT_ID=${{ env.PROJECT_ID }}
-        
-        # Add Table view
-        gh projects view $PROJECT_ID --format json | jq -e '.views[] | select(.name=="Tasks Table")' || \
-        gh projects view $PROJECT_ID --add-view table --name "Tasks Table"
-        
-        # Add Board view
-        gh projects view $PROJECT_ID --format json | jq -e '.views[] | select(.name=="Kanban Board")' || \
-        gh projects view $PROJECT_ID --add-view board --name "Kanban Board"
-        
-        # Add Timeline view
-        gh projects view $PROJECT_ID --format json | jq -e '.views[] | select(.name=="Schedule Timeline")' || \
-        gh projects view $PROJECT_ID --add-view timeline --name "Schedule Timeline"
+          if [ -z "$PROJECT_ID" ]; then
+            echo "Creating new project..."
+            gh project create "$PROJECT_NAME" --owner ${{ github.repository_owner }} --body "$PROJECT_DESC"
 
-    - name: Backfill existing open issues
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        PROJECT_ID=${{ env.PROJECT_ID }}
-        REPO="${{ github.repository }}"
-        
-        # Get all open issues and add them to the project
-        gh issue list --repo $REPO --state open --limit 100 --format json | \
-        jq -r '.[] | .number' | \
-        while read issue_num; do
-          gh project item-add $PROJECT_ID --issue "$REPO#$issue_num" 2>/dev/null || true
-        done
+            # Re-check to ensure we obtained an ID, fail explicitly if not found
+            PROJECT_ID=$(gh project list --owner ${{ github.repository_owner }} --format json 2>/dev/null | jq -r ".[] | select(.title == \"$PROJECT_NAME\") | .id" || echo "")
+            if [ -z "$PROJECT_ID" ]; then
+              echo "Failed to obtain PROJECT_ID for $PROJECT_NAME" >&2
+              exit 1
+            fi
+          fi
 
-    - name: Add new issues/PRs to project
-      if: github.event_name == 'issues' || github.event_name == 'pull_request'
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        PROJECT_ID=${{ env.PROJECT_ID }}
-        REPO="${{ github.repository }}"
-        
-        if [ "${{ github.event_name }}" == "issues" ]; then
-          ITEM="${REPO}#${{ github.event.issue.number }}"
-        elif [ "${{ github.event_name }}" == "pull_request" ]; then
-          ITEM="${REPO}#${{ github.event.pull_request.number }}"
-        fi
-        
-        gh project item-add $PROJECT_ID --issue "$ITEM" 2>/dev/null || true
+          echo "PROJECT_ID=$PROJECT_ID" >> $GITHUB_ENV
+
+      - name: Add Board, Table, Timeline views
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PROJECT_ID=${{ env.PROJECT_ID }}
+
+          # Add Table view
+          gh project view $PROJECT_ID --format json | jq -e '.views[] | select(.name=="Tasks Table")' || \
+          gh project view $PROJECT_ID --add-view table --name "Tasks Table"
+
+          # Add Board view
+          gh project view $PROJECT_ID --format json | jq -e '.views[] | select(.name=="Kanban Board")' || \
+          gh project view $PROJECT_ID --add-view board --name "Kanban Board"
+
+          # Add Timeline view
+          gh project view $PROJECT_ID --format json | jq -e '.views[] | select(.name=="Schedule Timeline")' || \
+          gh project view $PROJECT_ID --add-view timeline --name "Schedule Timeline"
+
+      - name: Backfill existing open issues
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PROJECT_ID=${{ env.PROJECT_ID }}
+          REPO="${{ github.repository }}"
+
+          # Paginate through issues to avoid missing items
+          page=1
+          while :; do
+            issues_json=$(gh issue list --repo "$REPO" --state open --json number --page $page --limit 100 2>&1)
+            rc=$?
+            if [ $rc -ne 0 ]; then
+              echo "Error listing issues for $REPO (page $page): $issues_json" >&2
+              exit $rc
+            fi
+
+            count=$(echo "$issues_json" | jq length)
+            if [ "$count" -eq 0 ]; then
+              break
+            fi
+
+            echo "$issues_json" | jq -r '.[] | .number' | while read issue_num; do
+              err=$(gh project item-add "$PROJECT_ID" --issue "$REPO#$issue_num" 2>&1) || {
+                echo "Error adding issue $issue_num to project $PROJECT_ID: $err" >&2
+              }
+            done
+
+            page=$((page+1))
+          done
+
+      - name: Add new issues/PRs to project
+        if: github.event_name == 'issues' || github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PROJECT_ID=${{ env.PROJECT_ID }}
+          REPO="${{ github.repository }}"
+
+          if [ "${{ github.event_name }}" = "issues" ]; then
+            ITEM="${REPO}#${{ github.event.issue.number }}"
+            out=$(gh project item-add "$PROJECT_ID" --issue "$ITEM" 2>&1) || { echo "Error adding issue $ITEM to project: $out" >&2; exit 1; }
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            URL="https://github.com/${REPO}/pull/${{ github.event.pull_request.number }}"
+            out=$(gh project item-add "$PROJECT_ID" --url "$URL" 2>&1) || { echo "Error adding PR $URL to project: $out" >&2; exit 1; }
+          else
+            echo "Unsupported event: ${{ github.event_name }}" >&2
+            exit 1
+          fi

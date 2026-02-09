@@ -20,19 +20,19 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 /**
  * Create a new agent building session
  */
-export const createBuildSession = mutation({
+export const createBuildSession = mutation( {
   args: {
-    initialDescription: v.optional(v.string()),
+    initialDescription: v.optional( v.string() ),
   },
-  handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
+  handler: async ( ctx, args ) => {
+    const userId = await getAuthUserId( ctx );
 
-    if (!userId) {
-      throw new Error("Authentication required to build agents");
+    if ( !userId ) {
+      throw new Error( "Authentication required to build agents" );
     }
 
     // Initialize session with agent requirements
-    const sessionId = await ctx.db.insert("agentBuildSessions", {
+    const sessionId = await ctx.db.insert( "agentBuildSessions", {
       userId,
       status: "gathering_requirements",
       currentQuestion: 0,
@@ -49,77 +49,77 @@ export const createBuildSession = mutation({
       },
       conversationHistory: args.initialDescription
         ? [
-            {
-              role: "user",
-              content: args.initialDescription,
-              timestamp: Date.now(),
-            },
-          ]
+          {
+            role: "user",
+            content: args.initialDescription,
+            timestamp: Date.now(),
+          },
+        ]
         : [],
       createdAt: Date.now(),
       updatedAt: Date.now(),
-    });
+    } );
 
     return { sessionId };
   },
-});
+} );
 
 /**
  * Get build session
  */
-export const getBuildSession = query({
+export const getBuildSession = query( {
   args: {
-    sessionId: v.id("agentBuildSessions"),
+    sessionId: v.id( "agentBuildSessions" ),
   },
-  handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) return null;
+  handler: async ( ctx, args ) => {
+    const userId = await getAuthUserId( ctx );
+    if ( !userId ) return null;
 
-    const session = await ctx.db.get(args.sessionId);
-    if (!session || session.userId !== userId) {
+    const session = await ctx.db.get( args.sessionId );
+    if ( !session || session.userId !== userId ) {
       return null;
     }
 
     return session;
   },
-});
+} );
 
 /**
  * Get user's build sessions
  */
-export const getUserBuildSessions = query({
+export const getUserBuildSessions = query( {
   args: {
-    limit: v.optional(v.number()),
+    limit: v.optional( v.number() ),
   },
-  handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) return [];
+  handler: async ( ctx, args ) => {
+    const userId = await getAuthUserId( ctx );
+    if ( !userId ) return [];
 
     return await ctx.db
-      .query("agentBuildSessions")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .order("desc")
-      .take(args.limit || 10);
+      .query( "agentBuildSessions" )
+      .withIndex( "by_user", ( q ) => q.eq( "userId", userId ) )
+      .order( "desc" )
+      .take( args.limit || 10 );
   },
-});
+} );
 
 /**
  * Process user response and ask next question
  * Uses strands-agents THINK tool for interleaved reasoning
  */
-export const processResponse = action({
+export const processResponse = action( {
   args: {
-    sessionId: v.id("agentBuildSessions"),
+    sessionId: v.id( "agentBuildSessions" ),
     userResponse: v.string(),
   },
-  handler: async (ctx, args) => {
+  handler: async ( ctx, args ) => {
     // Get session
-    const session = await ctx.runQuery(internal.automatedAgentBuilder.getBuildSessionInternal, {
+    const session = await ctx.runQuery( internal.automatedAgentBuilder.getBuildSessionInternal, {
       sessionId: args.sessionId,
-    });
+    } );
 
-    if (!session) {
-      throw new Error("Build session not found");
+    if ( !session ) {
+      throw new Error( "Build session not found" );
     }
 
     // Add user message to history
@@ -133,8 +133,8 @@ export const processResponse = action({
     ];
 
     // Use Claude Haiku 4.5 with interleaved thinking to analyze and ask next question
-    const systemPrompt = buildSystemPrompt(session.agentRequirements);
-    const response = await analyzeAndAskNext(systemPrompt, updatedHistory);
+    const systemPrompt = buildSystemPrompt( session.agentRequirements );
+    const response = await analyzeAndAskNext( systemPrompt, updatedHistory );
 
     // Parse response to extract:
     // 1. Thinking/reasoning
@@ -143,7 +143,7 @@ export const processResponse = action({
     const { thinking, requirements, nextQuestion, readyToGenerate, agentConfig } = response;
 
     // Update session
-    await ctx.runMutation(internal.automatedAgentBuilder.updateBuildSession, {
+    await ctx.runMutation( internal.automatedAgentBuilder.updateBuildSession, {
       sessionId: args.sessionId,
       conversationHistory: [
         ...updatedHistory,
@@ -158,7 +158,7 @@ export const processResponse = action({
       currentQuestion: session.currentQuestion + 1,
       status: readyToGenerate ? "ready_to_generate" : "gathering_requirements",
       generatedAgentConfig: readyToGenerate ? agentConfig : undefined,
-    });
+    } );
 
     return {
       thinking,
@@ -168,52 +168,52 @@ export const processResponse = action({
       requirements,
     };
   },
-});
+} );
 
 /**
  * Internal query to get build session
  */
-export const getBuildSessionInternal = internalQuery({
+export const getBuildSessionInternal = internalQuery( {
   args: {
-    sessionId: v.id("agentBuildSessions"),
+    sessionId: v.id( "agentBuildSessions" ),
   },
-  handler: async (ctx, args) => {
-    return await ctx.db.get(args.sessionId);
+  handler: async ( ctx, args ) => {
+    return await ctx.db.get( args.sessionId );
   },
-});
+} );
 
 /**
  * Internal mutation to update build session
  */
-export const updateBuildSession = internalMutation({
+export const updateBuildSession = internalMutation( {
   args: {
-    sessionId: v.id("agentBuildSessions"),
+    sessionId: v.id( "agentBuildSessions" ),
     conversationHistory: v.any(),
     agentRequirements: v.any(),
     currentQuestion: v.number(),
     status: v.string(),
-    generatedAgentConfig: v.optional(v.any()),
+    generatedAgentConfig: v.optional( v.any() ),
   },
-  handler: async (ctx, args) => {
-    await ctx.db.patch(args.sessionId, {
+  handler: async ( ctx, args ) => {
+    await ctx.db.patch( args.sessionId, {
       conversationHistory: args.conversationHistory,
       agentRequirements: args.agentRequirements,
       currentQuestion: args.currentQuestion,
       status: args.status,
       generatedAgentConfig: args.generatedAgentConfig,
       updatedAt: Date.now(),
-    });
+    } );
   },
-});
+} );
 
 /**
  * Build system prompt for current question
  */
-function buildSystemPrompt(requirements: any): string {
+function buildSystemPrompt( requirements: any ): string {
   return `You are an intelligent agent builder assistant. Your goal is to gather requirements to build the perfect agent.
 
 CURRENT REQUIREMENTS:
-${JSON.stringify(requirements, null, 2)}
+${JSON.stringify( requirements, null, 2 )}
 
 WOZ-STYLE QUESTIONS (ask in order, skip if already answered):
 1. What kind of agent? (Suggest: Customer Support, Code Reviewer, Research Assistant, Data Analyst, Content Creator, Compliance Consultant)
@@ -280,55 +280,76 @@ async function analyzeAndAskNext(
   readyToGenerate: boolean;
   agentConfig: any | null;
 }> {
-  const { BedrockRuntimeClient, InvokeModelCommand } = await import("@aws-sdk/client-bedrock-runtime");
+  const { BedrockRuntimeClient, InvokeModelCommand } = await import( "@aws-sdk/client-bedrock-runtime" );
 
-  const client = new BedrockRuntimeClient({
-    region: process.env.AWS_REGION || "us-east-1",
+  const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
+  const region = process.env.AWS_REGION || "us-east-1";
+
+  if ( !accessKeyId || !secretAccessKey ) {
+    throw new Error( "Missing AWS credentials: ensure AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are set in the environment" );
+  }
+
+  const client = new BedrockRuntimeClient( {
+    region,
     credentials: {
-      accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+      accessKeyId,
+      secretAccessKey,
     },
-  });
+  } );
 
   // Build messages in Bedrock format
-  const messages = conversationHistory.map((msg) => ({
+  const messages = conversationHistory.map( ( msg ) => ( {
     role: msg.role as "user" | "assistant",
     content: [{ text: msg.content }],
-  }));
+  } ) );
 
-  const modelId = process.env.AGENT_BUILDER_MODEL_ID || "us.anthropic.claude-3-5-haiku-20241022-v1:0";
+  const modelId = process.env.AGENT_BUILDER_MODEL_ID || "us.anthropic.claude-haiku-4-5-20250514-v1:0";
 
   const payload = {
     anthropic_version: "bedrock-2023-05-31",
     max_tokens: 4096,
-    temperature: 1,
+    // Use lower temperature to produce more stable structured JSON responses
+    temperature: 0.5,
     system: systemPrompt,
     messages,
   };
 
-  const command = new InvokeModelCommand({
+  const command = new InvokeModelCommand( {
     modelId,
     contentType: "application/json",
     accept: "application/json",
-    body: JSON.stringify(payload),
-  });
+    body: JSON.stringify( payload ),
+  } );
 
-  const response: any = await client.send(command);
-  const responseBody = JSON.parse(new TextDecoder().decode(response.body));
+  let responseBody: any;
+  try {
+    const response: any = await client.send( command );
+    const decoded = new TextDecoder().decode( response.body );
+    try {
+      responseBody = JSON.parse( decoded );
+    } catch ( parseErr: any ) {
+      console.error( "Failed to parse Bedrock response body", { modelId, decoded, parseErr } );
+      throw new Error( `Failed to parse Bedrock response body: ${parseErr.message}` );
+    }
+  } catch ( err: any ) {
+    console.error( "Bedrock model invocation failed", { modelId, err } );
+    throw new Error( `Bedrock model invocation failed: ${err.message}` );
+  }
 
   // Extract text response
   let textResponse = "";
-  for (const block of responseBody.content || []) {
-    if (block.type === "text") {
+  for ( const block of responseBody.content || [] ) {
+    if ( block.type === "text" ) {
       textResponse += block.text;
     }
   }
 
   // Parse response - AI should return structured JSON
   try {
-    const parsed = JSON.parse(textResponse);
+    const parsed = JSON.parse( textResponse );
 
-    if (parsed.readyToGenerate) {
+    if ( parsed.readyToGenerate ) {
       return {
         thinking: parsed.reasoning || "Agent requirements gathered successfully",
         requirements: parsed.agentConfig,
@@ -339,7 +360,7 @@ async function analyzeAndAskNext(
     } else {
       const suggestions = parsed.suggestions || [];
       const formattedQuestion = suggestions.length > 0
-        ? `${parsed.nextQuestion}\n\nSuggestions:\n${suggestions.map((s: string, i: number) => `${i + 1}. ${s}`).join("\n")}`
+        ? `${parsed.nextQuestion}\n\nSuggestions:\n${suggestions.map( ( s: string, i: number ) => `${i + 1}. ${s}` ).join( "\n" )}`
         : parsed.nextQuestion;
 
       return {
@@ -350,7 +371,7 @@ async function analyzeAndAskNext(
         agentConfig: null,
       };
     }
-  } catch (error) {
+  } catch ( error ) {
     // Fallback if JSON parsing fails - treat as next question
     return {
       thinking: "Processing user input...",
@@ -365,29 +386,29 @@ async function analyzeAndAskNext(
 /**
  * Generate agent from build session
  */
-export const generateAgentFromSession = action({
+export const generateAgentFromSession = action( {
   args: {
-    sessionId: v.id("agentBuildSessions"),
+    sessionId: v.id( "agentBuildSessions" ),
   },
-  handler: async (ctx, args): Promise<{
+  handler: async ( ctx, args ): Promise<{
     success: boolean;
     agentId: any;
     generatedCode: string;
     requirementsTxt: string | null;
     mcpConfig: string | null;
   }> => {
-    const session = await ctx.runQuery(internal.automatedAgentBuilder.getBuildSessionInternal, {
+    const session = await ctx.runQuery( internal.automatedAgentBuilder.getBuildSessionInternal, {
       sessionId: args.sessionId,
-    });
+    } );
 
-    if (!session || session.status !== "ready_to_generate" || !session.generatedAgentConfig) {
-      throw new Error("Session not ready to generate agent");
+    if ( !session || session.status !== "ready_to_generate" || !session.generatedAgentConfig ) {
+      throw new Error( "Session not ready to generate agent" );
     }
 
     const config = session.generatedAgentConfig;
 
     // Generate agent code using codeGenerator
-    const result = await ctx.runAction(api.codeGenerator.generateAgent, {
+    const result = await ctx.runAction( api.codeGenerator.generateAgent, {
       name: config.name,
       model: config.model,
       systemPrompt: config.systemPrompt,
@@ -395,10 +416,10 @@ export const generateAgentFromSession = action({
       deploymentType: config.deploymentType || "aws",
       mcpServers: config.mcpServers,
       dynamicTools: config.dynamicTools,
-    });
+    } );
 
     // Create agent in database
-    const agentId: any = await ctx.runMutation(api.agents.create, {
+    const agentId: any = await ctx.runMutation( api.agents.create, {
       name: config.name,
       description: `AI-generated agent: ${config.name}`,
       model: config.model,
@@ -411,17 +432,17 @@ export const generateAgentFromSession = action({
       exposableAsMCPTool: false,
       mcpToolName: "",
       mcpInputSchema: undefined,
-    });
+    } );
 
     // Update session as completed
-    await ctx.runMutation(internal.automatedAgentBuilder.updateBuildSession, {
+    await ctx.runMutation( internal.automatedAgentBuilder.updateBuildSession, {
       sessionId: args.sessionId,
       conversationHistory: session.conversationHistory,
       agentRequirements: session.agentRequirements,
       currentQuestion: session.currentQuestion,
       status: "completed",
       generatedAgentConfig: { ...config, agentId },
-    });
+    } );
 
     return {
       success: true,
@@ -431,4 +452,4 @@ export const generateAgentFromSession = action({
       mcpConfig: result.mcpConfig,
     };
   },
-});
+} );

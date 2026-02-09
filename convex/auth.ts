@@ -16,8 +16,8 @@ const providers: any[] = [
 // AWS Cognito OAuth - OIDC provider for AWS Federated Identity
 // When users sign in with Cognito, they can exchange their ID token for AWS credentials
 // This enables deployment to their own AWS accounts
-if (process.env.COGNITO_ISSUER_URL && process.env.COGNITO_CLIENT_ID && process.env.COGNITO_CLIENT_SECRET) {
-  const CognitoConfig = CognitoProvider({
+if ( process.env.COGNITO_ISSUER_URL && process.env.COGNITO_CLIENT_ID && process.env.COGNITO_CLIENT_SECRET ) {
+  const CognitoConfig = CognitoProvider( {
     id: "cognito",
     name: "AWS Cognito",
     issuer: process.env.COGNITO_ISSUER_URL,
@@ -28,7 +28,7 @@ if (process.env.COGNITO_ISSUER_URL && process.env.COGNITO_CLIENT_ID && process.e
         scope: "openid email profile aws.cognito.signin.user.admin",
       },
     },
-    profile(profile: any) {
+    profile( profile: any ) {
       return {
         id: profile.sub,
         name: profile.name ?? profile.email,
@@ -37,21 +37,21 @@ if (process.env.COGNITO_ISSUER_URL && process.env.COGNITO_CLIENT_ID && process.e
         cognitoUsername: profile["cognito:username"],
       };
     },
-  });
-  providers.push(CognitoConfig);
+  } );
+  providers.push( CognitoConfig );
 }
 
-export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
+export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth( {
   providers,
-});
+} );
 
-export const loggedInUser = query({
-  handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
+export const loggedInUser = query( {
+  handler: async ( ctx ) => {
+    const userId = await getAuthUserId( ctx );
+    if ( !userId ) {
       return null;
     }
-    const user = await ctx.db.get(userId);
+    const user = await ctx.db.get( userId );
     return user ?? null;
   },
-});
+} );

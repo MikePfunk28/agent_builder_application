@@ -41,16 +41,16 @@ export const UNIFIED_MODEL_CATALOG: Record<string, Record<string, UnifiedModelTi
   text: {
     haiku: {
       modality: "text",
-      name: "Claude 3.5 Haiku",
-      modelId: "us.anthropic.claude-3-5-haiku-20241022-v1:0",
-      costPer1KTokensOrUnit: 0.0008,
+      name: "Claude 4.5 Haiku",
+      modelId: "us.anthropic.claude-haiku-4-5-20250514-v1:0",
+      costPer1KTokensOrUnit: 0.001,
       speedRating: 1,
       qualityRating: 1,
     },
     sonnet: {
       modality: "text",
-      name: "Claude 3.5 Sonnet",
-      modelId: "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+      name: "Claude 4.5 Sonnet",
+      modelId: "anthropic.claude-sonnet-4-5-20250929-v1:0",
       costPer1KTokensOrUnit: 0.003,
       speedRating: 2,
       qualityRating: 2,

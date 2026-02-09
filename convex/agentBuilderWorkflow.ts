@@ -15,7 +15,7 @@ import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedroc
 const WORKFLOW_MODEL_ID =
   process.env.BEDROCK_WORKFLOW_MODEL_ID ||
   process.env.DEFAULT_BEDROCK_MODEL_ID ||
-  "us.anthropic.claude-3-5-haiku-20241022-v1:0";
+  "us.anthropic.claude-haiku-4-5-20250514-v1:0";
 const WORKFLOW_REGION =
   process.env.BEDROCK_REGION ||
   process.env.AWS_REGION ||

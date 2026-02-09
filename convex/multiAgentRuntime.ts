@@ -242,17 +242,18 @@ export const recordAgentResult = internalMutation({
     conversationId: v.id("interleavedConversations"),
     result: v.any(),
     status: v.string(),
+    startedAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const startedAt = Date.now();
+    const now = Date.now();
     await ctx.db.insert("multiAgentResults", {
       sessionId: args.sessionId,
       agentId: args.agentId,
       conversationId: args.conversationId,
       result: args.result,
       status: args.status,
-      startedAt,
-      completedAt: Date.now(),
+      startedAt: args.startedAt ?? now,
+      completedAt: args.status === "running" ? undefined : now,
     });
   },
 });

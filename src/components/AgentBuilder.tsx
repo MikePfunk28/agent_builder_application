@@ -22,6 +22,7 @@ import {
   CheckCircle
 } from "lucide-react";
 import { ModelSelector } from "./ModelSelector";
+import { listModelsByProvider } from "../data/modelCatalog";
 import { ToolSelector } from "./ToolSelector";
 import { CodePreview } from "./CodePreview";
 import { AgentTester } from "./AgentTester";
@@ -65,7 +66,7 @@ export function AgentBuilder() {
   const [config, setConfig] = useState<AgentConfig>({
     name: "",
     description: "",
-    model: "us.anthropic.claude-3-5-haiku-20241022-v1:0",
+    model: (() => { const [m] = listModelsByProvider("bedrock"); return m?.id ?? "us.anthropic.claude-haiku-4-5-20250514-v1:0"; })(),
     systemPrompt: "",
     tools: [],
     deploymentType: "aws",
@@ -268,7 +269,7 @@ export function AgentBuilder() {
     const autoConfig: AgentConfig = {
       name: derivedName,
       description: derivedDescription,
-      model: "us.anthropic.claude-3-5-haiku-20241022-v1:0",
+      model: config.model,
       systemPrompt: derivedSystemPrompt,
       tools: config.tools,
       deploymentType: "aws",
