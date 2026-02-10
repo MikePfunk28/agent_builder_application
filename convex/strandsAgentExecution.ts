@@ -85,6 +85,26 @@ export const executeAgentWithStrandsAgents = action({
         throw new Error("Agent not found");
       }
 
+      // Model gating: Check if user's tier allows the agent's model provider
+      const { isProviderAllowedForTier, isBedrockModelAllowedForTier } = await import("./lib/tierConfig");
+      const agentOwner = await ctx.runQuery(internal.users.getInternal, { id: agent.createdBy });
+      const userTier = agentOwner?.tier || "freemium";
+      const isBedrock = agent.deploymentType !== "ollama" && !agent.model.includes(":");
+      if (isBedrock && !isProviderAllowedForTier(userTier, "bedrock")) {
+        return {
+          success: false,
+          error: "Bedrock models require a Personal subscription ($5/month). " +
+                 "Use local Ollama models for free, or upgrade in Settings → Billing.",
+        };
+      }
+      if (isBedrock && !isBedrockModelAllowedForTier(userTier, agent.model)) {
+        return {
+          success: false,
+          error: `Model ${agent.model} is not available on the ${userTier} tier. ` +
+                 "Upgrade your subscription for access to this model.",
+        };
+      }
+
       let history: ConversationMessage[] = [];
       if (args.conversationId) {
         history = (await ctx.runQuery(internal.interleavedReasoning.getConversationHistory, {

@@ -109,6 +109,17 @@ export const executeAgentWithDynamicModel = action({
       const user = await ctx.runQuery(internal.users.getInternal, { id: agent.createdBy });
       const userTier = (user?.tier as "freemium" | "personal" | "enterprise") || "freemium";
 
+      // Model gating: Block freemium users from Bedrock models
+      const { isProviderAllowedForTier } = await import("./lib/tierConfig");
+      const isBedrock = agent.deploymentType !== "ollama" && !agent.model.includes(":");
+      if (isBedrock && !isProviderAllowedForTier(userTier, "bedrock")) {
+        return {
+          success: false,
+          error: "Bedrock models require a Personal subscription ($5/month). " +
+                 "Use local Ollama models for free, or upgrade in Settings → Billing.",
+        };
+      }
+
       // Execute with or without dynamic model switching
       if (args.enableModelSwitching !== false) {
         return await executeWithModelSwitching(ctx, agent, args.message, history, {

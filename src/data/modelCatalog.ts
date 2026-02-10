@@ -22,6 +22,8 @@ export interface ModelMetadata {
   };
   tags?: string[];
   recommended?: boolean;
+  /** Minimum tier required to use this model. undefined = available to all tiers. */
+  requiredTier?: "personal" | "enterprise";
 }
 
 export const MODEL_CATALOG: ModelMetadata[] = [
@@ -40,6 +42,7 @@ export const MODEL_CATALOG: ModelMetadata[] = [
     },
     tags: ["reasoning", "coding", "analysis"],
     recommended: true,
+    requiredTier: "personal",
   },
   {
     id: "us.anthropic.claude-haiku-4-5-20250514-v1:0",
@@ -55,6 +58,7 @@ export const MODEL_CATALOG: ModelMetadata[] = [
     },
     tags: ["reasoning", "fast", "tool-use"],
     recommended: true,
+    requiredTier: "personal",
   },
   {
     id: "anthropic.claude-opus-4-1-20250805-v1:0",
@@ -69,6 +73,7 @@ export const MODEL_CATALOG: ModelMetadata[] = [
       maxTokens: 4096,
     },
     tags: ["reasoning", "analysis", "creative"],
+    requiredTier: "enterprise",
   },
   {
     id: "anthropic.claude-opus-4-20250514-v1:0",
@@ -83,6 +88,7 @@ export const MODEL_CATALOG: ModelMetadata[] = [
       maxTokens: 4096,
     },
     tags: ["enterprise", "research"],
+    requiredTier: "enterprise",
   },
   {
     id: "anthropic.claude-sonnet-4-20250514-v1:0",
@@ -97,6 +103,7 @@ export const MODEL_CATALOG: ModelMetadata[] = [
       maxTokens: 4096,
     },
     tags: ["balanced", "analysis"],
+    requiredTier: "personal",
   },
   {
     id: "anthropic.claude-3-7-sonnet-20250219-v1:0",
@@ -111,6 +118,7 @@ export const MODEL_CATALOG: ModelMetadata[] = [
       maxTokens: 4096,
     },
     tags: ["reasoning", "analysis"],
+    requiredTier: "personal",
   },
   {
     id: "anthropic.claude-3-5-sonnet-20240620-v1:0",
@@ -125,6 +133,7 @@ export const MODEL_CATALOG: ModelMetadata[] = [
       maxTokens: 4096,
     },
     tags: ["reasoning", "general"],
+    requiredTier: "personal",
   },
   {
     id: "anthropic.claude-3-5-haiku-20241022-v1:0",
@@ -139,6 +148,7 @@ export const MODEL_CATALOG: ModelMetadata[] = [
       maxTokens: 4096,
     },
     tags: ["fast"],
+    requiredTier: "personal",
   },
   {
     id: "anthropic.claude-3-haiku-20240307-v1:0",
@@ -153,6 +163,7 @@ export const MODEL_CATALOG: ModelMetadata[] = [
       maxTokens: 3072,
     },
     tags: ["budget"],
+    requiredTier: "personal",
   },
   // Amazon Nova
   {
@@ -168,6 +179,7 @@ export const MODEL_CATALOG: ModelMetadata[] = [
       maxTokens: 4096,
     },
     tags: ["reasoning"],
+    requiredTier: "personal",
   },
   {
     id: "amazon.nova-pro-v1:0",
@@ -182,6 +194,7 @@ export const MODEL_CATALOG: ModelMetadata[] = [
       maxTokens: 4096,
     },
     tags: ["business"],
+    requiredTier: "personal",
   },
   {
     id: "amazon.nova-lite-v1:0",
@@ -196,6 +209,7 @@ export const MODEL_CATALOG: ModelMetadata[] = [
       maxTokens: 2048,
     },
     tags: ["budget"],
+    requiredTier: "personal",
   },
   // Cohere Command
   {
@@ -211,6 +225,7 @@ export const MODEL_CATALOG: ModelMetadata[] = [
       maxTokens: 3072,
     },
     tags: ["rag", "instruction"],
+    requiredTier: "personal",
   },
   {
     id: "cohere.command-r-v1:0",
@@ -225,6 +240,7 @@ export const MODEL_CATALOG: ModelMetadata[] = [
       maxTokens: 3072,
     },
     tags: ["rag"],
+    requiredTier: "personal",
   },
   // Mistral
   {
@@ -240,6 +256,7 @@ export const MODEL_CATALOG: ModelMetadata[] = [
       maxTokens: 3072,
     },
     tags: ["reasoning"],
+    requiredTier: "personal",
   },
   // Ollama - Recommended defaults (actual models detected dynamically via useLocalModels hook)
   {

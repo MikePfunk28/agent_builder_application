@@ -21,10 +21,8 @@ const MIN_TIMEOUT = 10000; // 10 seconds
 const MAX_TIMEOUT = 600000; // 10 minutes
 const MAX_CONCURRENT_TESTS = parseInt(process.env.MAX_CONCURRENT_TESTS || "10");
 
-// Rate Limiting Constants
-const FREE_TESTS_PER_MONTH = 50; // Freemium users get 50 free tests per month
-const PERSONAL_TESTS_PER_MONTH = 1000; // Personal tier gets 1000 tests per month
-const ENTERPRISE_UNLIMITED = true; // Enterprise has no limits
+// Rate Limiting - from centralized tier config (convex/lib/tierConfig.ts)
+import { getTierConfig, checkExecutionLimit, isProviderAllowedForTier, getUpgradeMessage } from "./lib/tierConfig";
 
 // Cost calculation helper
 function calculateBedrockCost(usage: any, modelId: string): number {
@@ -104,24 +102,16 @@ export const submitTest = mutation({
       const userTier = user.tier || "freemium";
       const testsThisMonth = user.testsThisMonth || 0;
 
-      // Check rate limits based on tier (only for cloud models)
-      if (userTier === "freemium" && testsThisMonth >= FREE_TESTS_PER_MONTH) {
+      // Check rate limits using centralized tier config
+      const limitCheck = checkExecutionLimit( userTier, testsThisMonth );
+      if ( !limitCheck.allowed ) {
+        const tierConfig = getTierConfig( userTier );
         throw new Error(
-          `Free cloud test limit reached (${FREE_TESTS_PER_MONTH} tests/month). ` +
+          `${tierConfig.displayName} tier cloud test limit reached (${tierConfig.monthlyExecutions} tests/month). ` +
           `You can: 1) Use Ollama models for unlimited FREE testing, ` +
-          `2) Upgrade to Personal tier, or 3) Deploy to your AWS account.`
+          `2) Upgrade to Personal ($5/month) for more capacity, or 3) Deploy to your AWS account.`
         );
       }
-
-      if (userTier === "personal" && testsThisMonth >= PERSONAL_TESTS_PER_MONTH) {
-        throw new Error(
-          `Personal tier cloud test limit reached (${PERSONAL_TESTS_PER_MONTH} tests/month). ` +
-          `You can: 1) Use Ollama models for unlimited FREE testing, ` +
-          `2) Upgrade to Enterprise, or 3) Deploy to your AWS account.`
-        );
-      }
-
-      // Enterprise tier has no limits (ENTERPRISE_UNLIMITED is checked implicitly)
     }
 
     const effectiveUserId = userId;
@@ -410,18 +400,14 @@ export const retryTest = mutation({
       const userTier = user.tier || "freemium";
       const testsThisMonth = user.testsThisMonth || 0;
 
-      // Check rate limits
-      if (userTier === "freemium" && testsThisMonth >= FREE_TESTS_PER_MONTH) {
+      // Check rate limits using centralized tier config
+      const retestLimitCheck = checkExecutionLimit(userTier, testsThisMonth);
+      if (!retestLimitCheck.allowed) {
+        const retestTierCfg = getTierConfig(userTier);
         throw new Error(
-          `Free cloud test limit reached (${FREE_TESTS_PER_MONTH} tests/month). ` +
-          `Use Ollama models for unlimited FREE testing, upgrade to Personal tier, or deploy to your AWS account.`
-        );
-      }
-
-      if (userTier === "personal" && testsThisMonth >= PERSONAL_TESTS_PER_MONTH) {
-        throw new Error(
-          `Personal tier cloud test limit reached (${PERSONAL_TESTS_PER_MONTH} tests/month). ` +
-          `Use Ollama models for unlimited FREE testing, upgrade to Enterprise, or deploy to your AWS account.`
+          `${retestTierCfg.displayName} tier cloud test limit reached ` +
+          `(${retestTierCfg.monthlyExecutions} tests/month). ` +
+          getUpgradeMessage(userTier)
         );
       }
     }

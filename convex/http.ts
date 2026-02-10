@@ -1,8 +1,9 @@
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
 import { auth } from "./auth";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import { validateEnvironment } from "./envValidator";
+import type Stripe from "stripe";
 
 // Validate environment variables at module load time
 // This ensures critical configuration is present before handling requests
@@ -408,6 +409,117 @@ http.route({
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
     }
+  }),
+});
+
+// ─── Stripe Webhook ──────────────────────────────────────────────────────────
+// Receives events from Stripe and updates user subscription state.
+// Signature verification prevents forged webhook payloads.
+
+http.route({
+  path: "/stripe/webhook",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const { default: Stripe } = await import("stripe");
+
+    const secretKey = process.env.STRIPE_SECRET_KEY;
+    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+    if (!secretKey || !webhookSecret) {
+      console.error("Stripe webhook: Missing STRIPE_SECRET_KEY or STRIPE_WEBHOOK_SECRET env vars");
+      return new Response("Server configuration error", { status: 500 });
+    }
+
+    const stripe = new Stripe(secretKey);
+    const signature = request.headers.get("stripe-signature");
+
+    if (!signature) {
+      return new Response("Missing stripe-signature header", { status: 400 });
+    }
+
+    let event: Stripe.Event;
+    try {
+      const body = await request.text();
+      event = stripe.webhooks.constructEvent(body, signature, webhookSecret);
+    } catch (err: any) {
+      console.error(`Stripe webhook signature verification failed: ${err.message}`);
+      return new Response(`Webhook signature error: ${err.message}`, { status: 400 });
+    }
+
+    // Route events to internal mutations
+    try {
+      switch (event.type) {
+        case "checkout.session.completed": {
+          const session = event.data.object as Stripe.Checkout.Session;
+          if (session.customer && session.subscription) {
+            // Fetch subscription to get period end
+            // Note: current_period_end removed from Stripe SDK v20 types but still in API response
+            const sub = await stripe.subscriptions.retrieve(
+              session.subscription as string
+            ) as any;
+            await ctx.runMutation((internal as any).stripe.updateSubscription, {
+              stripeCustomerId: session.customer as string,
+              subscriptionId: sub.id,
+              status: sub.status,
+              currentPeriodEnd: sub.current_period_end as number,
+            });
+          }
+          break;
+        }
+
+        case "customer.subscription.updated": {
+          const sub = event.data.object as any; // Stripe.Subscription - cast for current_period_end
+          await ctx.runMutation((internal as any).stripe.updateSubscription, {
+            stripeCustomerId: sub.customer as string,
+            subscriptionId: sub.id,
+            status: sub.status,
+            currentPeriodEnd: sub.current_period_end as number,
+          });
+          break;
+        }
+
+        case "customer.subscription.deleted": {
+          const sub = event.data.object as Stripe.Subscription;
+          await ctx.runMutation((internal as any).stripe.cancelSubscription, {
+            stripeCustomerId: sub.customer as string,
+          });
+          break;
+        }
+
+        case "invoice.paid": {
+          const invoice = event.data.object as Stripe.Invoice;
+          if (invoice.customer) {
+            await ctx.runMutation((internal as any).stripe.resetMonthlyUsage, {
+              stripeCustomerId: invoice.customer as string,
+              periodStart: invoice.period_start,
+            });
+          }
+          break;
+        }
+
+        case "invoice.payment_failed": {
+          const invoice = event.data.object as Stripe.Invoice;
+          if (invoice.customer) {
+            await ctx.runMutation((internal as any).stripe.markPastDue, {
+              stripeCustomerId: invoice.customer as string,
+            });
+          }
+          break;
+        }
+
+        default:
+          // Unhandled event type - return 200 per Stripe best practices
+          break;
+      }
+    } catch (handlerError: any) {
+      console.error(`Stripe webhook handler error for ${event.type}: ${handlerError.message}`);
+      return new Response("Webhook handler error", { status: 500 });
+    }
+
+    return new Response(JSON.stringify({ received: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
   }),
 });
 

@@ -127,14 +127,10 @@ export const executeAgentTest = action({
       // Get monthly test count - simplified for now
       const monthlyTests: any = 0; // Simplified for now
 
-      // Rate limits by tier
-      const limits = {
-        freemium: 50,
-        personal: 500,
-        enterprise: -1, // unlimited
-      };
-
-      const limit = limits[tier as keyof typeof limits] || 50;
+      // Rate limits from centralized tier config
+      const { getTierConfig } = await import("./lib/tierConfig");
+      const tierConfig = getTierConfig(tier);
+      const limit = tierConfig.monthlyExecutions; // -1 = unlimited
       
       if (limit !== -1 && monthlyTests >= limit) {
         return {
@@ -239,13 +235,9 @@ export const getAgentCoreStatus = action({
 
       const monthlyTests: any = 0; // Simplified for now
 
-      const limits = {
-        freemium: 50,
-        personal: 500,
-        enterprise: -1,
-      };
-
-      const limit = limits[tier as keyof typeof limits] || 50;
+      const { getTierConfig: getTierCfg } = await import("./lib/tierConfig");
+      const tierCfg = getTierCfg(tier);
+      const limit = tierCfg.monthlyExecutions; // -1 = unlimited
 
       return {
         success: true,

@@ -11,8 +11,9 @@ import { AuditLogsPanel } from "./components/AuditLogsPanel";
 import { AIAgentBuilder } from "./components/AIAgentBuilder";
 import { InterleavedChat } from "./components/InterleavedChat";
 import { VisualScriptingBuilder } from "./components/VisualScriptingBuilder";
+import { PricingPanel } from "./components/PricingPanel";
 import { useState } from "react";
-import { Bot, Home, Server, AlertCircle, FileText, Sparkles, MessageSquare, GitBranch } from "lucide-react";
+import { Bot, Home, Server, AlertCircle, FileText, Sparkles, MessageSquare, GitBranch, CreditCard } from "lucide-react";
 import { BuilderAutomationProvider } from "./context/BuilderAutomationContext";
 
 export default function App() {
@@ -120,6 +121,17 @@ export default function App() {
                 <FileText className="w-4 h-4" />
                 Audit
               </button>
+              <button
+                onClick={() => setCurrentView("settings")}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
+                  currentView === "settings"
+                    ? "bg-green-900/30 text-green-400"
+                    : "text-green-600 hover:text-green-400"
+                }`}
+              >
+                <CreditCard className="w-4 h-4" />
+                Billing
+              </button>
               <SignOutButton />
             </nav>
           </Authenticated>
@@ -180,6 +192,8 @@ function Content({ currentView, onNavigate }: { currentView: string; onNavigate:
       return <AuditLogsPanel />;
     case "visualScripting":
       return <VisualScriptingBuilder />;
+    case "settings":
+      return <PricingPanel />;
     case "dashboard":
     default:
       return <AgentDashboard />;

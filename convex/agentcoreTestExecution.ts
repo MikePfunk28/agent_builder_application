@@ -48,8 +48,9 @@ export const executeAgentCoreTest = internalAction({
       const testsThisMonth = user?.testsThisMonth || 0;
       const tier = user?.tier || "freemium";
 
-      const limits = { freemium: 10, personal: 100, enterprise: -1 };
-      const limit = limits[tier as keyof typeof limits] || 10;
+      const { getTierConfig } = await import("./lib/tierConfig");
+      const tierCfg = getTierConfig(tier);
+      const limit = tierCfg.monthlyExecutions; // -1 = unlimited
 
       if (limit !== -1 && testsThisMonth >= limit) {
         await ctx.runMutation(internal.testExecution.updateStatus, {

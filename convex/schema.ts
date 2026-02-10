@@ -145,11 +145,20 @@ const applicationTables = {
       expiration: v.number(),
     } ) ),
     awsCredentialsUpdatedAt: v.optional( v.number() ),
+
+    // Stripe Billing
+    stripeCustomerId: v.optional( v.string() ),
+    stripeSubscriptionId: v.optional( v.string() ),
+    subscriptionStatus: v.optional( v.string() ), // "active", "past_due", "canceled"
+    currentPeriodEnd: v.optional( v.number() ), // Unix timestamp
+    executionsThisMonth: v.optional( v.number() ), // Cloud executions in current billing period
+    billingPeriodStart: v.optional( v.number() ), // Start of current billing period
   } )
     .index( "by_tier", ["tier"] )
     .index( "by_email", ["email"] )
     .index( "by_auth_provider", ["authProvider"] )
-    .index( "by_device_id", ["deviceId"] ),
+    .index( "by_device_id", ["deviceId"] )
+    .index( "by_stripe_customer_id", ["stripeCustomerId"] ),
 
   // API Keys for external access and usage tracking
   apiKeys: defineTable( {

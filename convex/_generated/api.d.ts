@@ -65,6 +65,7 @@ import type * as lib_memoryStore from "../lib/memoryStore.js";
 import type * as lib_messageExecutor from "../lib/messageExecutor.js";
 import type * as lib_roles from "../lib/roles.js";
 import type * as lib_strandsTools from "../lib/strandsTools.js";
+import type * as lib_tierConfig from "../lib/tierConfig.js";
 import type * as lib_unifiedModalitySwitching from "../lib/unifiedModalitySwitching.js";
 import type * as localModelDetector from "../localModelDetector.js";
 import type * as maintenance from "../maintenance.js";
@@ -171,6 +172,7 @@ declare const fullApi: ApiFromModules<{
   "lib/messageExecutor": typeof lib_messageExecutor;
   "lib/roles": typeof lib_roles;
   "lib/strandsTools": typeof lib_strandsTools;
+  "lib/tierConfig": typeof lib_tierConfig;
   "lib/unifiedModalitySwitching": typeof lib_unifiedModalitySwitching;
   localModelDetector: typeof localModelDetector;
   maintenance: typeof maintenance;

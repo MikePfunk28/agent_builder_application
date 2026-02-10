@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react";
-import { ChevronDown, Info, RefreshCw, Wifi, WifiOff } from "lucide-react";
+import { useQuery } from "convex/react";
+import { api } from "../../convex/_generated/api";
+import { ChevronDown, Info, Lock, RefreshCw, Wifi, WifiOff } from "lucide-react";
 import {
   MODEL_CATALOG,
   ModelMetadata,
@@ -25,10 +27,28 @@ const PROVIDER_OPTIONS: ProviderOption[] = [
   { id: "lmstudio", label: "LMStudio (Local)" },
 ];
 
+/** Check if the user's tier grants access to a model's requiredTier */
+function isTierSufficient(
+  userTier: string,
+  requiredTier: ModelMetadata["requiredTier"]
+): boolean {
+  if (!requiredTier) return true; // no restriction
+  const hierarchy: Record<string, number> = {
+    freemium: 0,
+    personal: 1,
+    enterprise: 2,
+  };
+  return (hierarchy[userTier] ?? 0) >= (hierarchy[requiredTier] ?? 0);
+}
+
 export function ModelSelector({ value, onChange }: ModelSelectorProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [provider, setProvider] = useState<ProviderOption["id"]>("all");
   const [customModelId, setCustomModelId] = useState("");
+
+  // Fetch the user's current subscription tier
+  const subscription = useQuery(api.stripe.getSubscriptionStatus);
+  const userTier = subscription?.tier ?? "freemium";
 
   // Detect locally-running models (Ollama + LMStudio) from the browser
   const {
@@ -173,20 +193,34 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
                 <div className="divide-y divide-emerald-500/10">
                   {models.map((model) => {
                     const isActive = value === model.id;
+                    const locked = !isTierSufficient(userTier, model.requiredTier);
+                    const tierLabel = model.requiredTier === "enterprise" ? "Enterprise" : "Personal";
                     return (
                       <button
                         key={model.id}
                         type="button"
-                        onClick={() => onChange(model.id)}
-                        className={`w-full text-left px-4 py-3 flex flex-col gap-2 hover:bg-emerald-500/10 transition-colors ${
-                          isActive ? "bg-emerald-500/15 border-l-2 border-emerald-400" : ""
-                        }`}
+                        onClick={() => {
+                          if (locked) return; // gated – no selection
+                          onChange(model.id);
+                        }}
+                        disabled={locked}
+                        className={`w-full text-left px-4 py-3 flex flex-col gap-2 transition-colors ${
+                          locked
+                            ? "opacity-50 cursor-not-allowed"
+                            : "hover:bg-emerald-500/10"
+                        } ${isActive ? "bg-emerald-500/15 border-l-2 border-emerald-400" : ""}`}
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div>
                             <p className="text-sm font-semibold text-gray-100 flex items-center gap-2">
                               {model.label}
-                              {model.recommended && (
+                              {locked && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/30">
+                                  <Lock className="w-3 h-3" />
+                                  Upgrade to {tierLabel}
+                                </span>
+                              )}
+                              {model.recommended && !locked && (
                                 <span className="inline-flex items-center px-2 py-0.5 text-[11px] rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
                                   Recommended
                                 </span>
@@ -194,7 +228,11 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
                             </p>
                             <p className="text-xs text-gray-400">{model.description}</p>
                           </div>
-                          <Info className="w-4 h-4 text-emerald-300 shrink-0" />
+                          {locked ? (
+                            <Lock className="w-4 h-4 text-amber-400 shrink-0" />
+                          ) : (
+                            <Info className="w-4 h-4 text-emerald-300 shrink-0" />
+                          )}
                         </div>
                         <div className="flex flex-wrap gap-2 text-[11px] text-emerald-300">
                           <span className="px-2 py-0.5 bg-emerald-500/10 rounded border border-emerald-500/20">

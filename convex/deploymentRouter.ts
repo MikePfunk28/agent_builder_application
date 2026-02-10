@@ -65,14 +65,17 @@ async function deployTier1(ctx: any, args: any, userId: any): Promise<any> {
   if (!user) throw new Error("User not found");
 
   const testsThisMonth: number = user.testsThisMonth || 0;
-  const limit = 10; // Free tier limit
+  // Use centralized tier config for limit
+  const { getTierConfig } = await import("./lib/tierConfig");
+  const freeTierConfig = getTierConfig("freemium");
+  const limit = freeTierConfig.monthlyExecutions;
 
   if (testsThisMonth >= limit) {
     return {
       success: false,
       error: "Free tier limit reached",
-      message: `You've used ${testsThisMonth}/${limit} free tests this month. Upgrade to deploy to your own AWS account!`,
-      upgradeUrl: "/settings/aws",
+      message: `You've used ${testsThisMonth}/${limit} free tests this month. Upgrade to Personal ($5/month) to deploy to your own AWS account!`,
+      upgradeUrl: "/settings",
     };
   }
 

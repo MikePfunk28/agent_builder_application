@@ -241,35 +241,17 @@ export const incrementUsage = mutation({
 });
 
 /**
- * Get tier limits
+ * Get tier limits - delegates to centralized tierConfig.
  */
 function getTierLimits(tier: string) {
-  switch (tier) {
-    case "freemium":
-      return {
-        testsPerMonth: 10,
-        maxConcurrentTests: 1,
-        maxAgents: 5,
-      };
-    case "personal":
-      return {
-        testsPerMonth: 1000,
-        maxConcurrentTests: 5,
-        maxAgents: 50,
-      };
-    case "enterprise":
-      return {
-        testsPerMonth: 10000,
-        maxConcurrentTests: 20,
-        maxAgents: 500,
-      };
-    default:
-      return {
-        testsPerMonth: 10,
-        maxConcurrentTests: 1,
-        maxAgents: 5,
-      };
-  }
+  // Import inline to avoid circular dependency with convex runtime
+  const { getTierConfig } = require("./lib/tierConfig");
+  const config = getTierConfig(tier);
+  return {
+    testsPerMonth: config.monthlyExecutions === -1 ? Infinity : config.monthlyExecutions,
+    maxConcurrentTests: config.maxConcurrentTests,
+    maxAgents: config.maxAgents,
+  };
 }
 
 /**

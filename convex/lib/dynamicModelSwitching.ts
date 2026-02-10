@@ -210,9 +210,11 @@ export function selectModel(
     ? [MODEL_TIERS.ollamaLlama]
     : [MODEL_TIERS.haiku, MODEL_TIERS.sonnet, MODEL_TIERS.opus];
 
-  // Freemium users: always use cheapest model
+  // Freemium users: only local models allowed (no Bedrock access)
   if (userTier === "freemium") {
-    return availableModels[0]; // Haiku or Ollama
+    // If the agent uses Ollama, return Ollama model; otherwise return cheapest available
+    // Bedrock gating is enforced at the execution layer, but we also constrain selection here
+    return isOllamaAgent ? availableModels[0] : MODEL_TIERS.ollamaLlama;
   }
 
   // Complexity-based routing
