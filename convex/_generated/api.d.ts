@@ -62,8 +62,11 @@ import type * as lib_cloudFormationGenerator from "../lib/cloudFormationGenerato
 import type * as lib_comprehensiveModelCatalog from "../lib/comprehensiveModelCatalog.js";
 import type * as lib_dynamicModelSwitching from "../lib/dynamicModelSwitching.js";
 import type * as lib_fileGenerators from "../lib/fileGenerators.js";
+import type * as lib_memoryStore from "../lib/memoryStore.js";
+import type * as lib_messageExecutor from "../lib/messageExecutor.js";
 import type * as lib_multiPlatformModelSelection from "../lib/multiPlatformModelSelection.js";
 import type * as lib_stateValidation from "../lib/stateValidation.js";
+import type * as lib_strandsTools from "../lib/strandsTools.js";
 import type * as lib_unifiedModalitySwitching from "../lib/unifiedModalitySwitching.js";
 import type * as localModelDetector from "../localModelDetector.js";
 import type * as maintenance from "../maintenance.js";
@@ -114,14 +117,6 @@ import type {
   FunctionReference,
 } from "convex/server";
 
-/**
- * A utility for referencing Convex functions in your app's API.
- *
- * Usage:
- * ```js
- * const myFunctionReference = api.myModule.myFunction;
- * ```
- */
 declare const fullApi: ApiFromModules<{
   agentAsToolGenerator: typeof agentAsToolGenerator;
   agentBuilderPrompts: typeof agentBuilderPrompts;
@@ -177,8 +172,11 @@ declare const fullApi: ApiFromModules<{
   "lib/comprehensiveModelCatalog": typeof lib_comprehensiveModelCatalog;
   "lib/dynamicModelSwitching": typeof lib_dynamicModelSwitching;
   "lib/fileGenerators": typeof lib_fileGenerators;
+  "lib/memoryStore": typeof lib_memoryStore;
+  "lib/messageExecutor": typeof lib_messageExecutor;
   "lib/multiPlatformModelSelection": typeof lib_multiPlatformModelSelection;
   "lib/stateValidation": typeof lib_stateValidation;
+  "lib/strandsTools": typeof lib_strandsTools;
   "lib/unifiedModalitySwitching": typeof lib_unifiedModalitySwitching;
   localModelDetector: typeof localModelDetector;
   maintenance: typeof maintenance;
@@ -223,14 +221,30 @@ declare const fullApi: ApiFromModules<{
   workflowTemplates: typeof workflowTemplates;
   workflows: typeof workflows;
 }>;
-declare const fullApiWithMounts: typeof fullApi;
 
+/**
+ * A utility for referencing Convex functions in your app's public API.
+ *
+ * Usage:
+ * ```js
+ * const myFunctionReference = api.myModule.myFunction;
+ * ```
+ */
 export declare const api: FilterApi<
-  typeof fullApiWithMounts,
+  typeof fullApi,
   FunctionReference<any, "public">
 >;
+
+/**
+ * A utility for referencing Convex functions in your app's internal API.
+ *
+ * Usage:
+ * ```js
+ * const myFunctionReference = internal.myModule.myFunction;
+ * ```
+ */
 export declare const internal: FilterApi<
-  typeof fullApiWithMounts,
+  typeof fullApi,
   FunctionReference<any, "internal">
 >;
 

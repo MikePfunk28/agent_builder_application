@@ -34,8 +34,10 @@ import {
   Gauge,
   Puzzle,
   Server,
+  Bot,
+  Zap,
 } from "lucide-react";
-import { useQuery, useAction } from "convex/react";
+import { useQuery, useAction, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { NodeSettingsDrawer } from "./NodeSettingsDrawer";
 import {
@@ -48,7 +50,8 @@ import type {
   WorkflowNode,
   WorkflowEdge,
 } from "../types/workflowNodes";
-import { MODEL_CATALOG, listModelsByProvider } from "../data/modelCatalog";
+import { MODEL_CATALOG, listModelsByProvider, LOCAL_MODEL_ENDPOINTS } from "../data/modelCatalog";
+import type { Id } from "../../convex/_generated/dataModel";
 
 type FlowNode = Node<WorkflowNodeData>;
 type FlowEdge = Edge;
@@ -127,13 +130,13 @@ const TOOL_CATEGORY_LABELS: Record<string, string> = {
   agents_workflows: "Agents & Workflows",
 };
 
-function formatCategoryLabel(category: string): string {
+function formatCategoryLabel( category: string ): string {
   return (
-    TOOL_CATEGORY_LABELS[category as keyof typeof TOOL_CATEGORY_LABELS] ??
+    TOOL_CATEGORY_LABELS[category] ??
     category
-      .split("_")
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-      .join(" ")
+      .split( "_" )
+      .map( ( part ) => part.charAt( 0 ).toUpperCase() + part.slice( 1 ) )
+      .join( " " )
   );
 }
 
@@ -147,13 +150,13 @@ function buildPaletteSections(
       "Ready-to-run workflows that showcase research, writing, and tool-first strategies.",
     accent: "from-purple-600/60 to-emerald-500/60",
     icon: <Sparkles className="w-4 h-4 text-white" />,
-    items: Object.values(TEMPLATE_DEFINITIONS).map<PaletteTemplateItem>((tpl) => ({
+    items: Object.values( TEMPLATE_DEFINITIONS ).map<PaletteTemplateItem>( ( tpl ) => ( {
       type: "template",
       templateId: tpl.id,
       title: tpl.title,
       description: tpl.description,
       badge: "Template",
-    })),
+    } ) ),
   };
 
   const promptSection: PaletteSection = {
@@ -175,23 +178,23 @@ function buildPaletteSections(
             description: "Gather background, context, and snippets into one message.",
             badge: "Core",
           },
-      {
-        type: "node",
-        kind: "PromptText",
-        title: "Prompt Snippet",
-        description: "Add reusable prompt text with roles and handlebars variables.",
-        badge: "Snippet",
-        configOverride: {
-          role: "system",
-          template:
-            "You are a helpful assistant. Think step-by-step, call tools when needed, and reflect before responding.\nGoal: {{goal}}",
-          inputs: {
-            goal: "Solve the user's request with accuracy",
+          {
+            type: "node",
+            kind: "PromptText",
+            title: "Prompt Snippet",
+            description: "Add reusable prompt text with roles and handlebars variables.",
+            badge: "Snippet",
+            configOverride: {
+              role: "system",
+              template:
+                "You are a helpful assistant. Think step-by-step, call tools when needed, and reflect before responding.\nGoal: {{goal}}",
+              inputs: {
+                goal: "Solve the user's request with accuracy",
+              },
+            },
           },
-        },
+        ],
       },
-    ],
-  },
       {
         id: "prompt-backgrounds",
         title: "Persona Backgrounds",
@@ -297,60 +300,82 @@ function buildPaletteSections(
     ],
   };
 
-  const bedrockModels = MODEL_CATALOG.filter(
-    (model) => model.provider === "bedrock"
-  );
-  const ollamaModels = MODEL_CATALOG.filter(
-    (model) => model.provider === "ollama"
+  // One generic "Model" entry per provider - user picks specific model in settings drawer
+  const firstBedrock = MODEL_CATALOG.find(
+    ( m ) => m.provider === "bedrock" && m.recommended
+  ) ?? MODEL_CATALOG.find( ( m ) => m.provider === "bedrock" );
+  const firstOllama = MODEL_CATALOG.find(
+    ( m ) => m.provider === "ollama" && m.recommended
+  ) ?? MODEL_CATALOG.find( ( m ) => m.provider === "ollama" );
+  const firstLmstudio = MODEL_CATALOG.find(
+    ( m ) => m.provider === "lmstudio"
   );
 
   const modelGroups: PaletteGroup[] = [];
-  if (bedrockModels.length > 0) {
-    modelGroups.push({
-      id: "bedrock",
-      title: "Bedrock Models",
-      items: bedrockModels.map<PaletteNodeItem>((model) => ({
-        type: "node",
-        kind: "Model",
-        title: model.label,
-        description: model.description,
-        badge: "Bedrock",
-        labelOverride: model.label,
-        configOverride: {
-          provider: "bedrock",
-          modelId: model.id,
-          temperature: model.defaultConfig.temperature ?? 0.2,
-          topP: model.defaultConfig.topP ?? 0.9,
-          maxTokens: model.defaultConfig.maxTokens ?? 4096,
-        },
-      })),
-    });
+  const modelItems: PaletteNodeItem[] = [];
+
+  if ( firstBedrock ) {
+    modelItems.push( {
+      type: "node",
+      kind: "Model",
+      title: "Bedrock Model",
+      description: "AWS Bedrock model - select specific model in settings.",
+      badge: "Bedrock",
+      configOverride: {
+        provider: "bedrock",
+        modelId: firstBedrock.id,
+        temperature: firstBedrock.defaultConfig.temperature ?? 0.2,
+        topP: firstBedrock.defaultConfig.topP ?? 0.9,
+        maxTokens: firstBedrock.defaultConfig.maxTokens ?? 4096,
+      },
+    } );
   }
 
-  if (ollamaModels.length > 0) {
-    modelGroups.push({
-      id: "ollama",
-      title: "Ollama Models",
-      items: ollamaModels.map<PaletteNodeItem>((model) => ({
-        type: "node",
-        kind: "Model",
-        title: model.label,
-        description: model.description,
-        badge: "Ollama",
-        labelOverride: model.label,
-        configOverride: {
-          provider: "ollama",
-          model: model.id,
-          endpoint: model.defaultConfig.endpoint ?? "http://localhost:11434",
-          temperature: model.defaultConfig.temperature ?? 0.4,
-          topP: model.defaultConfig.topP ?? 0.9,
-          numCtx: model.defaultConfig.numCtx ?? 8192,
-        },
-      })),
-    });
+  if ( firstOllama ) {
+    modelItems.push( {
+      type: "node",
+      kind: "Model",
+      title: "Ollama Model",
+      description: "Local Ollama model - select specific model in settings.",
+      badge: "Ollama",
+      configOverride: {
+        provider: "ollama",
+        model: firstOllama.id,
+        endpoint: firstOllama.defaultConfig.endpoint ?? LOCAL_MODEL_ENDPOINTS.ollama,
+        temperature: firstOllama.defaultConfig.temperature ?? 0.4,
+        topP: firstOllama.defaultConfig.topP ?? 0.9,
+        numCtx: firstOllama.defaultConfig.numCtx ?? 8192,
+      },
+    } );
   }
 
-  modelGroups.push({
+  if ( firstLmstudio ) {
+    modelItems.push( {
+      type: "node",
+      kind: "Model",
+      title: "LMStudio Model",
+      description: "Local LMStudio model (OpenAI-compatible) - configure in settings.",
+      badge: "LMStudio",
+      configOverride: {
+        provider: "lmstudio",
+        model: firstLmstudio.id,
+        endpoint: firstLmstudio.defaultConfig.endpoint ?? LOCAL_MODEL_ENDPOINTS.lmstudio,
+        temperature: firstLmstudio.defaultConfig.temperature ?? 0.4,
+        topP: firstLmstudio.defaultConfig.topP ?? 0.9,
+        maxTokens: firstLmstudio.defaultConfig.maxTokens ?? 4096,
+      },
+    } );
+  }
+
+  if ( modelItems.length > 0 ) {
+    modelGroups.push( {
+      id: "models",
+      title: "Models",
+      items: modelItems,
+    } );
+  }
+
+  modelGroups.push( {
     id: "model-routing",
     title: "Routing & Ensembles",
     items: [
@@ -371,7 +396,7 @@ function buildPaletteSections(
         badge: "Flow",
       },
     ],
-  });
+  } );
 
   const modelSection: PaletteSection = {
     id: "models",
@@ -383,7 +408,7 @@ function buildPaletteSections(
   };
 
   let toolGroups: PaletteGroup[] = [];
-  if (!toolMetadata) {
+  if ( !toolMetadata ) {
     toolGroups = [
       {
         id: "loading",
@@ -401,13 +426,13 @@ function buildPaletteSections(
     ];
   } else {
     const grouped = new Map<string, PaletteNodeItem[]>();
-    toolMetadata.forEach((tool) => {
+    toolMetadata.forEach( ( tool ) => {
       const item: PaletteNodeItem = {
         type: "node",
         kind: "Tool",
         title: tool.displayName,
         description: tool.description,
-        badge: formatCategoryLabel(tool.category),
+        badge: formatCategoryLabel( tool.category ),
         labelOverride: tool.displayName,
         configOverride: {
           kind: "internal",
@@ -415,22 +440,22 @@ function buildPaletteSections(
           args: {},
         },
       };
-      const current = grouped.get(tool.category) ?? [];
-      current.push(item);
-      grouped.set(tool.category, current);
-    });
+      const current = grouped.get( tool.category ) ?? [];
+      current.push( item );
+      grouped.set( tool.category, current );
+    } );
 
-    toolGroups = Array.from(grouped.entries())
-      .sort((a, b) =>
-        formatCategoryLabel(a[0]).localeCompare(formatCategoryLabel(b[0]))
+    toolGroups = Array.from( grouped.entries() )
+      .sort( ( a, b ) =>
+        formatCategoryLabel( a[0] ).localeCompare( formatCategoryLabel( b[0] ) )
       )
-      .map(([category, items]) => ({
+      .map( ( [category, items] ) => ( {
         id: category,
-        title: formatCategoryLabel(category),
+        title: formatCategoryLabel( category ),
         items,
-      }));
+      } ) );
 
-    toolGroups.push({
+    toolGroups.push( {
       id: "custom-tool",
       title: "Custom Bindings",
       items: [
@@ -443,7 +468,7 @@ function buildPaletteSections(
           badge: "Custom",
         },
       ],
-    });
+    } );
   }
 
   const toolSection: PaletteSection = {
@@ -642,8 +667,8 @@ const defaultLabels: Record<NodeKind, string> = {
   Router: "Router",
 };
 
-function defaultConfig(kind: NodeKind): WorkflowNodeData["config"] {
-  switch (kind) {
+function defaultConfig( kind: NodeKind ): WorkflowNodeData["config"] {
+  switch ( kind ) {
     case "Background":
     case "Context":
     case "OutputIndicator":
@@ -654,10 +679,10 @@ function defaultConfig(kind: NodeKind): WorkflowNodeData["config"] {
       return { validator: undefined };
     case "Model":
       {
-        const [firstBedrock] = listModelsByProvider("bedrock");
+        const [firstBedrock] = listModelsByProvider( "bedrock" );
         return {
           provider: "bedrock",
-          modelId: firstBedrock?.id ?? "anthropic.claude-3-5-sonnet-20241022",
+          modelId: firstBedrock?.id ?? "anthropic.claude-haiku-4-5-20251001-v1:0",
           temperature: firstBedrock?.defaultConfig.temperature ?? 0.2,
           topP: firstBedrock?.defaultConfig.topP ?? 0.9,
           maxTokens: firstBedrock?.defaultConfig.maxTokens ?? 4096,
@@ -704,14 +729,14 @@ function defaultConfig(kind: NodeKind): WorkflowNodeData["config"] {
   }
 }
 
-function generateId(kind: NodeKind): string {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+function generateId( kind: NodeKind ): string {
+  if ( typeof crypto !== "undefined" && "randomUUID" in crypto ) {
     return `${kind.toLowerCase()}-${crypto.randomUUID()}`;
   }
-  return `${kind.toLowerCase()}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  return `${kind.toLowerCase()}-${Date.now()}-${Math.floor( Math.random() * 1000 )}`;
 }
 
-function toWorkflowNode(node: FlowNode): WorkflowNode {
+function toWorkflowNode( node: FlowNode ): WorkflowNode {
   return {
     id: node.id,
     type: node.type,
@@ -720,18 +745,18 @@ function toWorkflowNode(node: FlowNode): WorkflowNode {
   };
 }
 
-function toWorkflowEdge(edge: FlowEdge): WorkflowEdge {
+function toWorkflowEdge( edge: FlowEdge ): WorkflowEdge {
   return {
     id: edge.id,
     source: edge.source,
     target: edge.target,
-    sourceHandle: edge.sourceHandle,
-    targetHandle: edge.targetHandle,
-    label: (edge as any).label,
+    sourceHandle: edge.sourceHandle ?? undefined,
+    targetHandle: edge.targetHandle ?? undefined,
+    label: ( edge as any ).label,
   };
 }
 
-function hydrateNode(raw: any): FlowNode {
+function hydrateNode( raw: any ): FlowNode {
   return {
     id: raw.id,
     type: raw.type ?? "workflow",
@@ -740,7 +765,7 @@ function hydrateNode(raw: any): FlowNode {
   };
 }
 
-function hydrateEdge(raw: any): FlowEdge {
+function hydrateEdge( raw: any ): FlowEdge {
   return {
     id: raw.id ?? `${raw.source}-${raw.target}`,
     source: raw.source,
@@ -761,7 +786,7 @@ function createFlowNode(
     config?: Record<string, any>;
   }
 ): FlowNode {
-  const id = options?.id ?? generateId(kind);
+  const id = options?.id ?? generateId( kind );
   return {
     id,
     type: "workflow",
@@ -771,10 +796,10 @@ function createFlowNode(
       label: options?.label ?? defaultLabels[kind],
       notes: options?.notes ?? "",
       config: {
-        ...defaultConfig(kind),
-        ...(options?.config ?? {}),
+        ...defaultConfig( kind ),
+        ...( options?.config ?? {} ),
       },
-    },
+    } as WorkflowNodeData,
   };
 }
 
@@ -797,18 +822,18 @@ function createEdge(
   };
 }
 
-function PaletteCard({
+function PaletteCard( {
   item,
   addNode,
   applyTemplate,
-}: {
+}: Readonly<{
   item: PaletteItem;
   addNode: (
     kind: NodeKind,
     options?: { label?: string; configOverride?: Record<string, any> }
   ) => void;
-  applyTemplate: (templateId: string) => void;
-}) {
+  applyTemplate: ( templateId: string ) => void;
+}> ) {
   const isTemplate = item.type === "template";
   const disabled = item.type === "node" && item.disabled;
 
@@ -828,20 +853,19 @@ function PaletteCard({
           type="button"
           disabled={disabled}
           onClick={() => {
-            if (isTemplate) {
-              applyTemplate(item.templateId);
+            if ( isTemplate ) {
+              applyTemplate( item.templateId );
             } else {
-              addNode(item.kind, {
-                label: item.labelOverride,
+              addNode( item.kind, {
+                label: item.labelOverride || undefined,
                 configOverride: item.configOverride,
-              });
+              } );
             }
           }}
-          className={`px-3 py-1.5 rounded text-xs font-semibold uppercase tracking-wide transition-colors ${
-            disabled
-              ? "bg-gray-800 text-gray-500 cursor-not-allowed"
-              : "bg-emerald-600 hover:bg-emerald-500 text-white"
-          }`}
+          className={`px-3 py-1.5 rounded text-xs font-semibold uppercase tracking-wide transition-colors ${disabled
+            ? "bg-gray-800 text-gray-500 cursor-not-allowed"
+            : "bg-emerald-600 hover:bg-emerald-500 text-white"
+            }`}
         >
           {isTemplate ? "Use Template" : "Add"}
         </button>
@@ -855,7 +879,7 @@ const TEMPLATE_DEFINITIONS: Record<string, TemplateDefinition> = {
     id: "research_workflow",
     title: "Research Squad",
     description:
-      "Researcher, analyst, fact-checker, and writer pipeline with Claude Sonnet + review tool.",
+      "Researcher, analyst, fact-checker, and writer pipeline with Claude Haiku + review tool.",
     accent: "from-emerald-500/80 to-cyan-500/80",
     build: () => {
       const prompt = createFlowNode(
@@ -914,10 +938,10 @@ const TEMPLATE_DEFINITIONS: Record<string, TemplateDefinition> = {
         "Model",
         { x: 560, y: 120 },
         {
-          label: "Claude 3.5 Sonnet",
+          label: "Claude 4.5 Haiku",
           config: {
             provider: "bedrock",
-            modelId: "anthropic.claude-3-5-sonnet-20241022",
+            modelId: "anthropic.claude-haiku-4-5-20251001-v1:0",
             temperature: 0.3,
             topP: 0.9,
             maxTokens: 4096,
@@ -1001,16 +1025,16 @@ const TEMPLATE_DEFINITIONS: Record<string, TemplateDefinition> = {
       ];
 
       const edges = [
-        createEdge(background, prompt, "background"),
-        createEdge(context, prompt, "context"),
-        createEdge(outputIndicator, prompt, "output"),
-        createEdge(promptText, prompt, "prompt-text"),
-        createEdge(prompt, modelSet),
-        createEdge(model, modelSet),
-        createEdge(modelSet, toolSet),
-        createEdge(factTool, toolSet),
-        createEdge(writerTool, toolSet),
-        createEdge(toolSet, entrypoint),
+        createEdge( background, prompt, "background" ),
+        createEdge( context, prompt, "context" ),
+        createEdge( outputIndicator, prompt, "output" ),
+        createEdge( promptText, prompt, "prompt-text" ),
+        createEdge( prompt, modelSet ),
+        createEdge( model, modelSet ),
+        createEdge( modelSet, toolSet ),
+        createEdge( factTool, toolSet ),
+        createEdge( writerTool, toolSet ),
+        createEdge( toolSet, entrypoint ),
       ];
 
       return {
@@ -1085,7 +1109,7 @@ const TEMPLATE_DEFINITIONS: Record<string, TemplateDefinition> = {
           label: "Claude Haiku",
           config: {
             provider: "bedrock",
-            modelId: "anthropic.claude-3-haiku-20240307-v1:0",
+            modelId: "anthropic.claude-haiku-4-5-20251001-v1:0",
             temperature: 0.5,
             topP: 0.95,
             maxTokens: 4096,
@@ -1155,15 +1179,15 @@ const TEMPLATE_DEFINITIONS: Record<string, TemplateDefinition> = {
       ];
 
       const edges = [
-        createEdge(tone, prompt),
-        createEdge(assignment, prompt),
-        createEdge(guardrail, prompt),
-        createEdge(draftingPrompt, prompt),
-        createEdge(prompt, claude),
-        createEdge(claude, toolSet),
-        createEdge(editingTool, toolSet),
-        createEdge(styleTool, toolSet),
-        createEdge(toolSet, entrypoint),
+        createEdge( tone, prompt ),
+        createEdge( assignment, prompt ),
+        createEdge( guardrail, prompt ),
+        createEdge( draftingPrompt, prompt ),
+        createEdge( prompt, claude ),
+        createEdge( claude, toolSet ),
+        createEdge( editingTool, toolSet ),
+        createEdge( styleTool, toolSet ),
+        createEdge( toolSet, entrypoint ),
       ];
 
       return {
@@ -1284,13 +1308,13 @@ const TEMPLATE_DEFINITIONS: Record<string, TemplateDefinition> = {
       ];
 
       const edges = [
-        createEdge(context, prompt),
-        createEdge(validator, prompt),
-        createEdge(promptAddon, prompt),
-        createEdge(prompt, toolSet),
-        createEdge(toolMcp, toolSet),
-        createEdge(toolInternal, toolSet),
-        createEdge(toolSet, entrypoint),
+        createEdge( context, prompt ),
+        createEdge( validator, prompt ),
+        createEdge( promptAddon, prompt ),
+        createEdge( prompt, toolSet ),
+        createEdge( toolMcp, toolSet ),
+        createEdge( toolInternal, toolSet ),
+        createEdge( toolSet, entrypoint ),
       ];
 
       return {
@@ -1303,27 +1327,31 @@ const TEMPLATE_DEFINITIONS: Record<string, TemplateDefinition> = {
 };
 
 export function VisualScriptingBuilder() {
-  const counterRef = useRef(0);
-  const toolRegistry = useQuery(api.toolRegistry.getAllTools) as
+  const counterRef = useRef( 0 );
+  const toolRegistry = useQuery( api.toolRegistry.getAllTools ) as
     | ToolRegistryEntry[]
     | undefined;
-  const [workflowName, setWorkflowName] = useState("Untitled Workflow");
-  const [activeWorkflowId, setActiveWorkflowId] = useState<string | null>(null);
-  const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [preview, setPreview] = useState<ComposedMessages | null>(null);
-  const [previewError, setPreviewError] = useState<string | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
+  const [workflowName, setWorkflowName] = useState( "Untitled Workflow" );
+  const [activeWorkflowId, setActiveWorkflowId] = useState<Id<"workflows"> | null>( null );
+  const [statusMessage, setStatusMessage] = useState<string | null>( null );
+  const [preview, setPreview] = useState<ComposedMessages | null>( null );
+  const [previewError, setPreviewError] = useState<string | null>( null );
+  const [isSaving, setIsSaving] = useState( false );
+  const [isPublishing, setIsPublishing] = useState( false );
+  const [isExecuting, setIsExecuting] = useState( false );
+  const [executionResult, setExecutionResult] = useState<{ success: boolean; result?: unknown; error?: string; executionTime?: number } | null>( null );
+  const [publishedAgentId, setPublishedAgentId] = useState<Id<"agents"> | null>( null );
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>( {} );
 
   const paletteSections = useMemo(
-    () => buildPaletteSections(toolRegistry),
+    () => buildPaletteSections( toolRegistry ),
     [toolRegistry]
   );
 
-  const initialNodes = useMemo<FlowNode[]>(() => {
-    const promptId = generateId("Prompt");
-    const promptTextId = generateId("PromptText");
-    const modelId = generateId("Model");
+  const initialNodes = useMemo<FlowNode[]>( () => {
+    const promptId = generateId( "Prompt" );
+    const promptTextId = generateId( "PromptText" );
+    const modelId = generateId( "Model" );
     const nodes: FlowNode[] = [
       {
         id: promptId,
@@ -1333,8 +1361,8 @@ export function VisualScriptingBuilder() {
           type: "Prompt",
           label: "Primary Prompt",
           notes: "",
-          config: defaultConfig("Prompt"),
-        },
+          config: defaultConfig( "Prompt" ),
+        } as WorkflowNodeData,
       },
       {
         id: promptTextId,
@@ -1357,50 +1385,56 @@ export function VisualScriptingBuilder() {
         position: { x: 420, y: 120 },
         data: {
           type: "Model",
-          label: "Claude 3.5 Sonnet",
+          label: "Claude 4.5 Haiku",
           notes: "",
-          config: defaultConfig("Model"),
-        },
+          config: defaultConfig( "Model" ),
+        } as WorkflowNodeData,
       },
     ];
     counterRef.current = 3;
     return nodes;
-  }, []);
+  }, [] );
 
-  const initialEdges = useMemo<FlowEdge[]>(() => {
+  const initialEdges = useMemo<FlowEdge[]>( () => {
     return [
       {
         id: "promptText-to-prompt",
-        source: (initialNodes[1] ?? { id: "" }).id,
-        target: (initialNodes[0] ?? { id: "" }).id,
+        source: ( initialNodes[1] ?? { id: "" } ).id,
+        target: ( initialNodes[0] ?? { id: "" } ).id,
         type: "smoothstep",
       },
       {
         id: "prompt-to-model",
-        source: (initialNodes[0] ?? { id: "" }).id,
-        target: (initialNodes[2] ?? { id: "" }).id,
+        source: ( initialNodes[0] ?? { id: "" } ).id,
+        target: ( initialNodes[2] ?? { id: "" } ).id,
         type: "smoothstep",
       },
     ];
-  }, [initialNodes]);
+  }, [initialNodes] );
 
   const [nodes, setNodes, onNodesChange] = useNodesState<WorkflowNodeData>(
     initialNodes
   );
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  const [edges, setEdges, onEdgesChange] = useEdgesState( initialEdges );
 
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>( null );
+  const [isDrawerOpen, setIsDrawerOpen] = useState( false );
 
-  const workflows = useQuery(api.workflows.list, {});
-  const saveWorkflowMutation = useAction(api.workflows.save);
-  const removeWorkflowMutation = useAction(api.workflows.remove);
+  const workflows = useQuery( api.workflows.list, {} );
+  const saveWorkflowMutation = useMutation( api.workflows.save );
+  const removeWorkflowMutation = useMutation( api.workflows.remove );
+  const executeWorkflowAction = useAction( api.workflowExecutor.executeWorkflow );
+  // const publishWorkflowAction = useAction(api.workflows.publishAsAgent);
 
-  useEffect(() => {
-    if (!selectedNodeId) {
-      setIsDrawerOpen(false);
+  useEffect( () => {
+    if ( !selectedNodeId ) {
+      setIsDrawerOpen( false );
     }
-  }, [selectedNodeId]);
+  }, [selectedNodeId] );
+
+  useEffect( () => {
+    setPublishedAgentId( null );
+  }, [activeWorkflowId] );
 
   const addNode = useCallback(
     (
@@ -1411,7 +1445,7 @@ export function VisualScriptingBuilder() {
       }
     ) => {
       counterRef.current += 1;
-      const nodeId = generateId(kind);
+      const nodeId = generateId( kind );
       const offset = counterRef.current * 40;
       const newNode: FlowNode = {
         id: nodeId,
@@ -1422,113 +1456,181 @@ export function VisualScriptingBuilder() {
           label: options?.label ?? defaultLabels[kind],
           notes: "",
           config: {
-            ...defaultConfig(kind),
-            ...(options?.configOverride ?? {}),
+            ...defaultConfig( kind ),
+            ...( options?.configOverride ?? {} ),
           },
-        },
+        } as WorkflowNodeData,
       };
-      setNodes((current) => current.concat(newNode));
-      setSelectedNodeId(nodeId);
-      setIsDrawerOpen(true);
+      setNodes( ( current ) => current.concat( newNode ) );
+      setSelectedNodeId( nodeId );
+      setIsDrawerOpen( true );
     },
     [setNodes]
   );
 
   const onConnect = useCallback(
-    (connection: Connection) => {
-      setEdges((eds) => addEdge(connection, eds));
+    ( connection: Connection ) => {
+      setEdges( ( eds ) => addEdge( connection, eds ) );
     },
     [setEdges]
   );
 
-  const onNodeClick = useCallback((_event: any, node: FlowNode) => {
-    setSelectedNodeId(node.id);
-    setIsDrawerOpen(true);
-  }, []);
+  const onNodeClick = useCallback( ( _event: any, node: FlowNode ) => {
+    setSelectedNodeId( node.id );
+    setIsDrawerOpen( true );
+  }, [] );
 
-  const handleSave = useCallback(async () => {
+  const persistWorkflow = useCallback( async (): Promise<Id<"workflows"> | null> => {
     const trimmedName = workflowName.trim() || "Untitled Workflow";
-    setIsSaving(true);
-    setStatusMessage(null);
-    try {
-      const payloadNodes = nodes.map(toWorkflowNode);
-      const payloadEdges = edges.map(toWorkflowEdge);
-      const result = await saveWorkflowMutation({
-        workflowId: activeWorkflowId ?? undefined,
-        name: trimmedName,
-        nodes: payloadNodes,
-        edges: payloadEdges,
-        templateId: "custom",
-        status: "draft",
-      } as any);
-      if (result?.workflowId) {
-        setActiveWorkflowId(result.workflowId);
-      }
-      setStatusMessage("Workflow saved");
-    } catch (error: any) {
-      setStatusMessage(error?.message ?? "Failed to save workflow");
-    } finally {
-      setIsSaving(false);
-    }
-  }, [workflowName, nodes, edges, saveWorkflowMutation, activeWorkflowId]);
+    const payloadNodes = nodes.map( toWorkflowNode );
+    const payloadEdges = edges.map( toWorkflowEdge );
 
-  const handlePreview = useCallback(() => {
-    setPreviewError(null);
-    try {
-      const payloadNodes = nodes.map(toWorkflowNode);
-      const payloadEdges = edges.map(toWorkflowEdge);
-      const composition = composeWorkflow(payloadNodes, payloadEdges);
-      setPreview(composition);
-    } catch (error: any) {
-      setPreview(null);
-      setPreviewError(error.message ?? "Unable to compose workflow");
+    const result = await saveWorkflowMutation( {
+      workflowId: activeWorkflowId ?? undefined,
+      name: trimmedName,
+      nodes: payloadNodes,
+      edges: payloadEdges,
+      templateId: "custom",
+      status: "draft",
+    } );
+
+    const resolvedId: Id<"workflows"> | null =
+      ( result?.workflowId as Id<"workflows"> | undefined ) ?? activeWorkflowId ?? null;
+
+    if ( resolvedId ) {
+      setActiveWorkflowId( resolvedId );
     }
-  }, [nodes, edges]);
+
+    return resolvedId;
+  }, [workflowName, nodes, edges, saveWorkflowMutation, activeWorkflowId] );
+
+  const handleSave = useCallback( async () => {
+    setIsSaving( true );
+    setStatusMessage( null );
+    try {
+      const workflowId = await persistWorkflow();
+      if ( workflowId ) {
+        setStatusMessage( "Workflow saved" );
+      } else {
+        setStatusMessage( "Unable to determine workflow ID after saving" );
+      }
+    } catch ( error: any ) {
+      setStatusMessage( error?.message ?? "Failed to save workflow" );
+    } finally {
+      setIsSaving( false );
+    }
+  }, [persistWorkflow] );
+
+  const handlePublish = useCallback( async () => {
+    setIsPublishing( true );
+    setStatusMessage( null );
+    setPublishedAgentId( null );
+    try {
+      const workflowId = await persistWorkflow();
+      if ( !workflowId ) {
+        throw new Error( "Save the workflow before generating an agent." );
+      }
+
+      // const result = await publishWorkflowAction({
+      //   workflowId,
+      //   agentName: workflowName.trim() || undefined,
+      //   description: workflowName
+      //     ? `Generated from visual workflow "${workflowName}"`
+      //     : "Generated from visual workflow",
+      // });
+      const result = { agentId: null }; // Placeholder
+
+      if ( result?.agentId ) {
+        setPublishedAgentId( result.agentId as Id<"agents"> );
+      }
+      setStatusMessage( "Agent generated from workflow." );
+    } catch ( error: any ) {
+      setStatusMessage( error?.message ?? "Failed to generate agent" );
+    } finally {
+      setIsPublishing( false );
+    }
+  }, [persistWorkflow, workflowName] );
+
+  const handlePreview = useCallback( () => {
+    setPreviewError( null );
+    try {
+      const payloadNodes = nodes.map( toWorkflowNode );
+      const payloadEdges = edges.map( toWorkflowEdge );
+      const composition = composeWorkflow( payloadNodes, payloadEdges );
+      setPreview( composition );
+    } catch ( error: any ) {
+      setPreview( null );
+      setPreviewError( error.message ?? "Unable to compose workflow" );
+    }
+  }, [nodes, edges] );
+
+  const handleRun = useCallback( async () => {
+    setIsExecuting( true );
+    setExecutionResult( null );
+    setStatusMessage( null );
+    try {
+      const workflowId = await persistWorkflow();
+      if ( !workflowId ) {
+        throw new Error( "Save the workflow before running it." );
+      }
+      const result = await executeWorkflowAction( {
+        workflowId,
+        input: {},
+      } );
+      setExecutionResult( result as { success: boolean; result?: unknown; error?: string; executionTime?: number } );
+      setStatusMessage( result?.success ? "Workflow executed successfully" : "Workflow execution failed" );
+    } catch ( error: any ) {
+      setExecutionResult( { success: false, error: error?.message ?? "Execution failed" } );
+      setStatusMessage( error?.message ?? "Failed to run workflow" );
+    } finally {
+      setIsExecuting( false );
+    }
+  }, [persistWorkflow, executeWorkflowAction] );
 
   const handleDeleteWorkflow = useCallback(
-    async (workflowId: string) => {
+    async ( workflowId: Id<"workflows"> ) => {
       try {
-        await removeWorkflowMutation({ workflowId } as any);
-        if (activeWorkflowId === workflowId) {
-          setActiveWorkflowId(null);
+        await removeWorkflowMutation( { workflowId } );
+        if ( activeWorkflowId === workflowId ) {
+          setActiveWorkflowId( null );
         }
-        setStatusMessage("Workflow deleted");
-      } catch (error: any) {
-        setStatusMessage(error?.message ?? "Failed to delete workflow");
+        setStatusMessage( "Workflow deleted" );
+      } catch ( error: any ) {
+        setStatusMessage( error?.message ?? "Failed to delete workflow" );
       }
     },
     [removeWorkflowMutation, activeWorkflowId]
   );
 
   const handleLoadWorkflow = useCallback(
-    (workflow: any) => {
-      const hydratedNodes = (workflow.nodes ?? []).map(hydrateNode);
-      const hydratedEdges = (workflow.edges ?? []).map(hydrateEdge);
-      setNodes(hydratedNodes);
-      setEdges(hydratedEdges);
-      setWorkflowName(workflow.name ?? "Untitled Workflow");
-      setActiveWorkflowId(workflow._id);
+    ( workflow: any ) => {
+      const hydratedNodes = ( workflow.nodes ?? [] ).map( hydrateNode );
+      const hydratedEdges = ( workflow.edges ?? [] ).map( hydrateEdge );
+      setNodes( hydratedNodes );
+      setEdges( hydratedEdges );
+      setWorkflowName( workflow.name ?? "Untitled Workflow" );
+      setActiveWorkflowId( workflow._id );
       counterRef.current = hydratedNodes.length;
     },
     [setNodes, setEdges]
   );
 
-  const selectedNode = useMemo<WorkflowNode | null>(() => {
-    if (!selectedNodeId) return null;
-    const node = nodes.find((item) => item.id === selectedNodeId);
-    if (!node) return null;
-    return toWorkflowNode(node);
-  }, [nodes, selectedNodeId]);
+  const selectedNode = useMemo<WorkflowNode | null>( () => {
+    if ( !selectedNodeId ) return null;
+    const node = nodes.find( ( item ) => item.id === selectedNodeId );
+    if ( !node ) return null;
+    return toWorkflowNode( node );
+  }, [nodes, selectedNodeId] );
 
   const handleNodeSave = useCallback(
-    (nodeId: string, data: WorkflowNodeData) => {
-      setNodes((current) =>
-        current.map((node) =>
+    ( nodeId: string, data: WorkflowNodeData ) => {
+      setNodes( ( current ) =>
+        current.map( ( node ) =>
           node.id === nodeId
             ? {
-                ...node,
-                data,
-              }
+              ...node,
+              data,
+            }
             : node
         )
       );
@@ -1536,32 +1638,32 @@ export function VisualScriptingBuilder() {
     [setNodes]
   );
 
-  const closeDrawer = useCallback(() => {
-    setIsDrawerOpen(false);
-    setSelectedNodeId(null);
-  }, []);
+  const closeDrawer = useCallback( () => {
+    setIsDrawerOpen( false );
+    setSelectedNodeId( null );
+  }, [] );
 
-  const toggleSection = useCallback((sectionId: string) => {
-    setOpenSections((current) => ({
+  const toggleSection = useCallback( ( sectionId: string ) => {
+    setOpenSections( ( current ) => ( {
       ...current,
       [sectionId]: current[sectionId] === undefined ? false : !current[sectionId],
-    }));
-  }, []);
+    } ) );
+  }, [] );
 
   const applyTemplate = useCallback(
-    (templateId: string) => {
+    ( templateId: string ) => {
       const template = TEMPLATE_DEFINITIONS[templateId];
-      if (!template) {
+      if ( !template ) {
         return;
       }
       const { nodes: templateNodes, edges: templateEdges, name } = template.build();
-      setNodes(templateNodes);
-      setEdges(templateEdges);
-      setWorkflowName(name);
-      setActiveWorkflowId(null);
-      setSelectedNodeId(null);
+      setNodes( templateNodes );
+      setEdges( templateEdges );
+      setWorkflowName( name );
+      setActiveWorkflowId( null );
+      setSelectedNodeId( null );
       counterRef.current = templateNodes.length;
-      setStatusMessage(`Template "${template.title}" applied`);
+      setStatusMessage( `Template "${template.title}" applied` );
     },
     []
   );
@@ -1581,14 +1683,14 @@ export function VisualScriptingBuilder() {
         </div>
 
         <div className="px-4 py-4 space-y-4">
-          {paletteSections.map((section) => {
+          {paletteSections.map( ( section ) => {
             const isOpen =
               openSections[section.id] ?? true;
             return (
               <div key={section.id} className="rounded-lg border border-gray-900/70 bg-gray-900/40">
                 <button
                   type="button"
-                  onClick={() => toggleSection(section.id)}
+                  onClick={() => toggleSection( section.id )}
                   className="w-full flex items-center justify-between px-4 py-3 text-left"
                 >
                   <div className="flex items-center gap-3">
@@ -1618,51 +1720,51 @@ export function VisualScriptingBuilder() {
                 {isOpen && (
                   <div className="px-4 pb-4 space-y-4">
                     {section.groups
-                      ? section.groups.map((group) => (
-                          <div key={group.id} className="space-y-3">
-                            <div className="flex items-center justify-between">
-                              <h4 className="text-xs font-semibold uppercase tracking-wide text-emerald-300">
-                                {group.title}
-                              </h4>
-                              {group.badge && (
-                                <span className="text-[10px] px-2 py-0.5 rounded-full border border-emerald-500/30 text-emerald-200">
-                                  {group.badge}
-                                </span>
-                              )}
-                            </div>
-                            <div className="space-y-2">
-                              {group.items.map((item) => (
-                                <PaletteCard
-                                  key={
-                                    item.type === "template"
-                                      ? `group-${group.id}-template-${item.templateId}`
-                                      : `group-${group.id}-node-${item.kind}-${item.title}`
-                                  }
-                                  item={item}
-                                  addNode={addNode}
-                                  applyTemplate={applyTemplate}
-                                />
-                              ))}
-                            </div>
+                      ? section.groups.map( ( group ) => (
+                        <div key={group.id} className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-xs font-semibold uppercase tracking-wide text-emerald-300">
+                              {group.title}
+                            </h4>
+                            {group.badge && (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full border border-emerald-500/30 text-emerald-200">
+                                {group.badge}
+                              </span>
+                            )}
                           </div>
-                        ))
-                      : section.items?.map((item) => (
-                          <PaletteCard
-                            key={
-                              item.type === "template"
-                                ? `section-${section.id}-template-${item.templateId}`
-                                : `section-${section.id}-node-${item.kind}-${item.title}`
-                            }
-                            item={item}
-                            addNode={addNode}
-                            applyTemplate={applyTemplate}
-                          />
-                        ))}
+                          <div className="space-y-2">
+                            {group.items.map( ( item ) => (
+                              <PaletteCard
+                                key={
+                                  item.type === "template"
+                                    ? `group-${group.id}-template-${item.templateId}`
+                                    : `group-${group.id}-node-${item.kind}-${item.title}`
+                                }
+                                item={item}
+                                addNode={addNode}
+                                applyTemplate={applyTemplate}
+                              />
+                            ) )}
+                          </div>
+                        </div>
+                      ) )
+                      : section.items?.map( ( item ) => (
+                        <PaletteCard
+                          key={
+                            item.type === "template"
+                              ? `section-${section.id}-template-${item.templateId}`
+                              : `section-${section.id}-node-${item.kind}-${item.title}`
+                          }
+                          item={item}
+                          addNode={addNode}
+                          applyTemplate={applyTemplate}
+                        />
+                      ) )}
                   </div>
                 )}
               </div>
             );
-          })}
+          } )}
         </div>
       </aside>
 
@@ -1671,7 +1773,7 @@ export function VisualScriptingBuilder() {
           <div className="bg-gray-900/90 backdrop-blur rounded-lg border border-gray-700 px-4 py-3 flex flex-wrap items-center gap-3">
             <input
               value={workflowName}
-              onChange={(event) => setWorkflowName(event.target.value)}
+              onChange={( event ) => setWorkflowName( event.target.value )}
               className="flex-1 min-w-[200px] bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-green-500"
               placeholder="Workflow name"
             />
@@ -1679,7 +1781,7 @@ export function VisualScriptingBuilder() {
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={handlePreview}
+                onClick={() => void handlePreview()}
                 className="inline-flex items-center gap-2 px-3 py-2 rounded bg-indigo-600 hover:bg-indigo-500 text-white text-sm transition-colors"
               >
                 <Play className="w-4 h-4" />
@@ -1688,7 +1790,21 @@ export function VisualScriptingBuilder() {
 
               <button
                 type="button"
-                onClick={handleSave}
+                onClick={() => void handleRun()}
+                disabled={isExecuting || isSaving}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded bg-amber-600 hover:bg-amber-500 text-white text-sm transition-colors disabled:opacity-60"
+              >
+                {isExecuting ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Zap className="w-4 h-4" />
+                )}
+                Run
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void handleSave()}
                 disabled={isSaving}
                 className="inline-flex items-center gap-2 px-3 py-2 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-sm transition-colors disabled:opacity-60"
               >
@@ -1699,6 +1815,20 @@ export function VisualScriptingBuilder() {
                 )}
                 Save
               </button>
+
+              <button
+                type="button"
+                onClick={() => void handlePublish()}
+                disabled={isPublishing || isSaving}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded bg-cyan-600 hover:bg-cyan-500 text-white text-sm transition-colors disabled:opacity-60"
+              >
+                {isPublishing ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Bot className="w-4 h-4" />
+                )}
+                Generate Agent
+              </button>
             </div>
 
             <div className="flex-1 min-w-[240px]">
@@ -1706,12 +1836,17 @@ export function VisualScriptingBuilder() {
                 workflows={workflows ?? []}
                 activeId={activeWorkflowId}
                 onSelect={handleLoadWorkflow}
-                onDelete={handleDeleteWorkflow}
+                onDelete={( workflowId ) => void handleDeleteWorkflow( workflowId )}
               />
             </div>
 
             {statusMessage && (
               <p className="text-xs text-gray-400">{statusMessage}</p>
+            )}
+            {publishedAgentId && (
+              <p className="text-xs text-green-400">
+                Agent ID: <span className="font-mono">{publishedAgentId}</span>
+              </p>
             )}
           </div>
         </header>
@@ -1730,8 +1865,8 @@ export function VisualScriptingBuilder() {
         >
           <MiniMap
             className="bg-gray-900/80"
-            nodeStrokeColor={(node) => colorForNodeKind(node.data.type)}
-            nodeColor={(node) => colorForNodeKind(node.data.type, 0.4)}
+            nodeStrokeColor={( node ) => colorForNodeKind( node.data.type )}
+            nodeColor={( node ) => colorForNodeKind( node.data.type, 0.4 )}
           />
           <Controls className="bg-gray-900/80 border border-gray-700" />
           <Background
@@ -1757,7 +1892,7 @@ export function VisualScriptingBuilder() {
       />
 
       {preview && (
-        <CompositionPreview result={preview} onClose={() => setPreview(null)} />
+        <CompositionPreview result={preview} onClose={() => setPreview( null )} />
       )}
 
       {previewError && (
@@ -1765,7 +1900,7 @@ export function VisualScriptingBuilder() {
           <div className="flex items-center gap-2">
             <p className="text-sm font-semibold">Preview error</p>
             <button
-              onClick={() => setPreviewError(null)}
+              onClick={() => setPreviewError( null )}
               className="text-sm underline"
             >
               Dismiss
@@ -1774,12 +1909,44 @@ export function VisualScriptingBuilder() {
           <p className="text-xs mt-1 max-w-xs">{previewError}</p>
         </div>
       )}
+
+      {executionResult && (
+        <div className={`absolute bottom-6 left-6 right-6 max-w-xl mx-auto ${executionResult.success ? "bg-gray-900 border-emerald-600" : "bg-gray-900 border-red-600"} border text-white px-4 py-3 rounded-lg shadow-lg z-30`}>
+          <div className="flex items-center justify-between mb-2">
+            <p className={`text-sm font-semibold ${executionResult.success ? "text-emerald-400" : "text-red-400"}`}>
+              {executionResult.success ? "Execution Complete" : "Execution Failed"}
+            </p>
+            <div className="flex items-center gap-2">
+              {executionResult.executionTime && (
+                <span className="text-xs text-gray-400">{executionResult.executionTime}ms</span>
+              )}
+              <button
+                type="button"
+                onClick={() => setExecutionResult( null )}
+                className="text-xs text-gray-400 hover:text-white underline"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+          {executionResult.error && (
+            <p className="text-xs text-red-300 mb-1">{executionResult.error}</p>
+          )}
+          {executionResult.result && (
+            <pre className="text-xs text-gray-300 bg-gray-950 rounded p-2 max-h-48 overflow-auto whitespace-pre-wrap">
+              {typeof executionResult.result === "string"
+                ? executionResult.result
+                : JSON.stringify( executionResult.result, null, 2 )}
+            </pre>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-function WorkflowCanvasNode({ data }: NodeProps<WorkflowNodeData>) {
-  const badgeColor = colorForNodeKind(data.type);
+function WorkflowCanvasNode( { data }: NodeProps<WorkflowNodeData> ) {
+  const badgeColor = colorForNodeKind( data.type );
 
   return (
     <div className="rounded-lg border border-gray-700 bg-gray-900 text-gray-100 px-3 py-2 shadow-md min-w-[160px]">
@@ -1811,7 +1978,7 @@ function WorkflowCanvasNode({ data }: NodeProps<WorkflowNodeData>) {
   );
 }
 
-function colorForNodeKind(kind: NodeKind, alpha = 1): string {
+function colorForNodeKind( kind: NodeKind, alpha = 1 ): string {
   const mapper: Record<NodeKind, string> = {
     Background: `rgba(59,130,246,${alpha})`,
     Context: `rgba(96,165,250,${alpha})`,
@@ -1829,18 +1996,18 @@ function colorForNodeKind(kind: NodeKind, alpha = 1): string {
   return mapper[kind] ?? `rgba(107,114,128,${alpha})`;
 }
 
-function WorkflowPicker({
+function WorkflowPicker( {
   workflows,
   activeId,
   onSelect,
   onDelete,
 }: {
   workflows: any[];
-  activeId: string | null;
-  onSelect: (workflow: any) => void;
-  onDelete: (workflowId: string) => void;
-}) {
-  if (!workflows || workflows.length === 0) {
+  activeId: Id<"workflows"> | null;
+  onSelect: ( workflow: any ) => void;
+  onDelete: ( workflowId: Id<"workflows"> ) => void;
+} ) {
+  if ( !workflows || workflows.length === 0 ) {
     return (
       <div className="text-xs text-gray-400">
         No saved workflows yet. Save to persist your canvas.
@@ -1852,27 +2019,28 @@ function WorkflowPicker({
     <div className="flex items-center gap-2">
       <select
         value={activeId ?? ""}
-        onChange={(event) => {
+        onChange={( event ) => {
           const workflow = workflows.find(
-            (item) => item._id === event.target.value
+            ( item ) => item._id === event.target.value
           );
-          if (workflow) {
-            onSelect(workflow);
+          if ( workflow ) {
+            void onSelect( workflow );
           }
         }}
         className="flex-1 text-sm bg-gray-800 border border-gray-700 text-gray-100 px-3 py-2 rounded focus:outline-none focus:ring-1 focus:ring-green-500"
+        aria-label="Select workflow to load"
       >
         <option value="">Load workflow…</option>
-        {workflows.map((workflow) => (
+        {workflows.map( ( workflow ) => (
           <option key={workflow._id} value={workflow._id}>
             {workflow.name}
           </option>
-        ))}
+        ) )}
       </select>
 
       {activeId && (
         <button
-          onClick={() => onDelete(activeId)}
+          onClick={() => { void onDelete( activeId ); }}
           className="text-xs text-red-400 hover:text-red-300"
         >
           Delete
@@ -1882,13 +2050,13 @@ function WorkflowPicker({
   );
 }
 
-function CompositionPreview({
+function CompositionPreview( {
   result,
   onClose,
 }: {
   result: ComposedMessages;
   onClose: () => void;
-}) {
+} ) {
   const messages =
     result.kind === "bedrock"
       ? result.bedrock?.messages ?? []
@@ -1920,7 +2088,7 @@ function CompositionPreview({
               Messages ({messages.length})
             </h4>
             <div className="mt-2 space-y-3">
-              {messages.map((message: any, index: number) => (
+              {messages.map( ( message: any, index: number ) => (
                 <div
                   key={index}
                   className="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm"
@@ -1929,10 +2097,10 @@ function CompositionPreview({
                     {message.role}
                   </p>
                   <pre className="mt-1 text-xs text-gray-200 whitespace-pre-wrap">
-                    {"content" in message ? JSON.stringify(message.content, null, 2) : ""}
+                    {"content" in message ? JSON.stringify( message.content, null, 2 ) : ""}
                   </pre>
                 </div>
-              ))}
+              ) )}
             </div>
           </section>
 
@@ -1970,7 +2138,7 @@ function CompositionPreview({
             <section className="text-sm text-gray-300 space-y-1">
               <p className="text-gray-400">Validator</p>
               <pre className="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-xs whitespace-pre-wrap">
-                {JSON.stringify(result.promptValidator, null, 2)}
+                {JSON.stringify( result.promptValidator, null, 2 )}
               </pre>
             </section>
           )}

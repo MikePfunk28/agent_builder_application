@@ -1,5 +1,4 @@
 import GitHub from "@auth/core/providers/github";
-import Google from "@auth/core/providers/google";
 import { Password } from "@convex-dev/auth/providers/Password";
 import { Anonymous } from "@convex-dev/auth/providers/Anonymous";
 import { convexAuth, getAuthUserId } from "@convex-dev/auth/server";
@@ -7,11 +6,11 @@ import { query } from "./_generated/server";
 import CognitoProvider from '@auth/core/providers/cognito';
 
 // Build providers array with all authentication methods
+// Google OAuth removed - was never approved
 const providers: any[] = [
   Anonymous, // Continue as guest - basic setup, no customization needed
   Password,  // Email/password authentication
   GitHub,    // GitHub OAuth
-  Google,    // Google OAuth
 ];
 
 // AWS Cognito OAuth - OIDC provider for AWS Federated Identity

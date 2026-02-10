@@ -99,6 +99,7 @@ const applicationTables = {
     email: v.optional(v.string()),
     name: v.optional(v.string()),
     image: v.optional(v.string()), // Profile picture URL
+    emailVerificationTime: v.optional(v.number()), // When email was verified (OAuth providers)
     tier: v.optional(v.string()), // "freemium", "personal", "enterprise"
     testsThisMonth: v.optional(v.number()), // For freemium limits
     upgradedAt: v.optional(v.number()),
@@ -140,7 +141,7 @@ const applicationTables = {
     awsCredentialsUpdatedAt: v.optional(v.number()),
   })
     .index("by_tier", ["tier"])
-    .index("by_email", ["email"])
+    .index("email", ["email"])
     .index("by_auth_provider", ["authProvider"])
     .index("by_device_id", ["deviceId"]),
 
@@ -187,6 +188,7 @@ const applicationTables = {
     generatedCode: v.string(),
     dockerConfig: v.optional(v.string()),
     deploymentType: v.string(), // "aws", "ollama", "docker", "agentcore"
+    sourceWorkflowId: v.optional(v.id("workflows")),
     createdBy: v.id("users"),
     isPublic: v.optional(v.boolean()),
     tier: v.optional(v.string()), // "freemium", "personal", "enterprise"
@@ -235,7 +237,8 @@ const applicationTables = {
     .index("by_mcp_tool_name", ["mcpToolName"])
     .index("by_user_and_tier", ["createdBy", "tier"])
     .index("by_deployment_type", ["deploymentType"])
-    .index("by_model_provider", ["modelProvider"]),
+    .index("by_model_provider", ["modelProvider"])
+    .index("by_source_workflow", ["sourceWorkflowId"]),
 
   templates: defineTable({
     name: v.string(),
@@ -680,45 +683,99 @@ const applicationTables = {
 
 };
 
+/* ──────────────────────────────────────────────────────────────
+ * Shared Convex validators for workflow nodes and edges.
+ * Re-used by workflows, workflowTemplates, and workflowExecutions
+ * tables so the shape is defined exactly once (DRY).
+ * ────────────────────────────────────────────────────────────── */
+const workflowNodeValidator = v.object({
+  id: v.string(),
+  type: v.optional(v.string()),
+  position: v.optional(v.object({ x: v.number(), y: v.number() })),
+  data: v.object({
+    type: v.string(),
+    label: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    config: v.any(), // Config shape varies per node kind; validated at runtime by sanitizeNode
+  }),
+});
+
+const workflowEdgeValidator = v.object({
+  id: v.optional(v.string()),
+  source: v.string(),
+  target: v.string(),
+  sourceHandle: v.optional(v.string()),
+  targetHandle: v.optional(v.string()),
+  label: v.optional(v.string()),
+  type: v.optional(v.string()),
+});
+
 export default defineSchema({
   workflows: defineTable({
     name: v.string(),
     userId: v.string(),
     templateId: v.string(),
-    nodes: v.array(v.any()),
-    edges: v.array(v.any()),
+    nodes: v.array(workflowNodeValidator),
+    edges: v.array(workflowEdgeValidator),
     status: v.string(),
     createdAt: v.number(),
-    updatedAt: v.number()
+    updatedAt: v.number(),
   }).index("by_user", ["userId"]).index("by_template", ["templateId"]),
 
   workflowExecutions: defineTable({
     workflowId: v.id("workflows"),
     userId: v.string(),
-    input: v.any(),
-    output: v.any(),
-    executionLog: v.array(v.any()),
+    input: v.optional(v.object({
+      userMessage: v.optional(v.string()),
+    })),
+    output: v.optional(v.object({
+      success: v.boolean(),
+      result: v.optional(v.any()), // execution results are genuinely polymorphic
+      error: v.optional(v.string()),
+      executionTime: v.optional(v.number()),
+    })),
+    executionLog: v.array(v.object({
+      nodeId: v.optional(v.string()),
+      nodeType: v.optional(v.string()),
+      nodeLabel: v.optional(v.string()),
+      executionTime: v.optional(v.number()),
+      result: v.optional(v.any()), // node results vary per type
+    })),
     duration: v.number(),
     status: v.string(),
-    createdAt: v.number()
+    createdAt: v.number(),
   }).index("by_workflow", ["workflowId"]).index("by_user", ["userId"]),
 
   // Workflow Templates (pre-built agent workflows)
   workflowTemplates: defineTable({
     name: v.string(),
     description: v.string(),
-    category: v.string(), // "Support", "Development", "Research", "Reasoning", etc.
+    category: v.string(),
     icon: v.string(),
-    difficulty: v.string(), // "Beginner", "Intermediate", "Advanced", "Expert"
-    nodes: v.array(v.any()), // Visual scripting nodes with tool configs
-    connections: v.array(v.any()), // Connections between nodes
-    isOfficial: v.boolean(), // Official templates from us
-    usageCount: v.number(), // Track popularity
+    difficulty: v.string(),
+    nodes: v.array(workflowNodeValidator),
+    connections: v.array(workflowEdgeValidator),
+    isOfficial: v.boolean(),
+    usageCount: v.number(),
     createdAt: v.number(),
   })
     .index("by_category", ["category"])
     .index("by_popularity", ["usageCount"])
     .index("by_official", ["isOfficial"]),
+
+  // Tool memory storage for memory tools (short-term, long-term, semantic)
+  toolMemory: defineTable({
+    userId: v.string(),
+    memoryType: v.string(), // "short_term" | "long_term" | "semantic"
+    key: v.string(),
+    value: v.string(), // JSON-stringified for safety
+    metadata: v.optional(v.string()),
+    ttl: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_key", ["userId", "memoryType", "key"])
+    .index("by_type", ["userId", "memoryType"]),
 
   ...authTables,
   ...applicationTables,

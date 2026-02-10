@@ -350,66 +350,8 @@ export function composeWorkflow(
   };
 }
 
-export async function executeComposedMessages(
-  composed: ComposedMessages
-): Promise<{ text: string; raw: any }> {
-  if (composed.kind === "tool-only") {
-    return {
-      text: "",
-      raw: { kind: "tool-only" },
-    };
-  }
-
-  if (composed.kind === "bedrock" && composed.bedrock) {
-    const { BedrockRuntimeClient, ConverseCommand } = await import(
-      "@aws-sdk/client-bedrock-runtime"
-    );
-    const client = new BedrockRuntimeClient({
-      region: process.env.AWS_REGION || process.env.BEDROCK_REGION || "us-east-1",
-      credentials: process.env.AWS_ACCESS_KEY_ID
-        ? {
-            accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-            secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || "",
-          }
-        : undefined,
-    });
-
-    const response = await client.send(
-      new ConverseCommand({
-        modelId: composed.bedrock.modelId,
-        messages: composed.bedrock.messages as any,
-        inferenceConfig: composed.bedrock.inferenceConfig,
-      })
-    );
-
-    const text =
-      response.output?.message?.content
-        ?.map((content: any) => ("text" in content ? content.text : ""))
-        .join("") ?? "";
-
-    return { text, raw: response };
-  }
-
-  if (composed.kind === "ollama" && composed.ollama) {
-    const response = await fetch(`${composed.ollama.endpoint}/api/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: composed.ollama.model,
-        messages: composed.ollama.messages,
-        stream: false,
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Ollama request failed: ${response.status}`);
-    }
-
-    const json = await response.json();
-    const text = json.message?.content ?? "";
-
-    return { text, raw: json };
-  }
-
-  throw new Error(`Unsupported composition kind: ${composed.kind}`);
-}
+/**
+ * executeComposedMessages has been moved to convex/lib/messageExecutor.ts
+ * because it requires AWS SDK and Node.js environment variables.
+ * Import it from there for server-side usage.
+ */

@@ -63,7 +63,16 @@ export interface OllamaModelConfig {
   numCtx?: number;
 }
 
-export type ModelConfig = BedrockModelConfig | OllamaModelConfig;
+export interface LMStudioModelConfig {
+  provider: "lmstudio";
+  model: string;
+  endpoint?: string;
+  temperature?: number;
+  topP?: number;
+  maxTokens?: number;
+}
+
+export type ModelConfig = BedrockModelConfig | OllamaModelConfig | LMStudioModelConfig;
 
 export interface ModelSetConfig {
   strategy: "single" | "router" | "ensemble-self-consistency" | "ensemble-map-reduce";

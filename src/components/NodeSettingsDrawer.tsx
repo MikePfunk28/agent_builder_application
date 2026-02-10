@@ -13,7 +13,7 @@ import type {
   MemoryConfig,
   RouterConfig,
 } from "../types/workflowNodes";
-import { listModelsByProvider, getModelMetadata } from "../data/modelCatalog";
+import { listModelsByProvider, getModelMetadata, LOCAL_MODEL_ENDPOINTS } from "../data/modelCatalog";
 
 interface NodeSettingsDrawerProps {
   node: WorkflowNode | null;
@@ -99,6 +99,13 @@ export function NodeSettingsDrawer({
 
   const handleSave = () => {
     if (!node || !draft) return;
+    // For Model nodes, update the label to reflect the selected model name
+    if (draft.type === "Model") {
+      const cfg = draft.config as ModelConfig;
+      const modelId = cfg.provider === "bedrock" ? cfg.modelId : cfg.model;
+      const metadata = modelId ? getModelMetadata(modelId) : undefined;
+      (draft as any).label = metadata?.label ?? "Model";
+    }
     onSave(node.id, draft);
     onClose();
   };
@@ -579,24 +586,35 @@ function ModelEditor({
               topP: first?.defaultConfig.topP ?? 0.9,
               maxTokens: first?.defaultConfig.maxTokens ?? 4096,
             }));
-          } else {
+          } else if (nextProvider === "ollama") {
             const [first] = listModelsByProvider("ollama");
             updateConfig(() => ({
               provider: "ollama",
               model: first?.id ?? "llama3.1",
-              endpoint: first?.defaultConfig.endpoint ?? "http://localhost:11434",
+              endpoint: first?.defaultConfig.endpoint ?? LOCAL_MODEL_ENDPOINTS.ollama,
               temperature: first?.defaultConfig.temperature ?? 0.4,
               topP: first?.defaultConfig.topP ?? 0.9,
               numCtx: first?.defaultConfig.numCtx ?? 8192,
             }));
+          } else {
+            const [first] = listModelsByProvider("lmstudio");
+            updateConfig(() => ({
+              provider: "lmstudio",
+              model: first?.id ?? "lmstudio-default",
+              endpoint: first?.defaultConfig.endpoint ?? LOCAL_MODEL_ENDPOINTS.lmstudio,
+              temperature: first?.defaultConfig.temperature ?? 0.4,
+              topP: first?.defaultConfig.topP ?? 0.9,
+              maxTokens: first?.defaultConfig.maxTokens ?? 4096,
+            }));
           }
         }}
       >
-        <option value="bedrock">Bedrock</option>
-        <option value="ollama">Ollama</option>
+        <option value="bedrock">AWS Bedrock</option>
+        <option value="ollama">Ollama (Local)</option>
+        <option value="lmstudio">LMStudio (Local)</option>
       </select>
 
-      {provider === "bedrock" ? (
+      {provider === "bedrock" && (
         <div className="space-y-3">
           <label className="block text-sm font-medium text-gray-700">
             Bedrock Model
@@ -659,7 +677,9 @@ function ModelEditor({
             }
           />
         </div>
-      ) : (
+      )}
+
+      {provider === "ollama" && (
         <div className="space-y-3">
           <label className="block text-sm font-medium text-gray-700">
             Ollama Model
@@ -678,7 +698,7 @@ function ModelEditor({
                 topP: metadata?.defaultConfig.topP ?? cfg.topP ?? 0.9,
                 numCtx: metadata?.defaultConfig.numCtx ?? cfg.numCtx ?? 8192,
                 endpoint:
-                  metadata?.defaultConfig.endpoint ?? cfg.endpoint ?? "http://localhost:11434",
+                  metadata?.defaultConfig.endpoint ?? cfg.endpoint ?? LOCAL_MODEL_ENDPOINTS.ollama,
               }));
             }}
           >
@@ -696,7 +716,7 @@ function ModelEditor({
           </label>
           <input
             className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
-            value={config.model ?? ""}
+            value={(config as any).model ?? ""}
             onChange={(event) =>
               updateConfig((cfg: any) => ({ ...cfg, model: event.target.value }))
             }
@@ -706,7 +726,7 @@ function ModelEditor({
           </label>
           <input
             className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
-            value={config.endpoint ?? ""}
+            value={(config as any).endpoint ?? ""}
             onChange={(event) =>
               updateConfig((cfg: any) => ({ ...cfg, endpoint: event.target.value }))
             }
@@ -727,9 +747,75 @@ function ModelEditor({
           />
           <ParameterInput
             label="Context Window (numCtx)"
-            value={config.numCtx ?? selectedMetadata?.defaultConfig.numCtx ?? 8192}
+            value={(config as any).numCtx ?? selectedMetadata?.defaultConfig.numCtx ?? 8192}
             onChange={(value) =>
               updateConfig((cfg: any) => ({ ...cfg, numCtx: value }))
+            }
+          />
+        </div>
+      )}
+
+      {provider === "lmstudio" && (
+        <div className="space-y-3">
+          <label className="block text-sm font-medium text-gray-700">
+            LMStudio Model
+          </label>
+          <select
+            className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
+            value={selectedModelId}
+            onChange={(event) => {
+              const nextId = event.target.value;
+              const metadata = getModelMetadata(nextId);
+              updateConfig((cfg: any) => ({
+                ...cfg,
+                model: nextId,
+                temperature:
+                  metadata?.defaultConfig.temperature ?? cfg.temperature ?? 0.4,
+                topP: metadata?.defaultConfig.topP ?? cfg.topP ?? 0.9,
+                maxTokens: metadata?.defaultConfig.maxTokens ?? cfg.maxTokens ?? 4096,
+                endpoint:
+                  metadata?.defaultConfig.endpoint ?? cfg.endpoint ?? LOCAL_MODEL_ENDPOINTS.lmstudio,
+              }));
+            }}
+          >
+            <option value="">Select a model...</option>
+            {providerModels.map((model) => (
+              <option key={model.id} value={model.id}>
+                {model.label}
+                {model.recommended ? " (recommended)" : ""}
+              </option>
+            ))}
+          </select>
+
+          <label className="block text-sm font-medium text-gray-700">
+            Endpoint
+          </label>
+          <input
+            className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
+            value={(config as any).endpoint ?? LOCAL_MODEL_ENDPOINTS.lmstudio}
+            onChange={(event) =>
+              updateConfig((cfg: any) => ({ ...cfg, endpoint: event.target.value }))
+            }
+          />
+          <ParameterSlider
+            label="Temperature"
+            value={config.temperature ?? defaultTemperature}
+            onChange={(value) =>
+              updateConfig((cfg: any) => ({ ...cfg, temperature: value }))
+            }
+          />
+          <ParameterSlider
+            label="topP"
+            value={config.topP ?? defaultTopP}
+            onChange={(value) =>
+              updateConfig((cfg: any) => ({ ...cfg, topP: value }))
+            }
+          />
+          <ParameterInput
+            label="Max Tokens"
+            value={(config as any).maxTokens ?? 4096}
+            onChange={(value) =>
+              updateConfig((cfg: any) => ({ ...cfg, maxTokens: value }))
             }
           />
         </div>

@@ -61,6 +61,7 @@ export const create = mutation({
     name: v.string(),
     description: v.optional(v.string()),
     model: v.string(),
+    modelProvider: v.optional(v.string()),
     systemPrompt: v.string(),
     tools: v.array(v.object({
       name: v.string(),
@@ -85,6 +86,7 @@ export const create = mutation({
       env: v.optional(v.any()),
       disabled: v.optional(v.boolean()),
     }))),
+    sourceWorkflowId: v.optional(v.id("workflows")),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -95,6 +97,7 @@ export const create = mutation({
     return await ctx.db.insert("agents", {
       ...args,
       createdBy: userId,
+      modelProvider: args.modelProvider,
     });
   },
 });
@@ -129,6 +132,8 @@ export const update = mutation({
       env: v.optional(v.any()),
       disabled: v.optional(v.boolean()),
     }))),
+    modelProvider: v.optional(v.string()),
+    sourceWorkflowId: v.optional(v.id("workflows")),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);

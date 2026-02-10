@@ -15,7 +15,8 @@ import { v } from "convex/values";
 import { action } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import type { WorkflowNode, WorkflowEdge } from "../src/types/workflowNodes";
-import { composeWorkflow, executeComposedMessages } from "../src/engine/messageComposer";
+import { composeWorkflow } from "../src/engine/messageComposer";
+import { executeComposedMessages } from "./lib/messageExecutor";
 
 export const executeWorkflow = action({
   args: {
@@ -32,8 +33,9 @@ export const executeWorkflow = action({
       throw new Error(`Workflow ${workflowId} not found`);
     }
 
-    const nodes: WorkflowNode[] = workflow.nodes;
-    const edges: WorkflowEdge[] = workflow.edges;
+    // DB stores loosely typed data; validated at save time via sanitizeNode
+    const nodes = workflow.nodes as unknown as WorkflowNode[];
+    const edges = workflow.edges as unknown as WorkflowEdge[];
 
     if (!nodes.length) {
       throw new Error("Workflow has no nodes");
@@ -338,6 +340,11 @@ async function executeNode(
           short_term_memory: api.tools.shortTermMemory,
           long_term_memory: api.tools.longTermMemory,
           semantic_memory: api.tools.semanticMemory,
+          self_consistency: api.tools.selfConsistency,
+          tree_of_thoughts: api.tools.treeOfThoughts,
+          reflexion: api.tools.reflexion,
+          map_reduce: api.tools.mapReduce,
+          parallel_prompts: api.tools.parallelPrompts,
         };
 
         const toolAction = toolMap[toolName] || toolMap[toolName.toLowerCase().replace(/ /g, "_")];
@@ -349,12 +356,11 @@ async function executeNode(
             return { success: false, error: error.message, toolType: "internal", toolName };
           }
         } else {
-          return {
-            success: false,
-            error: `Unknown tool: ${toolName}`,
-            toolType: "internal",
-            availableTools: Object.keys(toolMap),
-          };
+          return await ctx.runAction(api.tools.executeStrandsTool, {
+            toolName,
+            params: toolConfig.args || input,
+            context: { nodeId: node.id },
+          });
         }
       } else if (toolConfig.kind === "openapi") {
         // OpenAPI execution (TODO: implement swagger client)

@@ -1,4 +1,10 @@
-export type ModelProvider = "bedrock" | "ollama";
+export type ModelProvider = "bedrock" | "ollama" | "lmstudio";
+
+// Centralized local model endpoints - configurable via environment variables
+export const LOCAL_MODEL_ENDPOINTS = {
+  ollama: import.meta.env.VITE_OLLAMA_ENDPOINT || "http://localhost:11434",
+  lmstudio: import.meta.env.VITE_LMSTUDIO_ENDPOINT || "http://localhost:1234",
+} as const;
 
 export interface ModelMetadata {
   id: string;
@@ -247,7 +253,7 @@ export const MODEL_CATALOG: ModelMetadata[] = [
       temperature: 0.4,
       topP: 0.9,
       numCtx: 8192,
-      endpoint: "http://localhost:11434",
+      endpoint: LOCAL_MODEL_ENDPOINTS.ollama,
     },
     tags: ["local", "general"],
     recommended: true,
@@ -263,7 +269,7 @@ export const MODEL_CATALOG: ModelMetadata[] = [
       temperature: 0.35,
       topP: 0.9,
       numCtx: 8192,
-      endpoint: "http://localhost:11434",
+      endpoint: LOCAL_MODEL_ENDPOINTS.ollama,
     },
     tags: ["local", "reasoning"],
   },
@@ -278,7 +284,7 @@ export const MODEL_CATALOG: ModelMetadata[] = [
       temperature: 0.35,
       topP: 0.9,
       numCtx: 10000,
-      endpoint: "http://localhost:11434",
+      endpoint: LOCAL_MODEL_ENDPOINTS.ollama,
     },
     tags: ["local", "analysis"],
   },
@@ -293,7 +299,7 @@ export const MODEL_CATALOG: ModelMetadata[] = [
       temperature: 0.35,
       topP: 0.9,
       numCtx: 10000,
-      endpoint: "http://localhost:11434",
+      endpoint: LOCAL_MODEL_ENDPOINTS.ollama,
     },
     tags: ["local", "reasoning"],
   },
@@ -308,7 +314,7 @@ export const MODEL_CATALOG: ModelMetadata[] = [
       temperature: 0.4,
       topP: 0.9,
       numCtx: 8192,
-      endpoint: "http://localhost:11434",
+      endpoint: LOCAL_MODEL_ENDPOINTS.ollama,
     },
     tags: ["local", "reasoning"],
   },
@@ -323,7 +329,7 @@ export const MODEL_CATALOG: ModelMetadata[] = [
       temperature: 0.4,
       topP: 0.9,
       numCtx: 8192,
-      endpoint: "http://localhost:11434",
+      endpoint: LOCAL_MODEL_ENDPOINTS.ollama,
     },
     tags: ["local"],
   },
@@ -338,9 +344,26 @@ export const MODEL_CATALOG: ModelMetadata[] = [
       temperature: 0.3,
       topP: 0.9,
       numCtx: 8192,
-      endpoint: "http://localhost:11434",
+      endpoint: LOCAL_MODEL_ENDPOINTS.ollama,
     },
     tags: ["local", "structured"],
+  },
+  // LMStudio (OpenAI-compatible local server)
+  {
+    id: "lmstudio-default",
+    label: "LMStudio (Active Model)",
+    description: "Uses whichever model is currently loaded in LMStudio. OpenAI-compatible API.",
+    provider: "lmstudio",
+    family: "LMStudio",
+    contextLength: 8000,
+    defaultConfig: {
+      temperature: 0.4,
+      topP: 0.9,
+      maxTokens: 4096,
+      endpoint: LOCAL_MODEL_ENDPOINTS.lmstudio,
+    },
+    tags: ["local", "general"],
+    recommended: true,
   },
 ];
 

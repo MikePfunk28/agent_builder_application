@@ -1,7 +1,9 @@
 /**
  * Workflow Template Seeder
  *
- * Pre-built workflow templates that users can load into the visual scripting builder
+ * Pre-built workflow templates that users can load into the visual scripting builder.
+ * All node types MUST be in the ALLOWED_NODE_TYPES set defined in workflows.ts.
+ * All node data MUST follow the { type, label, notes, config } structure.
  */
 
 import { internalMutation } from "./_generated/server";
@@ -27,85 +29,82 @@ export const seedWorkflowTemplates = internalMutation({
         difficulty: "Intermediate",
         nodes: [
           {
-            id: "chatbot-1",
-            type: "conversational_chatbot",
+            id: "prompt-1",
+            type: "workflow",
             position: { x: 200, y: 100 },
             data: {
-              agentName: "Support Assistant",
-              personality: "Helpful, patient, and professional",
-              memoryType: "hybrid",
-              contextWindow: 10,
-              systemPrompt: `You are a friendly customer support assistant. Your goal is to help customers resolve their issues quickly and professionally.
-
-Guidelines:
-- Be empathetic and patient
-- Ask clarifying questions when needed
-- Provide step-by-step solutions
-- Escalate to human agents for complex issues
-- Always maintain a positive tone`,
-              tools: ["knowledge_base_search", "ticket_system", "escalation_router"],
+              type: "Prompt",
+              label: "Support Assistant",
+              notes: "Helpful, patient, and professional",
+              config: {
+                validator: undefined,
+              },
             },
           },
           {
             id: "memory-1",
-            type: "chatbot_memory",
+            type: "workflow",
             position: { x: 200, y: 250 },
             data: {
-              storageType: "hybrid",
-              retrievalStrategy: "similarity",
-              maxContextSize: 5000,
-              compressionEnabled: true,
+              type: "Memory",
+              label: "Conversation Memory",
+              notes: "Hybrid memory with similarity retrieval",
+              config: {
+                source: "convex",
+                topK: 10,
+              },
             },
           },
           {
-            id: "rag-1",
-            type: "rag_system",
+            id: "tool-rag-1",
+            type: "workflow",
             position: { x: 400, y: 100 },
             data: {
-              knowledgeBaseId: "customer_support_kb",
-              retrievalStrategy: "hybrid",
-              topK: 5,
-              rerank: true,
-              citeSources: true,
+              type: "Tool",
+              label: "Knowledge Base Search",
+              notes: "RAG retrieval from customer support knowledge base",
+              config: {
+                kind: "internal",
+                name: "knowledge_base_search",
+              },
             },
           },
           {
-            id: "worker-1",
-            type: "chatbot_worker",
+            id: "model-1",
+            type: "workflow",
             position: { x: 400, y: 250 },
             data: {
-              workerName: "Escalation Handler",
-              domain: "customer_support",
-              expertise: ["complex_issues", "billing", "technical_problems"],
-              systemPrompt: "You are a senior support specialist who handles complex escalations.",
-              tools: ["ticket_creation", "agent_assignment"],
+              type: "Model",
+              label: "Escalation Handler",
+              notes: "Senior support specialist for complex escalations",
+              config: {
+                provider: "bedrock",
+                temperature: 0.3,
+                maxTokens: 4096,
+              },
             },
           },
         ],
         connections: [
           {
-            source: "chatbot-1",
-            sourceHandle: "conversation_history",
+            id: "e-prompt-memory",
+            source: "prompt-1",
             target: "memory-1",
-            targetHandle: "query",
           },
           {
-            source: "chatbot-1",
-            sourceHandle: "user_message",
-            target: "rag-1",
-            targetHandle: "query",
+            id: "e-prompt-rag",
+            source: "prompt-1",
+            target: "tool-rag-1",
           },
           {
-            source: "rag-1",
-            sourceHandle: "response",
-            target: "chatbot-1",
-            targetHandle: "context",
+            id: "e-rag-prompt",
+            source: "tool-rag-1",
+            target: "prompt-1",
           },
           {
-            source: "chatbot-1",
-            sourceHandle: "escalation_needed",
-            target: "worker-1",
-            targetHandle: "task",
+            id: "e-prompt-model",
+            source: "prompt-1",
+            target: "model-1",
           },
         ],
         isOfficial: true,
@@ -124,88 +123,82 @@ Guidelines:
         difficulty: "Advanced",
         nodes: [
           {
-            id: "chatbot-1",
-            type: "conversational_chatbot",
+            id: "prompt-1",
+            type: "workflow",
             position: { x: 200, y: 100 },
             data: {
-              agentName: "Tech Assistant",
-              personality: "Technical, precise, and helpful",
-              memoryType: "long_term",
-              contextWindow: 20,
-              systemPrompt: `You are a senior software engineer assistant. Help developers with code analysis, debugging, and technical questions.
-
-Capabilities:
-- Code review and analysis
-- Debugging assistance
-- API documentation lookup
-- Best practices guidance
-- Architecture recommendations`,
-              tools: ["code_analyzer", "documentation_search", "github_integration"],
+              type: "Prompt",
+              label: "Tech Assistant",
+              notes: "Technical, precise, and helpful. Code review, debugging, API docs.",
+              config: {
+                validator: undefined,
+              },
             },
           },
           {
-            id: "data-1",
-            type: "data_connector",
+            id: "tool-data-1",
+            type: "workflow",
             position: { x: 400, y: 50 },
             data: {
-              sourceType: "api",
-              connectionConfig: {
-                apiUrl: "https://api.github.com",
-                authType: "token",
+              type: "Tool",
+              label: "GitHub Data Connector",
+              notes: "Fetches issues, PRs, and code from GitHub API",
+              config: {
+                kind: "internal",
+                name: "github_integration",
               },
-              queryTemplate: "/repos/{owner}/{repo}/issues",
-              transformations: ["filter_open", "sort_by_priority"],
             },
           },
           {
-            id: "worker-1",
-            type: "chatbot_worker",
+            id: "model-1",
+            type: "workflow",
             position: { x: 400, y: 150 },
             data: {
-              workerName: "Code Analyzer",
-              domain: "technical",
-              expertise: ["code_review", "security_analysis", "performance_optimization"],
-              systemPrompt: "You are a code analysis specialist. Review code for bugs, security issues, and optimization opportunities.",
-              tools: ["static_analysis", "security_scanner", "performance_profiler"],
+              type: "Model",
+              label: "Code Analyzer",
+              notes: "Specializes in code review, security analysis, performance",
+              config: {
+                provider: "bedrock",
+                temperature: 0.2,
+                maxTokens: 4096,
+              },
             },
           },
           {
-            id: "rag-1",
-            type: "rag_system",
+            id: "tool-rag-1",
+            type: "workflow",
             position: { x: 400, y: 250 },
             data: {
-              knowledgeBaseId: "technical_docs",
-              retrievalStrategy: "semantic",
-              topK: 10,
-              rerank: true,
-              citeSources: true,
+              type: "Tool",
+              label: "Technical Docs Search",
+              notes: "Semantic search over technical documentation",
+              config: {
+                kind: "internal",
+                name: "documentation_search",
+              },
             },
           },
         ],
         connections: [
           {
-            source: "chatbot-1",
-            sourceHandle: "code_request",
-            target: "data-1",
-            targetHandle: "query_params",
+            id: "e-prompt-data",
+            source: "prompt-1",
+            target: "tool-data-1",
           },
           {
-            source: "data-1",
-            sourceHandle: "data",
-            target: "worker-1",
-            targetHandle: "context",
+            id: "e-data-model",
+            source: "tool-data-1",
+            target: "model-1",
           },
           {
-            source: "chatbot-1",
-            sourceHandle: "doc_query",
-            target: "rag-1",
-            targetHandle: "query",
+            id: "e-prompt-rag",
+            source: "prompt-1",
+            target: "tool-rag-1",
           },
           {
-            source: "rag-1",
-            sourceHandle: "response",
-            target: "chatbot-1",
-            targetHandle: "context",
+            id: "e-rag-prompt",
+            source: "tool-rag-1",
+            target: "prompt-1",
           },
         ],
         isOfficial: true,
@@ -224,85 +217,80 @@ Capabilities:
         difficulty: "Intermediate",
         nodes: [
           {
-            id: "chatbot-1",
-            type: "conversational_chatbot",
+            id: "prompt-1",
+            type: "workflow",
             position: { x: 200, y: 150 },
             data: {
-              agentName: "Research Assistant",
-              personality: "Analytical, thorough, and objective",
-              memoryType: "long_term",
-              contextWindow: 15,
-              systemPrompt: `You are a research analyst assistant. Help users gather information, analyze data, and create comprehensive reports.
-
-Focus areas:
-- Web research and fact-checking
-- Data analysis and visualization
-- Report generation
-- Source citation and verification`,
-              tools: ["web_search", "data_analysis", "report_generator"],
+              type: "Prompt",
+              label: "Research Assistant",
+              notes: "Analytical, thorough, and objective. Web research, data analysis, reports.",
+              config: {
+                validator: undefined,
+              },
             },
           },
           {
-            id: "cot-1",
-            type: "chain_of_thought",
+            id: "prompt-cot-1",
+            type: "workflow",
             position: { x: 400, y: 50 },
             data: {
-              enableThinking: true,
-              thinkingBudget: 3000,
-              requireEvidence: true,
-              showReasoning: true,
+              type: "Prompt",
+              label: "Chain of Thought Reasoning",
+              notes: "Step-by-step reasoning with evidence requirements",
+              config: {
+                validator: undefined,
+              },
             },
           },
           {
-            id: "rag-1",
-            type: "rag_system",
+            id: "tool-rag-1",
+            type: "workflow",
             position: { x: 400, y: 150 },
             data: {
-              knowledgeBaseId: "research_papers",
-              retrievalStrategy: "hybrid",
-              topK: 8,
-              rerank: true,
-              citeSources: true,
+              type: "Tool",
+              label: "Research Papers Search",
+              notes: "Hybrid retrieval from research paper knowledge base",
+              config: {
+                kind: "internal",
+                name: "research_search",
+              },
             },
           },
           {
-            id: "data-1",
-            type: "data_connector",
+            id: "tool-data-1",
+            type: "workflow",
             position: { x: 400, y: 250 },
             data: {
-              sourceType: "api",
-              connectionConfig: {
-                apiUrl: "https://api.example.com/research",
+              type: "Tool",
+              label: "Academic Data Connector",
+              notes: "Searches academic APIs with deduplication and relevance sorting",
+              config: {
+                kind: "internal",
+                name: "academic_search",
               },
-              queryTemplate: "/search?q={query}&type=academic",
-              transformations: ["deduplicate", "sort_by_relevance"],
             },
           },
         ],
         connections: [
           {
-            source: "chatbot-1",
-            sourceHandle: "research_question",
-            target: "cot-1",
-            targetHandle: "problem",
+            id: "e-prompt-cot",
+            source: "prompt-1",
+            target: "prompt-cot-1",
           },
           {
-            source: "cot-1",
-            sourceHandle: "reasoning_chain",
-            target: "rag-1",
-            targetHandle: "query",
+            id: "e-cot-rag",
+            source: "prompt-cot-1",
+            target: "tool-rag-1",
           },
           {
-            source: "rag-1",
-            sourceHandle: "response",
-            target: "data-1",
-            targetHandle: "query_params",
+            id: "e-rag-data",
+            source: "tool-rag-1",
+            target: "tool-data-1",
           },
           {
-            source: "data-1",
-            sourceHandle: "data",
-            target: "chatbot-1",
-            targetHandle: "context",
+            id: "e-data-prompt",
+            source: "tool-data-1",
+            target: "prompt-1",
           },
         ],
         isOfficial: true,
@@ -321,73 +309,57 @@ Focus areas:
         difficulty: "Advanced",
         nodes: [
           {
-            id: "cot-1",
-            type: "chain_of_thought",
+            id: "prompt-cot-1",
+            type: "workflow",
             position: { x: 200, y: 100 },
             data: {
-              enableThinking: true,
-              thinkingBudget: 5000,
-              requireEvidence: true,
-              showReasoning: true,
+              type: "Prompt",
+              label: "Chain of Thought Analyzer",
+              notes: "Enables deep thinking with evidence requirements",
+              config: {
+                validator: undefined,
+              },
             },
           },
           {
-            id: "thought-1",
-            type: "thought_builder",
+            id: "prompt-thought-1",
+            type: "workflow",
             position: { x: 400, y: 100 },
             data: {
-              thoughtName: "Systematic Debugger",
-              steps: [
-                {
-                  name: "Problem Analysis",
-                  instruction: "Analyze the problem and identify key components",
-                  requiresEvidence: true,
-                },
-                {
-                  name: "Hypothesis Generation",
-                  instruction: "Generate possible explanations",
-                  requiresEvidence: false,
-                },
-                {
-                  name: "Evidence Gathering",
-                  instruction: "Collect evidence for each hypothesis",
-                  requiresEvidence: true,
-                },
-                {
-                  name: "Solution Formulation",
-                  instruction: "Formulate the best solution based on evidence",
-                  requiresEvidence: true,
-                },
-              ],
-              enableSelfCorrection: true,
+              type: "Prompt",
+              label: "Systematic Debugger",
+              notes: "Steps: Problem Analysis, Hypothesis Generation, Evidence Gathering, Solution Formulation",
+              config: {
+                validator: undefined,
+              },
             },
           },
           {
-            id: "ml-1",
-            type: "ml_connector",
+            id: "model-1",
+            type: "workflow",
             position: { x: 600, y: 100 },
             data: {
-              provider: "bedrock",
-              model: "claude-3-5-sonnet-20241022",
-              temperature: 0.3,
-              maxTokens: 4096,
-              trackCost: true,
-              enableCaching: true,
+              type: "Model",
+              label: "Reasoning Model",
+              notes: "Low temperature for precise reasoning",
+              config: {
+                provider: "bedrock",
+                temperature: 0.3,
+                maxTokens: 4096,
+              },
             },
           },
         ],
         connections: [
           {
-            source: "cot-1",
-            sourceHandle: "reasoning",
-            target: "thought-1",
-            targetHandle: "problem",
+            id: "e-cot-thought",
+            source: "prompt-cot-1",
+            target: "prompt-thought-1",
           },
           {
-            source: "thought-1",
-            sourceHandle: "reasoning_chain",
-            target: "ml-1",
-            targetHandle: "prompt",
+            id: "e-thought-model",
+            source: "prompt-thought-1",
+            target: "model-1",
           },
         ],
         isOfficial: true,
@@ -406,60 +378,62 @@ Focus areas:
         difficulty: "Beginner",
         nodes: [
           {
-            id: "chatbot-1",
-            type: "conversational_chatbot",
+            id: "prompt-1",
+            type: "workflow",
             position: { x: 200, y: 150 },
             data: {
-              agentName: "Knowledge Bot",
-              personality: "Knowledgeable and precise",
-              memoryType: "short_term",
-              contextWindow: 5,
-              systemPrompt: "You are a knowledge base assistant. Answer questions based on the provided documentation.",
-              tools: ["knowledge_search"],
+              type: "Prompt",
+              label: "Knowledge Bot",
+              notes: "Knowledgeable and precise. Answers from documentation.",
+              config: {
+                validator: undefined,
+              },
             },
           },
           {
-            id: "rag-1",
-            type: "rag_system",
+            id: "tool-rag-1",
+            type: "workflow",
             position: { x: 400, y: 150 },
             data: {
-              knowledgeBaseId: "company_docs",
-              retrievalStrategy: "hybrid",
-              topK: 5,
-              rerank: true,
-              citeSources: true,
+              type: "Tool",
+              label: "Knowledge Base Search",
+              notes: "Hybrid retrieval with reranking and source citation",
+              config: {
+                kind: "internal",
+                name: "knowledge_search",
+              },
             },
           },
           {
             id: "memory-1",
-            type: "chatbot_memory",
+            type: "workflow",
             position: { x: 400, y: 250 },
             data: {
-              storageType: "convex",
-              retrievalStrategy: "recency",
-              maxContextSize: 3000,
-              compressionEnabled: false,
+              type: "Memory",
+              label: "Conversation Memory",
+              notes: "Short-term recency-based memory",
+              config: {
+                source: "convex",
+                topK: 5,
+              },
             },
           },
         ],
         connections: [
           {
-            source: "chatbot-1",
-            sourceHandle: "user_message",
-            target: "rag-1",
-            targetHandle: "query",
+            id: "e-prompt-rag",
+            source: "prompt-1",
+            target: "tool-rag-1",
           },
           {
-            source: "rag-1",
-            sourceHandle: "response",
-            target: "chatbot-1",
-            targetHandle: "context",
+            id: "e-rag-prompt",
+            source: "tool-rag-1",
+            target: "prompt-1",
           },
           {
-            source: "chatbot-1",
-            sourceHandle: "conversation_history",
+            id: "e-prompt-memory",
+            source: "prompt-1",
             target: "memory-1",
-            targetHandle: "query",
           },
         ],
         isOfficial: true,
@@ -478,61 +452,65 @@ Focus areas:
         difficulty: "Expert",
         nodes: [
           {
-            id: "react-1",
-            type: "react_loop",
+            id: "router-1",
+            type: "workflow",
             position: { x: 300, y: 100 },
             data: {
-              maxIterations: 10,
-              tools: ["web_search", "calculator", "code_executor", "file_reader"],
-              requireConfidence: 0.9,
-              enableReflection: true,
+              type: "Router",
+              label: "ReAct Decision Loop",
+              notes: "Iterates up to 10 times, requires confidence 0.9",
+              config: {
+                conditions: [
+                  { type: "if", expression: "success", thenNode: "model-1", elseNode: "tool-data-1" },
+                ],
+              },
             },
           },
           {
-            id: "ml-1",
-            type: "ml_connector",
+            id: "model-1",
+            type: "workflow",
             position: { x: 500, y: 50 },
             data: {
-              provider: "bedrock",
-              model: "claude-3-5-sonnet-20241022",
-              temperature: 0.7,
-              maxTokens: 8192,
-              trackCost: true,
-              enableCaching: true,
+              type: "Model",
+              label: "Reasoning Model",
+              notes: "Creative temperature for exploration",
+              config: {
+                provider: "bedrock",
+                temperature: 0.7,
+                maxTokens: 8192,
+              },
             },
           },
           {
-            id: "data-1",
-            type: "data_connector",
+            id: "tool-data-1",
+            type: "workflow",
             position: { x: 500, y: 150 },
             data: {
-              sourceType: "api",
-              connectionConfig: {
-                apiUrl: "https://api.example.com",
+              type: "Tool",
+              label: "Action Executor",
+              notes: "Executes actions with validation and sanitization",
+              config: {
+                kind: "internal",
+                name: "action_executor",
               },
-              queryTemplate: "/execute?action={action}",
-              transformations: ["validate", "sanitize"],
             },
           },
         ],
         connections: [
           {
-            source: "react-1",
-            sourceHandle: "action_history",
-            target: "ml-1",
-            targetHandle: "prompt",
+            id: "e-router-model",
+            source: "router-1",
+            target: "model-1",
           },
           {
-            source: "ml-1",
-            sourceHandle: "response",
-            target: "data-1",
-            targetHandle: "query_params",
+            id: "e-model-data",
+            source: "model-1",
+            target: "tool-data-1",
           },
           {
-            source: "data-1",
-            sourceHandle: "data",
-            target: "react-1",
-            targetHandle: "goal",
+            id: "e-data-router",
+            source: "tool-data-1",
+            target: "router-1",
           },
         ],
         isOfficial: true,

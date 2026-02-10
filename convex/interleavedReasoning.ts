@@ -272,8 +272,10 @@ async function invokeClaudeWithInterleavedThinking(
     },
   };
 
+  const modelId = process.env.AGENT_BUILDER_MODEL_ID || "us.anthropic.claude-3-5-haiku-20241022-v1:0";
+
   const command = new InvokeModelCommand({
-    modelId: "us.anthropic.claude-3-5-haiku-20241022-v1:0", // Claude Haiku 4.5
+    modelId,
     contentType: "application/json",
     accept: "application/json",
     body: JSON.stringify(payload),

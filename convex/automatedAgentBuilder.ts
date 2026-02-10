@@ -267,7 +267,8 @@ Think deeply, ask smart questions, and build exceptional agents.`;
 }
 
 /**
- * Use Claude Haiku 4.5 to analyze and ask next question
+ * Use Bedrock to analyze and ask next question
+ * Model is configurable via AGENT_BUILDER_MODEL_ID env var
  */
 async function analyzeAndAskNext(
   systemPrompt: string,
@@ -279,30 +280,47 @@ async function analyzeAndAskNext(
   readyToGenerate: boolean;
   agentConfig: any | null;
 }> {
-  const { default: Anthropic } = await import("@anthropic-ai/sdk");
-  const anthropic = new Anthropic({
-    apiKey: process.env.ANTHROPIC_API_KEY,
+  const { BedrockRuntimeClient, InvokeModelCommand } = await import("@aws-sdk/client-bedrock-runtime");
+
+  const client = new BedrockRuntimeClient({
+    region: process.env.AWS_REGION || "us-east-1",
+    credentials: {
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+    },
   });
 
-  // Build messages
+  // Build messages in Bedrock format
   const messages = conversationHistory.map((msg) => ({
     role: msg.role as "user" | "assistant",
-    content: msg.content,
+    content: [{ text: msg.content }],
   }));
 
-  const response = await anthropic.messages.create({
-    model: "claude-3-5-haiku-20241022",
+  const modelId = process.env.AGENT_BUILDER_MODEL_ID || "us.anthropic.claude-3-5-haiku-20241022-v1:0";
+
+  const payload = {
+    anthropic_version: "bedrock-2023-05-31",
     max_tokens: 4096,
     temperature: 1,
     system: systemPrompt,
     messages,
+  };
+
+  const command = new InvokeModelCommand({
+    modelId,
+    contentType: "application/json",
+    accept: "application/json",
+    body: JSON.stringify(payload),
   });
+
+  const response: any = await client.send(command);
+  const responseBody = JSON.parse(new TextDecoder().decode(response.body));
 
   // Extract text response
   let textResponse = "";
-  for (const block of response.content) {
+  for (const block of responseBody.content || []) {
     if (block.type === "text") {
-      textResponse = block.text;
+      textResponse += block.text;
     }
   }
 

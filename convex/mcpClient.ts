@@ -417,9 +417,7 @@ async function invokeMCPToolDirect(
         version: "1.0.0",
       },
       {
-        capabilities: {
-          tools: {},
-        },
+        capabilities: {},
       }
     );
 
@@ -737,9 +735,7 @@ export const testMCPServerConnection = action({
             version: "1.0.0",
           },
           {
-            capabilities: {
-              tools: {},
-            },
+            capabilities: {},
           }
         );
 

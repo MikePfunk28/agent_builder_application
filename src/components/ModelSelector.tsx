@@ -4,6 +4,7 @@ import {
   MODEL_CATALOG,
   ModelMetadata,
   ModelProvider,
+  LOCAL_MODEL_ENDPOINTS,
 } from "../data/modelCatalog";
 
 interface ModelSelectorProps {
@@ -20,6 +21,7 @@ const PROVIDER_OPTIONS: ProviderOption[] = [
   { id: "all", label: "All Providers" },
   { id: "bedrock", label: "AWS Bedrock" },
   { id: "ollama", label: "Ollama (Local)" },
+  { id: "lmstudio", label: "LMStudio (Local)" },
 ];
 
 export function ModelSelector({ value, onChange }: ModelSelectorProps) {
@@ -49,7 +51,7 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
         acc[model.provider].push(model);
         return acc;
       },
-      { bedrock: [], ollama: [] }
+      { bedrock: [], ollama: [], lmstudio: [] }
     );
   }, [filteredModels]);
 
@@ -94,7 +96,7 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
       </div>
 
       <div className="space-y-5">
-        {(["bedrock", "ollama"] as ModelProvider[])
+        {(["bedrock", "ollama", "lmstudio"] as ModelProvider[])
           .filter((providerKey) =>
             provider === "all" ? true : providerKey === provider
           )
@@ -111,7 +113,7 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
               >
                 <div className="px-4 py-3 border-b border-emerald-500/10 flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-emerald-200">
-                    {providerKey === "bedrock" ? "AWS Bedrock" : "Ollama (Local)"}
+                    {providerKey === "bedrock" ? "AWS Bedrock" : providerKey === "ollama" ? "Ollama (Local)" : "LMStudio (Local)"}
                   </h3>
                   <span className="text-[11px] uppercase tracking-wide text-emerald-400">
                     {models.length} models
@@ -145,7 +147,7 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
                         </div>
                         <div className="flex flex-wrap gap-2 text-[11px] text-emerald-300">
                           <span className="px-2 py-0.5 bg-emerald-500/10 rounded border border-emerald-500/20">
-                            {model.family ?? (model.provider === "bedrock" ? "Bedrock" : "Ollama")}
+                            {model.family ?? (model.provider === "bedrock" ? "Bedrock" : model.provider === "ollama" ? "Ollama" : "LMStudio")}
                           </span>
                           {model.tags?.map((tag) => (
                             <span

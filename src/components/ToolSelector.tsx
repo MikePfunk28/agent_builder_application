@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import type { ReactElement } from "react";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import {
@@ -26,6 +27,18 @@ interface ToolSelectorProps {
   onAddTool: (tool: Tool) => void;
 }
 
+type ToolRegistryEntry = {
+  name: string;
+  displayName: string;
+  description: string;
+  category: ToolCategory;
+  capabilities: string[];
+  additionalPipPackages?: string[];
+  extrasPip?: string;
+  requiresEnvVars?: string[];
+  notSupportedOn?: string[];
+};
+
 type ToolCategory =
   | "rag_memory"
   | "file_operations"
@@ -49,7 +62,7 @@ const CATEGORY_LABEL: Record<ToolCategory, string> = {
   agents_workflows: "Agents & Workflows",
 };
 
-const CATEGORY_ICON: Record<ToolCategory, JSX.Element> = {
+const CATEGORY_ICON: Record<ToolCategory, ReactElement> = {
   rag_memory: <Puzzle className="w-4 h-4" />,
   file_operations: <Package className="w-4 h-4" />,
   shell_system: <Cpu className="w-4 h-4" />,
@@ -62,12 +75,14 @@ const CATEGORY_ICON: Record<ToolCategory, JSX.Element> = {
 };
 
 export function ToolSelector({ onAddTool }: ToolSelectorProps) {
-  const toolRegistry = useQuery(api.toolRegistry.getAllTools);
+  const toolRegistry = useQuery(api.toolRegistry.getAllTools) as
+    | ToolRegistryEntry[]
+    | undefined;
   const [searchTerm, setSearchTerm] = useState("");
   const [category, setCategory] = useState<"All" | ToolCategory>("All");
   const [detailsId, setDetailsId] = useState<string | null>(null);
 
-  const allCategories = useMemo(() => {
+  const allCategories = useMemo<ToolCategory[]>(() => {
     if (!toolRegistry) return [];
     const unique = new Set<ToolCategory>();
     for (const tool of toolRegistry) {
@@ -78,7 +93,7 @@ export function ToolSelector({ onAddTool }: ToolSelectorProps) {
     );
   }, [toolRegistry]);
 
-  const filteredTools = useMemo(() => {
+  const filteredTools = useMemo<ToolRegistryEntry[]>(() => {
     if (!toolRegistry) return [];
     const lowerSearch = searchTerm.trim().toLowerCase();
     return toolRegistry.filter((tool) => {
@@ -103,7 +118,6 @@ export function ToolSelector({ onAddTool }: ToolSelectorProps) {
     if (!metadata) return;
 
     const pipPackages = metadata.additionalPipPackages ?? [];
-    const hasExtras = Boolean(metadata.extrasPip);
 
     onAddTool({
       name: metadata.displayName,

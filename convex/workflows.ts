@@ -1,5 +1,9 @@
-import { mutation, query, internalQuery } from "./_generated/server";
+import { action, mutation, query, internalQuery, internalMutation } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
+import { api, internal } from "./_generated/api";
+import type { WorkflowNode } from "../src/types/workflowNodes";
+import { findToolMetadata, normalizeToolName } from "./lib/strandsTools";
 
 async function getUserScope(ctx: any): Promise<string> {
   const identity = await ctx.auth.getUserIdentity();
@@ -204,6 +208,20 @@ export const getInternal = internalQuery({
   },
 });
 
+// Internal mutation to update workflow status from actions
+export const updateStatusInternal = internalMutation({
+  args: {
+    workflowId: v.id("workflows"),
+    status: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.workflowId, {
+      status: args.status,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
 export const save = mutation({
   args: {
     workflowId: v.optional(v.id("workflows")),
@@ -270,3 +288,213 @@ export const remove = mutation({
     return { removed: true };
   },
 });
+
+type AgentBlueprint = {
+  name: string;
+  description: string;
+  model: string;
+  modelProvider: string;
+  deploymentType: "aws" | "ollama";
+  systemPrompt: string;
+  tools: any[];
+};
+
+export const publishAsAgent = action({
+  args: {
+    workflowId: v.id("workflows"),
+    agentName: v.optional(v.string()),
+    description: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<{ agentId: Id<"agents">; workflowId: Id<"workflows"> }> => {
+    const userScope = await getUserScope(ctx);
+    const workflow = await ctx.runQuery(internal.workflows.getInternal, {
+      workflowId: args.workflowId,
+    });
+
+    if (!workflow) {
+      throw new Error("Workflow not found");
+    }
+
+    if (workflow.userId !== userScope) {
+      throw new Error("You do not have access to this workflow");
+    }
+
+    const blueprint = buildAgentBlueprint({
+      workflow,
+      requestedName: args.agentName,
+      requestedDescription: args.description,
+    });
+
+    const generation: { generatedCode: string; requirementsTxt: string; mcpConfig: string | null } = await ctx.runAction(api.codeGenerator.generateAgent, {
+      name: blueprint.name,
+      model: blueprint.model,
+      systemPrompt: blueprint.systemPrompt,
+      tools: blueprint.tools,
+      deploymentType: blueprint.deploymentType,
+    });
+
+    const agentId: Id<"agents"> = await ctx.runMutation(api.agents.create, {
+      name: blueprint.name,
+      description: blueprint.description,
+      model: blueprint.model,
+      modelProvider: blueprint.modelProvider,
+      systemPrompt: blueprint.systemPrompt,
+      tools: blueprint.tools,
+      generatedCode: generation.generatedCode,
+      dockerConfig: "",
+      deploymentType: blueprint.deploymentType,
+      isPublic: false,
+      exposableAsMCPTool: false,
+      mcpToolName: "",
+      mcpInputSchema: undefined,
+      sourceWorkflowId: args.workflowId,
+    } as any);
+
+    await ctx.runMutation(internal.workflows.updateStatusInternal, {
+      workflowId: args.workflowId,
+      status: "published",
+    });
+
+    return {
+      agentId,
+      workflowId: args.workflowId,
+    };
+  },
+});
+
+function buildAgentBlueprint(params: {
+  workflow: any;
+  requestedName?: string | null;
+  requestedDescription?: string | null;
+}): AgentBlueprint {
+  const nodes = (params.workflow.nodes || []) as WorkflowNode[];
+  if (!nodes.length) {
+    throw new Error("Workflow must include at least one node before publishing.");
+  }
+
+  const modelNode = nodes.find((node) => node.data?.type === "Model");
+  if (!modelNode) {
+    throw new Error("Add a Model node before generating an agent.");
+  }
+
+  const { model, modelProvider, deploymentType } = extractModelFromNode(modelNode);
+  const systemPrompt = buildSystemPrompt(nodes);
+  const toolSpecs = buildToolSpecs(nodes);
+
+  const name = (params.requestedName?.trim() || params.workflow.name || "Visual Workflow Agent").slice(0, 80);
+  const description =
+    params.requestedDescription?.trim() ||
+    `Agent generated from visual workflow "${params.workflow.name}".`;
+
+  return {
+    name,
+    description,
+    model,
+    modelProvider,
+    deploymentType,
+    systemPrompt,
+    tools: toolSpecs,
+  };
+}
+
+function extractModelFromNode(node: WorkflowNode): {
+  model: string;
+  modelProvider: string;
+  deploymentType: "aws" | "ollama";
+} {
+  const config: any = node.data?.config || {};
+  let model = config.modelId || config.model || "anthropic.claude-3-5-sonnet-20241022-v2:0";
+
+  let provider = (config.provider || "").toLowerCase();
+  if (!provider) {
+    provider = model.includes(":") ? "ollama" : "bedrock";
+  }
+
+  const deploymentType: "aws" | "ollama" = provider === "ollama" ? "ollama" : "aws";
+  const modelProvider = provider === "ollama" ? "ollama" : "bedrock";
+
+  return { model, modelProvider, deploymentType };
+}
+
+function buildSystemPrompt(nodes: WorkflowNode[]): string {
+  const sections: string[] = [];
+
+  const backgrounds = nodes
+    .filter((node): node is WorkflowNode & { data: { type: "Background"; config: { text: string } } } =>
+      node.data?.type === "Background" && "text" in (node.data.config || {}))
+    .map((node) => node.data.config.text);
+  if (backgrounds.length) {
+    sections.push(backgrounds.join("\n\n"));
+  }
+
+  const systemSnippets = nodes
+    .filter((node): node is WorkflowNode & { data: { type: "PromptText"; config: { role?: string; template: string } } } =>
+      node.data?.type === "PromptText")
+    .filter((node) => (node.data.config.role || "system") === "system")
+    .map((node) => node.data.config.template)
+    .filter(Boolean);
+  if (systemSnippets.length) {
+    sections.push(systemSnippets.join("\n\n"));
+  }
+
+  const promptNode = nodes.find((node) => node.data?.type === "Prompt");
+  const promptNotes = promptNode?.data?.notes || "";
+  if (promptNotes) {
+    sections.push(promptNotes);
+  }
+
+  const combined = sections.join("\n\n").trim();
+  return combined || "You are a helpful assistant. Think step-by-step and call tools when they improve accuracy.";
+}
+
+function buildToolSpecs(nodes: WorkflowNode[]) {
+  const specs = new Map<string, any>();
+
+  nodes
+    .filter((node) => node.data?.type === "Tool")
+    .forEach((node) => {
+      const config: any = node.data?.config || {};
+      const normalizedName = normalizeToolName(config.name || node.data?.label || node.id);
+      const metadata = findToolMetadata(normalizedName);
+      const pipPackages = new Set<string>();
+
+      if (metadata?.basePip) {
+        pipPackages.add(metadata.basePip);
+      }
+      (metadata?.additionalPipPackages || []).forEach((pkg) => pipPackages.add(pkg));
+
+      const spec = {
+        name: metadata?.name || normalizedName || "custom_tool",
+        type: config.kind || "internal",
+        config: {
+          description:
+            metadata?.description ||
+            node.data?.notes ||
+            node.data?.label ||
+            "Workflow tool generated from visual scripting.",
+          parameters: buildParameterMetadata(config.args),
+        },
+        requiresPip: pipPackages.size > 0 || Boolean(metadata?.extrasPip),
+        pipPackages: pipPackages.size ? Array.from(pipPackages) : undefined,
+        extrasPip: metadata?.extrasPip,
+        notSupportedOn: metadata?.notSupportedOn,
+      };
+
+      specs.set(spec.name, spec);
+    });
+
+  return Array.from(specs.values());
+}
+
+function buildParameterMetadata(args: Record<string, any> | undefined) {
+  if (!args || typeof args !== "object") {
+    return [];
+  }
+
+  return Object.entries(args).slice(0, 10).map(([name, value]) => ({
+    name,
+    type: typeof value,
+    description: `Auto-generated parameter for ${name}`,
+    required: true,
+  }));
+}

@@ -244,6 +244,32 @@ export const getWorkflowTemplate = query({
   }
 });
 
+/**
+ * Maps legacy template node types to valid NodeKind values for the DB schema.
+ */
+function mapNodeType(type: string): string {
+  const typeMap: Record<string, string> = {
+    input: "Prompt",
+    output: "OutputIndicator",
+    reasoning: "Prompt",
+    llm: "Model",
+    split: "Router",
+    aggregate: "Tool",
+    embedding: "Tool",
+    retrieval: "Tool",
+    rerank: "Tool",
+    tool: "Tool",
+    observation: "Context",
+    decision: "Router",
+    vote: "Tool",
+    evaluation: "Tool",
+    selection: "Router",
+    reflection: "Prompt",
+    human: "Tool",
+  };
+  return typeMap[type] || "Prompt";
+}
+
 export const createWorkflowFromTemplate = mutation({
   args: {
     templateId: v.string(),
@@ -254,12 +280,32 @@ export const createWorkflowFromTemplate = mutation({
     const template = workflowTemplates[templateId as keyof typeof workflowTemplates];
     if (!template) throw new Error("Template not found");
 
+    // Convert template nodes to workflow schema format
+    const nodes = template.nodes.map((n: { id: string; type: string; label: string }, i: number) => ({
+      id: n.id,
+      type: "workflow",
+      position: { x: 200 + (i % 3) * 200, y: 100 + Math.floor(i / 3) * 150 },
+      data: {
+        type: mapNodeType(n.type),
+        label: n.label,
+        notes: "",
+        config: {},
+      },
+    }));
+
+    // Convert template edges to workflow schema format
+    const edges = template.edges.map((e: { from: string; to: string }, i: number) => ({
+      id: `e-${i}`,
+      source: e.from,
+      target: e.to,
+    }));
+
     const workflowId = await ctx.db.insert("workflows", {
       name,
       userId,
       templateId: template.id,
-      nodes: template.nodes,
-      edges: template.edges,
+      nodes,
+      edges,
       status: "draft",
       createdAt: Date.now(),
       updatedAt: Date.now()
