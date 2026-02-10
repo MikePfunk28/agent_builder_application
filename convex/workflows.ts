@@ -26,12 +26,19 @@ async function getUserScope(ctx: any): Promise<string> {
 
 const ALLOWED_NODE_TYPES = new Set([
   "Prompt",
-  "PromptText",
+  "PromptText",       // Deprecated – kept for migration of saved workflows
+  "Background",
+  "Context",
+  "OutputIndicator",
   "Model",
+  "ModelSet",
   "Tool",
+  "ToolSet",
   "Router",
   "Memory",
   "Entrypoint",
+  "Agent",
+  "SubAgent",
   "Decision",
   "Aggregate",
   "Human",

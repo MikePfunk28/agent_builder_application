@@ -4,7 +4,6 @@ export type NodeKind =
   | "Background"
   | "Context"
   | "OutputIndicator"
-  | "PromptText"
   | "Prompt"
   | "Model"
   | "ModelSet"
@@ -12,7 +11,9 @@ export type NodeKind =
   | "ToolSet"
   | "Entrypoint"
   | "Memory"
-  | "Router";
+  | "Router"
+  | "Agent"
+  | "SubAgent";
 
 export interface NodeMeta {
   label?: string;
@@ -31,18 +32,23 @@ export interface OutputIndicatorConfig {
   text: string;
 }
 
-export interface PromptTextConfig {
-  role?: PromptRole;
-  template: string;
-  inputs?: Record<string, string>;
-}
-
+/**
+ * Merged prompt config — combines the old PromptTextConfig (role, template,
+ * inputs) with the old PromptConfig (validator).  This is the single config
+ * for "Prompt" nodes going forward.
+ */
 export interface PromptConfig {
+  role?: PromptRole;
+  template?: string;
+  inputs?: Record<string, string>;
   validator?: {
     type: "regex" | "json-schema";
     spec: string;
   };
 }
+
+/** @deprecated Use PromptConfig instead. Kept for migration of saved workflows. */
+export type PromptTextConfig = PromptConfig;
 
 export type ModelProvider = "bedrock" | "ollama";
 
@@ -132,11 +138,29 @@ export interface RouterConfig {
   }>;
 }
 
+export type AgentExecutionMode = "direct" | "swarm" | "graph" | "workflow";
+
+export interface AgentConfig {
+  agentId?: string;
+  name?: string;
+  systemPrompt?: string;
+  model?: string;
+  modelProvider?: string;
+  tools?: string[];
+  executionMode?: AgentExecutionMode;
+}
+
+export interface SubAgentConfig {
+  agentId?: string;
+  role?: string;
+  communicationProtocol?: "broadcast" | "a2a" | "hierarchical";
+}
+
 export type WorkflowNodeData =
   | ({ type: "Background"; config: BackgroundConfig } & NodeMeta)
   | ({ type: "Context"; config: ContextConfig } & NodeMeta)
   | ({ type: "OutputIndicator"; config: OutputIndicatorConfig } & NodeMeta)
-  | ({ type: "PromptText"; config: PromptTextConfig } & NodeMeta)
+  | ({ type: "PromptText"; config: PromptTextConfig } & NodeMeta)  // deprecated – migration only
   | ({ type: "Prompt"; config: PromptConfig } & NodeMeta)
   | ({ type: "Model"; config: ModelConfig } & NodeMeta)
   | ({ type: "ModelSet"; config: ModelSetConfig } & NodeMeta)
@@ -144,7 +168,9 @@ export type WorkflowNodeData =
   | ({ type: "ToolSet"; config: ToolSetConfig } & NodeMeta)
   | ({ type: "Entrypoint"; config: EntrypointConfig } & NodeMeta)
   | ({ type: "Memory"; config: MemoryConfig } & NodeMeta)
-  | ({ type: "Router"; config: RouterConfig } & NodeMeta);
+  | ({ type: "Router"; config: RouterConfig } & NodeMeta)
+  | ({ type: "Agent"; config: AgentConfig } & NodeMeta)
+  | ({ type: "SubAgent"; config: SubAgentConfig } & NodeMeta);
 
 export interface WorkflowNode {
   id: string;

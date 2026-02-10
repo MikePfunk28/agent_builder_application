@@ -112,7 +112,8 @@ function gatherPromptMessages(
   const outputs = sortByPosition(
     incoming.filter((node) => node.data.type === "OutputIndicator")
   );
-  const promptTexts = sortByPosition(
+  // Legacy migration: still gather old PromptText nodes from incoming edges
+  const legacyPromptTexts = sortByPosition(
     incoming.filter((node) => node.data.type === "PromptText")
   );
 
@@ -149,20 +150,28 @@ function gatherPromptMessages(
     messages.push({ role: "system", text: systemPrelude });
   }
 
-  promptTexts.forEach((node) => {
+  // Read the Prompt node's own merged template (role + template + inputs)
+  const promptConfig = (prompt.data as any).config as PromptConfig;
+  if (promptConfig.template) {
+    const role = promptConfig.role ?? "system";
+    const rendered = renderTemplate(promptConfig.template, promptConfig.inputs, runtimeInputs);
+    messages.push({ role, text: rendered });
+  }
+
+  // Legacy migration: process any old PromptText nodes still connected
+  legacyPromptTexts.forEach((node) => {
     const cfg = (node.data as any).config as PromptTextConfig;
     const role = cfg.role ?? "system";
-    const rendered = renderTemplate(cfg.template, cfg.inputs, runtimeInputs);
+    const rendered = renderTemplate(cfg.template ?? "", cfg.inputs, runtimeInputs);
     messages.push({ role, text: rendered });
   });
 
-  // If there were no prompt text nodes, fall back to prompt label/config notes
+  // Fallback if no messages at all
   if (messages.length === 0) {
     const fallback = prompt.data.label || "Provide a response.";
     messages.push({ role: "system", text: fallback });
   }
 
-  const promptConfig = (prompt.data as any).config as PromptConfig;
   return { messages, validator: promptConfig?.validator };
 }
 

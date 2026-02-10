@@ -140,8 +140,16 @@ function formatCategoryLabel( category: string ): string {
   );
 }
 
+interface MCPServerEntry {
+  name: string;
+  availableTools?: Array<{ name: string; description: string }>;
+  disabled?: boolean;
+  status?: string;
+}
+
 function buildPaletteSections(
-  toolMetadata?: ToolRegistryEntry[]
+  toolMetadata?: ToolRegistryEntry[],
+  mcpServers?: MCPServerEntry[]
 ): PaletteSection[] {
   const templateSection: PaletteSection = {
     id: "templates",
@@ -550,65 +558,61 @@ function buildPaletteSections(
     ],
   };
 
+  // Build MCP section dynamically from registered servers
+  const mcpItems: PaletteNodeItem[] = [];
+  const activeServers = (mcpServers ?? []).filter(
+    (s) => !s.disabled && s.status !== "error"
+  );
+  for (const server of activeServers) {
+    if (server.availableTools && server.availableTools.length > 0) {
+      for (const tool of server.availableTools) {
+        mcpItems.push({
+          type: "node",
+          kind: "Tool",
+          title: `${tool.name} (${server.name.replace(/-mcp-server$/, "")})`,
+          description: tool.description || `MCP tool from ${server.name}`,
+          badge: "MCP",
+          labelOverride: `MCP: ${tool.name}`,
+          configOverride: {
+            kind: "mcp",
+            server: server.name,
+            tool: tool.name,
+            params: {},
+          },
+        });
+      }
+    } else {
+      // Server with no enumerated tools — add a generic entry
+      mcpItems.push({
+        type: "node",
+        kind: "Tool",
+        title: server.name.replace(/-mcp-server$/, ""),
+        description: `MCP server: ${server.name}. Configure tool in the settings drawer.`,
+        badge: "MCP",
+        labelOverride: `MCP: ${server.name.replace(/-mcp-server$/, "")}`,
+        configOverride: {
+          kind: "mcp",
+          server: server.name,
+          tool: "",
+          params: {},
+        },
+      });
+    }
+  }
+
   const mcpSection: PaletteSection = {
     id: "mcp",
     title: "Model Context Protocol",
     description:
-      "Bind to MCP servers for external data, diagrams, AWS services, and more.",
+      mcpItems.length > 0
+        ? `${activeServers.length} MCP server(s) with ${mcpItems.length} tool(s). Add more on the MCP page.`
+        : "No MCP servers configured yet. Add servers on the MCP page.",
     accent: "from-cyan-500/60 to-blue-600/60",
     icon: <Server className="w-4 h-4 text-white" />,
-    groups: [
-      {
-        id: "mcp-examples",
-        title: "MCP Tool Examples",
-        items: [
-          {
-            type: "node",
-            kind: "Tool",
-            title: "Document Fetcher",
-            description: "Fetch and chunk documents from the document-fetcher MCP.",
-            badge: "MCP",
-            labelOverride: "MCP Document Fetcher",
-            configOverride: {
-              kind: "mcp",
-              server: "document-fetcher",
-              tool: "fetchDocuments",
-              params: { source: "s3://knowledge-base" },
-            },
-          },
-          {
-            type: "node",
-            kind: "Tool",
-            title: "AWS Diagram Generator",
-            description:
-              "Use the aws-diagram MCP to draw architecture diagrams.",
-            badge: "MCP",
-            labelOverride: "AWS Diagram MCP",
-            configOverride: {
-              kind: "mcp",
-              server: "aws-diagram",
-              tool: "generateArchitecture",
-              params: { format: "png" },
-            },
-          },
-          {
-            type: "node",
-            kind: "Tool",
-            title: "AgentCore Invoke",
-            description:
-              "Call another AgentCore agent through the bedrock-agentcore MCP.",
-            badge: "MCP",
-            labelOverride: "AgentCore Invoke",
-            configOverride: {
-              kind: "mcp",
-              server: "bedrock-agentcore",
-              tool: "invokeAgent",
-              params: { agentId: "AGENT_ID" },
-            },
-          },
-        ],
-      },
-    ],
+    groups:
+      mcpItems.length > 0
+        ? [{ id: "mcp-tools", title: "Available MCP Tools", items: mcpItems }]
+        : [],
   };
 
   const integrationSection: PaletteSection = {
@@ -1333,6 +1337,9 @@ export function VisualScriptingBuilder() {
   const toolRegistry = useQuery( api.toolRegistry.getAllTools ) as
     | ToolRegistryEntry[]
     | undefined;
+  const mcpServers = useQuery( api.mcpConfig.listMCPServers ) as
+    | MCPServerEntry[]
+    | undefined;
   const [workflowName, setWorkflowName] = useState( "Untitled Workflow" );
   const [activeWorkflowId, setActiveWorkflowId] = useState<Id<"workflows"> | null>( null );
   const [statusMessage, setStatusMessage] = useState<string | null>( null );
@@ -1346,8 +1353,8 @@ export function VisualScriptingBuilder() {
   const [openSections, setOpenSections] = useState<Record<string, boolean>>( {} );
 
   const paletteSections = useMemo(
-    () => buildPaletteSections( toolRegistry ),
-    [toolRegistry]
+    () => buildPaletteSections( toolRegistry, mcpServers ),
+    [toolRegistry, mcpServers]
   );
 
   const initialNodes = useMemo<FlowNode[]>( () => {
@@ -1877,10 +1884,17 @@ export function VisualScriptingBuilder() {
             size={2}
             color="#1f2937"
           />
-          <Panel position="bottom-left" className="bg-gray-900/90 rounded p-2">
-            <p className="text-xs text-gray-400">
-              Tip: connect Prompt Text → Prompt → Model. Add Tool sets for tool
-              calling, then wire an Entrypoint.
+          <Panel position="bottom-left" className="bg-gray-900/90 rounded p-2 max-w-md">
+            <p className="text-xs text-gray-400 leading-relaxed">
+              <span className="text-emerald-400 font-semibold">Flow:</span>{" "}
+              Entrypoint → PromptText <span className="text-sky-300">(Persona)</span>{" "}
+              + PromptText <span className="text-sky-300">(User Prompt)</span>{" "}
+              → Prompt → Model → Output.{" "}
+              Connect <span className="text-green-300">Tool</span> or{" "}
+              <span className="text-green-300">ToolSet</span> nodes as inputs to
+              the Model for tool calling. Add{" "}
+              <span className="text-cyan-300">MCP tools</span> for external
+              integrations.
             </p>
           </Panel>
         </ReactFlow>
@@ -1947,11 +1961,29 @@ export function VisualScriptingBuilder() {
   );
 }
 
+const NODE_TOOLTIPS: Record<NodeKind, string> = {
+  Entrypoint: "Starting point of the workflow. Defines how this agent is triggered (HTTP, CLI, etc).",
+  PromptText: "Text block injected into the prompt. Set role to 'system' for persona or 'user' for the primary prompt.",
+  Prompt: "Collects all connected PromptText nodes into a single prompt. Optional output validator (regex/JSON schema).",
+  Model: "LLM configuration — pick provider and model. Connect Tool/ToolSet nodes as inputs for tool calling.",
+  ModelSet: "Group of models for A/B testing or fallback chains.",
+  Tool: "A callable tool — internal (memory, handoff) or MCP (external server). Connect as input to a Model node.",
+  ToolSet: "Bundle multiple Tools into a named set the Model can call.",
+  Memory: "Persistent memory node — short-term, long-term, or semantic memory for the agent.",
+  Router: "Conditional branching — routes execution to different paths based on LLM output or rules.",
+  Background: "Background context injected into every turn (e.g. knowledge, rules, constraints).",
+  Context: "Dynamic context that changes per-turn (e.g. user profile, session state).",
+  OutputIndicator: "Instructions for how the final output should be formatted (e.g. JSON, summary, markdown).",
+};
+
 function WorkflowCanvasNode( { data }: NodeProps<WorkflowNodeData> ) {
   const badgeColor = colorForNodeKind( data.type );
 
   return (
-    <div className="rounded-lg border border-gray-700 bg-gray-900 text-gray-100 px-3 py-2 shadow-md min-w-[160px]">
+    <div
+      className="rounded-lg border border-gray-700 bg-gray-900 text-gray-100 px-3 py-2 shadow-md min-w-[160px]"
+      title={NODE_TOOLTIPS[data.type] ?? data.type}
+    >
       <Handle
         type="target"
         position={Position.Top}

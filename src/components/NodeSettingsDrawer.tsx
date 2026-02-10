@@ -12,6 +12,9 @@ import type {
   EntrypointConfig,
   MemoryConfig,
   RouterConfig,
+  AgentConfig,
+  AgentExecutionMode,
+  SubAgentConfig,
 } from "../types/workflowNodes";
 import { listModelsByProvider, getModelMetadata, getModelFromCatalogOrDetected, mergeLocalModels, LOCAL_MODEL_ENDPOINTS } from "../data/modelCatalog";
 import { useLocalModels, detectedToMetadata } from "../hooks/useLocalModels";
@@ -214,16 +217,17 @@ function renderConfigEditor(
       );
 
     case "PromptText":
+      // Legacy migration: treat old PromptText nodes as Prompt nodes
       return (
-        <PromptTextEditor
-          config={draft.config as PromptTextConfig}
+        <PromptEditor
+          config={draft.config as PromptConfig}
           updateConfig={updateConfig}
         />
       );
 
     case "Prompt":
       return (
-        <PromptValidatorEditor
+        <PromptEditor
           config={draft.config as PromptConfig}
           updateConfig={updateConfig}
         />
@@ -319,14 +323,19 @@ function SimpleTextEditor({
   );
 }
 
-function PromptTextEditor({
+/**
+ * Merged PromptEditor — combines the old PromptTextEditor (role, template,
+ * presets, inputs) with the old PromptValidatorEditor (output validation).
+ */
+function PromptEditor({
   config,
   updateConfig,
 }: {
-  config: PromptTextConfig;
-  updateConfig: ConfigUpdater<PromptTextConfig>;
+  config: PromptConfig;
+  updateConfig: ConfigUpdater<PromptConfig>;
 }) {
   const [selectedPreset, setSelectedPreset] = useState<string>("");
+  const [showValidator, setShowValidator] = useState<boolean>(!!config.validator);
   const entries = useMemo(() => Object.entries(config.inputs ?? {}), [config]);
 
   const setEntry = (key: string, value: string) => {
@@ -372,6 +381,10 @@ function PromptTextEditor({
     (item) => item.id === selectedPreset
   );
 
+  const validator = config.validator;
+  const validatorType = validator?.type ?? "regex";
+  const validatorSpec = validator?.spec ?? "";
+
   return (
     <div className="space-y-4">
       <div className="space-y-2">
@@ -415,7 +428,7 @@ function PromptTextEditor({
       </select>
 
       <SimpleTextEditor
-        value={config.template}
+        value={config.template ?? ""}
         onChange={(template) => updateConfig((cfg) => ({ ...cfg, template }))}
         label="Template"
         placeholder="You are a helpful assistant. Goal: {{goal}}"
@@ -463,63 +476,67 @@ function PromptTextEditor({
           </div>
         ))}
       </div>
-    </div>
-  );
-}
 
-function PromptValidatorEditor({
-  config,
-  updateConfig,
-}: {
-  config: PromptConfig;
-  updateConfig: ConfigUpdater<PromptConfig>;
-}) {
-  const validator = config.validator;
-  const type = validator?.type ?? "regex";
-  const spec = validator?.spec ?? "";
+      {/* Output Validator (collapsible) */}
+      <div className="border-t border-gray-200 pt-3 space-y-3">
+        <button
+          type="button"
+          onClick={() => {
+            setShowValidator(!showValidator);
+            if (showValidator) {
+              updateConfig((cfg) => ({ ...cfg, validator: undefined }));
+            }
+          }}
+          className="flex items-center gap-1 text-sm font-medium text-gray-600 hover:text-gray-900"
+        >
+          {showValidator ? "▾" : "▸"} Output Validator
+        </button>
+        {showValidator && (
+          <div className="space-y-3">
+            <label className="block text-sm font-medium text-gray-700">
+              Validator Type
+            </label>
+            <select
+              className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
+              title="Validator type"
+              value={validator ? validator.type : ""}
+              onChange={(event) => {
+                const value = event.target.value;
+                if (!value) {
+                  updateConfig((cfg) => ({ ...cfg, validator: undefined }));
+                } else {
+                  updateConfig((cfg) => ({
+                    ...cfg,
+                    validator: { type: value as "regex" | "json-schema", spec: validatorSpec },
+                  }));
+                }
+              }}
+            >
+              <option value="">None</option>
+              <option value="regex">Regex</option>
+              <option value="json-schema">JSON Schema</option>
+            </select>
 
-  return (
-    <div className="space-y-3">
-      <label className="block text-sm font-medium text-gray-700">
-        Output Validator
-      </label>
-      <select
-        className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
-        value={validator ? validator.type : ""}
-        onChange={(event) => {
-          const value = event.target.value;
-          if (!value) {
-            updateConfig((cfg) => ({ ...cfg, validator: undefined }));
-          } else {
-            updateConfig((cfg) => ({
-              ...cfg,
-              validator: { type: value as any, spec },
-            }));
-          }
-        }}
-      >
-        <option value="">None</option>
-        <option value="regex">Regex</option>
-        <option value="json-schema">JSON Schema</option>
-      </select>
-
-      {validator && (
-        <SimpleTextEditor
-          value={spec}
-          onChange={(specValue) =>
-            updateConfig((cfg) => ({
-              ...cfg,
-              validator: { type, spec: specValue },
-            }))
-          }
-          label="Validator Spec"
-          placeholder={
-            type === "regex"
-              ? "^Success:.*$"
-              : '{ "type": "object", "properties": { ... } }'
-          }
-        />
-      )}
+            {validator && (
+              <SimpleTextEditor
+                value={validatorSpec}
+                onChange={(specValue) =>
+                  updateConfig((cfg) => ({
+                    ...cfg,
+                    validator: { type: validatorType, spec: specValue },
+                  }))
+                }
+                label="Validator Spec"
+                placeholder={
+                  validatorType === "regex"
+                    ? "^Success:.*$"
+                    : '{ "type": "object", "properties": { ... } }'
+                }
+              />
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
