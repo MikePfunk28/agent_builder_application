@@ -45,14 +45,26 @@ jobs:
           PROJECT_DESC="Automated project for task management with weekly iterations"
 
           # Check if project exists
-          PROJECT_ID=$(gh project list --owner ${{ github.repository_owner }} --format json 2>/dev/null | jq -r ".[] | select(.title == \"$PROJECT_NAME\") | .id" || echo "")
+          proj_list=$(gh project list --owner ${{ github.repository_owner }} --format json 2>&1)
+          rc=$?
+          if [ $rc -ne 0 ]; then
+            echo "gh project list failed: $proj_list" >&2
+            exit $rc
+          fi
+          PROJECT_ID=$(echo "$proj_list" | jq -r "[.[] | select(.title == \"$PROJECT_NAME\") | .id] | first // empty")
 
           if [ -z "$PROJECT_ID" ]; then
             echo "Creating new project..."
             gh project create "$PROJECT_NAME" --owner ${{ github.repository_owner }} --body "$PROJECT_DESC"
 
             # Re-check to ensure we obtained an ID, fail explicitly if not found
-            PROJECT_ID=$(gh project list --owner ${{ github.repository_owner }} --format json 2>/dev/null | jq -r ".[] | select(.title == \"$PROJECT_NAME\") | .id" || echo "")
+            proj_list=$(gh project list --owner ${{ github.repository_owner }} --format json 2>&1)
+            rc=$?
+            if [ $rc -ne 0 ]; then
+              echo "gh project list failed after create: $proj_list" >&2
+              exit $rc
+            fi
+            PROJECT_ID=$(echo "$proj_list" | jq -r "[.[] | select(.title == \"$PROJECT_NAME\") | .id] | first // empty")
             if [ -z "$PROJECT_ID" ]; then
               echo "Failed to obtain PROJECT_ID for $PROJECT_NAME" >&2
               exit 1
@@ -88,6 +100,7 @@ jobs:
 
           # Paginate through issues to avoid missing items
           page=1
+          failures=0
           while :; do
             issues_json=$(gh issue list --repo "$REPO" --state open --json number --page $page --limit 100 2>&1)
             rc=$?
@@ -101,14 +114,19 @@ jobs:
               break
             fi
 
-            echo "$issues_json" | jq -r '.[] | .number' | while read issue_num; do
+            while read issue_num; do
               err=$(gh project item-add "$PROJECT_ID" --issue "$REPO#$issue_num" 2>&1) || {
                 echo "Error adding issue $issue_num to project $PROJECT_ID: $err" >&2
+                failures=$((failures+1))
               }
-            done
+            done < <(echo "$issues_json" | jq -r '.[] | .number')
 
             page=$((page+1))
           done
+
+          if [ "$failures" -gt 0 ]; then
+            echo "Summary: $failures issue(s) failed to add to project $PROJECT_ID" >&2
+          fi
 
       - name: Add new issues/PRs to project
         if: github.event_name == 'issues' || github.event_name == 'pull_request'

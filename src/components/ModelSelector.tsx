@@ -259,7 +259,7 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
         </div>
       </div>
 
-      {currentModel && (
+      {currentModel ? (
         <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-xs text-emerald-100 space-y-1">
           <p className="font-semibold text-emerald-200">
             Selected: {currentModel.label}
@@ -270,7 +270,14 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
             {currentModel.defaultConfig.topP ?? 0.9}
           </p>
         </div>
-      )}
+      ) : value ? (
+        <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-xs text-emerald-100 space-y-1">
+          <p className="font-semibold text-emerald-200">
+            Selected: Custom model
+          </p>
+          <p>Model ID: {value}</p>
+        </div>
+      ) : null}
     </div>
   );
 }

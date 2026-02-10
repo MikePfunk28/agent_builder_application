@@ -436,17 +436,18 @@ export const treeOfThoughts = action({
 
           // Extract numbered items as next thoughts with path tracking
           const items = response.match(/\d\)\s*(.+)/g) || [];
-          nextFrontier.push(...items.map((item) => {
+          const childEntries = items.map((item) => {
             const cleaned = item.replace(/^\d\)\s*/, "").trim();
             return { thought: cleaned, path: [...path, cleaned] };
-          }));
+          });
+          nextFrontier.push(...childEntries);
 
-          // Extract score
+          // Extract score and associate with best child path
           const scoreMatch = response.match(/SCORE:\s*(\d+)/i);
           const score = scoreMatch ? parseInt(scoreMatch[1], 10) : 5;
           if (score > bestScore) {
             bestScore = score;
-            bestPath = path;
+            bestPath = childEntries.length > 0 ? childEntries[0].path : path;
           }
         } catch (error: any) {
           explored.push(`Expansion failed: ${error.message}`);

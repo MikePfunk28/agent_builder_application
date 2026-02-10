@@ -26,8 +26,8 @@ export async function executeComposedMessages(
     );
     const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
     const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
-    if (accessKeyId && !secretAccessKey) {
-      throw new Error("AWS_SECRET_ACCESS_KEY is required when AWS_ACCESS_KEY_ID is set");
+    if ((accessKeyId && !secretAccessKey) || (secretAccessKey && !accessKeyId)) {
+      throw new Error("AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must both be set or both be unset");
     }
     const client = new BedrockRuntimeClient({
       region: process.env.AWS_REGION || process.env.BEDROCK_REGION || "us-east-1",

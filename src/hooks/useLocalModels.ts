@@ -84,6 +84,12 @@ export function useLocalModels(): LocalModelsState {
       setLmstudioModels([]);
     }
 
+    const ollamaDetected = results[0].status === "fulfilled" && results[0].value;
+    const lmstudioDetected = results[1].status === "fulfilled" && results[1].value;
+    if (!ollamaDetected && !lmstudioDetected) {
+      setError("No local model providers detected. Ensure Ollama or LMStudio is running.");
+    }
+
     setLoading(false);
   }, []);
 

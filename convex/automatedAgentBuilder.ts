@@ -329,7 +329,7 @@ async function analyzeAndAskNext(
     try {
       responseBody = JSON.parse( decoded );
     } catch ( parseErr: any ) {
-      console.error( "Failed to parse Bedrock response body", { modelId, decoded, parseErr } );
+      console.error( "Failed to parse Bedrock response body", { modelId, error: parseErr.message, responseLength: decoded.length, responsePreview: decoded.slice( 0, 100 ) + ( decoded.length > 100 ? "..." : "" ) } );
       throw new Error( `Failed to parse Bedrock response body: ${parseErr.message}` );
     }
   } catch ( err: any ) {

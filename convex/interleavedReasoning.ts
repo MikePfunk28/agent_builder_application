@@ -550,10 +550,15 @@ export const moveContextToS3 = internalAction( {
       },
     } );
 
+    const s3Bucket = process.env.AWS_S3_BUCKET;
+    if ( !s3Bucket ) {
+      throw new Error( "Missing AWS_S3_BUCKET environment variable: ensure it is set before offloading context to S3" );
+    }
+
     const s3Key = `conversations/${args.conversationId}/context_${Date.now()}.json`;
 
     await s3Client.send( new PutObjectCommand( {
-      Bucket: process.env.AWS_S3_BUCKET!,
+      Bucket: s3Bucket,
       Key: s3Key,
       Body: JSON.stringify( messages ),
       ContentType: "application/json",
