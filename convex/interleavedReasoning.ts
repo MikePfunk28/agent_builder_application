@@ -374,23 +374,24 @@ export const addMessageBatch = internalMutation( {
       throw new Error( "Conversation not found" );
     }
 
-    const timestamp = Date.now();
+    const baseTimestamp = Date.now();
 
-    for ( const msg of args.messages ) {
+    for ( let i = 0; i < args.messages.length; i++ ) {
+      const msg = args.messages[i];
       await ctx.db.insert( "interleavedMessages", {
         conversationId: args.conversationId,
         role: msg.role,
         content: msg.content,
         reasoning: msg.reasoning,
         toolCalls: msg.toolCalls,
-        timestamp,
-        sequenceNumber: timestamp, // Use timestamp as sequence for ordering
+        timestamp: baseTimestamp,
+        sequenceNumber: baseTimestamp + i, // Monotonically increasing for deterministic batch ordering
       } );
     }
 
     await ctx.db.patch( args.conversationId, {
       messageCount: ( conversation.messageCount ?? 0 ) + args.messages.length,
-      updatedAt: timestamp,
+      updatedAt: baseTimestamp,
     } );
   },
 } );

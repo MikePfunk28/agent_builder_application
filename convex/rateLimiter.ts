@@ -279,10 +279,13 @@ export const getRateLimitStatus = internalQuery({
     blockedUntil?: number;
     resetTime: number;
   } | null> => {
-    const entry = await ctx.runQuery(internal.rateLimiter.getRateLimitEntry, {
-      userId: args.userId,
-      action: args.action,
-    });
+    // Direct db access instead of ctx.runQuery (cannot nest queries inside internalQuery)
+    const entry = await ctx.db
+      .query("rateLimitEntries")
+      .withIndex("by_user_action", (q) =>
+        q.eq("userId", args.userId).eq("action", args.action)
+      )
+      .first();
 
     const config = RATE_LIMITS[args.action] || RATE_LIMITS.generalApi;
 

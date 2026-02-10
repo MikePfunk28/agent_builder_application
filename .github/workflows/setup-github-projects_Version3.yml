@@ -51,7 +51,7 @@ jobs:
             echo "gh project list failed: $proj_list" >&2
             exit $rc
           fi
-          PROJECT_ID=$(echo "$proj_list" | jq -r "[.[] | select(.title == \"$PROJECT_NAME\") | .id] | first // empty")
+          PROJECT_ID=$(echo "$proj_list" | jq -r "[.[] | select(.title == \"$PROJECT_NAME\") | .number] | first // empty")
 
           if [ -z "$PROJECT_ID" ]; then
             echo "Creating new project..."
@@ -64,7 +64,7 @@ jobs:
               echo "gh project list failed after create: $proj_list" >&2
               exit $rc
             fi
-            PROJECT_ID=$(echo "$proj_list" | jq -r "[.[] | select(.title == \"$PROJECT_NAME\") | .id] | first // empty")
+            PROJECT_ID=$(echo "$proj_list" | jq -r "[.[] | select(.title == \"$PROJECT_NAME\") | .number] | first // empty")
             if [ -z "$PROJECT_ID" ]; then
               echo "Failed to obtain PROJECT_ID for $PROJECT_NAME" >&2
               exit 1
@@ -73,23 +73,13 @@ jobs:
 
           echo "PROJECT_ID=$PROJECT_ID" >> $GITHUB_ENV
 
-      - name: Add Board, Table, Timeline views
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Reminder - Create views manually
         run: |
-          PROJECT_ID=${{ env.PROJECT_ID }}
-
-          # Add Table view
-          gh project view $PROJECT_ID --format json | jq -e '.views[] | select(.name=="Tasks Table")' || \
-          gh project view $PROJECT_ID --add-view table --name "Tasks Table"
-
-          # Add Board view
-          gh project view $PROJECT_ID --format json | jq -e '.views[] | select(.name=="Kanban Board")' || \
-          gh project view $PROJECT_ID --add-view board --name "Kanban Board"
-
-          # Add Timeline view
-          gh project view $PROJECT_ID --format json | jq -e '.views[] | select(.name=="Schedule Timeline")' || \
-          gh project view $PROJECT_ID --add-view timeline --name "Schedule Timeline"
+          echo "NOTE: GitHub Projects v2 views cannot be created via the gh CLI."
+          echo "Please create the following views manually in the GitHub web UI:"
+          echo "  1. 'Tasks Table' (Table view)"
+          echo "  2. 'Kanban Board' (Board view)"
+          echo "  3. 'Schedule Timeline' (Timeline view)"
 
       - name: Backfill existing open issues
         env:
@@ -98,31 +88,23 @@ jobs:
           PROJECT_ID=${{ env.PROJECT_ID }}
           REPO="${{ github.repository }}"
 
-          # Paginate through issues to avoid missing items
-          page=1
+          # Fetch all open issues via paginated API
           failures=0
-          while :; do
-            issues_json=$(gh issue list --repo "$REPO" --state open --json number --page $page --limit 100 2>&1)
-            rc=$?
-            if [ $rc -ne 0 ]; then
-              echo "Error listing issues for $REPO (page $page): $issues_json" >&2
-              exit $rc
-            fi
+          issues_json=$(gh api --paginate "repos/$REPO/issues?state=open&per_page=100" --jq '.[].number' 2>&1)
+          rc=$?
+          if [ $rc -ne 0 ]; then
+            echo "Error listing issues for $REPO: $issues_json" >&2
+            exit $rc
+          fi
 
-            count=$(echo "$issues_json" | jq length)
-            if [ "$count" -eq 0 ]; then
-              break
-            fi
-
-            while read issue_num; do
-              err=$(gh project item-add "$PROJECT_ID" --issue "$REPO#$issue_num" 2>&1) || {
-                echo "Error adding issue $issue_num to project $PROJECT_ID: $err" >&2
-                failures=$((failures+1))
-              }
-            done < <(echo "$issues_json" | jq -r '.[] | .number')
-
-            page=$((page+1))
-          done
+          while read -r issue_num; do
+            [ -z "$issue_num" ] && continue
+            ISSUE_URL="https://github.com/$REPO/issues/$issue_num"
+            err=$(gh project item-add "$PROJECT_ID" --url "$ISSUE_URL" 2>&1) || {
+              echo "Error adding issue $issue_num to project $PROJECT_ID: $err" >&2
+              failures=$((failures+1))
+            }
+          done <<< "$issues_json"
 
           if [ "$failures" -gt 0 ]; then
             echo "Summary: $failures issue(s) failed to add to project $PROJECT_ID" >&2
@@ -137,8 +119,8 @@ jobs:
           REPO="${{ github.repository }}"
 
           if [ "${{ github.event_name }}" = "issues" ]; then
-            ITEM="${REPO}#${{ github.event.issue.number }}"
-            out=$(gh project item-add "$PROJECT_ID" --issue "$ITEM" 2>&1) || { echo "Error adding issue $ITEM to project: $out" >&2; exit 1; }
+            ISSUE_URL="https://github.com/${REPO}/issues/${{ github.event.issue.number }}"
+            out=$(gh project item-add "$PROJECT_ID" --url "$ISSUE_URL" 2>&1) || { echo "Error adding issue $ISSUE_URL to project: $out" >&2; exit 1; }
           elif [ "${{ github.event_name }}" = "pull_request" ]; then
             URL="https://github.com/${REPO}/pull/${{ github.event.pull_request.number }}"
             out=$(gh project item-add "$PROJECT_ID" --url "$URL" 2>&1) || { echo "Error adding PR $URL to project: $out" >&2; exit 1; }

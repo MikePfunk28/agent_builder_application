@@ -42,8 +42,8 @@ export const UNIFIED_MODEL_CATALOG: Record<string, Record<string, UnifiedModelTi
     haiku: {
       modality: "text",
       name: "Claude 4.5 Haiku",
-      modelId: "us.anthropic.claude-haiku-4-5-20250514-v1:0",
-      costPer1KTokensOrUnit: 0.001,
+      modelId: "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+      costPer1KTokensOrUnit: 0.006, // $1/1M input + $5/1M output averaged
       speedRating: 1,
       qualityRating: 1,
     },
@@ -51,16 +51,8 @@ export const UNIFIED_MODEL_CATALOG: Record<string, Record<string, UnifiedModelTi
       modality: "text",
       name: "Claude 4.5 Sonnet",
       modelId: "anthropic.claude-sonnet-4-5-20250929-v1:0",
-      costPer1KTokensOrUnit: 0.003,
+      costPer1KTokensOrUnit: 0.018, // $3/1M input + $15/1M output averaged
       speedRating: 2,
-      qualityRating: 2,
-    },
-    opus: {
-      modality: "text",
-      name: "Claude 3 Opus",
-      modelId: "anthropic.claude-3-opus-20240229-v1:0",
-      costPer1KTokensOrUnit: 0.015,
-      speedRating: 3,
       qualityRating: 3,
     },
   },
@@ -350,7 +342,9 @@ export function selectUnifiedModel(
   const { preferCost = false, preferSpeed = false, preferQuality = false, userTier = "freemium" } =
     options;
 
-  const models = UNIFIED_MODEL_CATALOG[modality];
+  // Fallback "multimodal" to "text" since UNIFIED_MODEL_CATALOG has no multimodal key
+  const effectiveModality = modality === "multimodal" ? "text" : modality;
+  const models = UNIFIED_MODEL_CATALOG[effectiveModality];
   if (!models) {
     throw new Error(`No models available for modality: ${modality}`);
   }

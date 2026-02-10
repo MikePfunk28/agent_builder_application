@@ -72,7 +72,7 @@ async function invokeLLM(
     ? {
         kind: "ollama",
         ollama: {
-          endpoint: "http://localhost:11434",
+          endpoint: process.env.OLLAMA_ENDPOINT || "http://localhost:11434",
           model,
           messages: [{ role: "user", content: prompt }],
         },

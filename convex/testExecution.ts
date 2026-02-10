@@ -82,7 +82,7 @@ export const submitTest = mutation({
 
     // Determine model provider EARLY to check if it's Ollama
     // Ollama models are FREE (run locally), so no rate limiting needed!
-    const isOllamaModel = agent.model.includes(':') || agent.deploymentType === "ollama";
+    const isOllamaModel = agent.deploymentType === "ollama" || (!agent.deploymentType && agent.model.includes(':') && !agent.model.includes('.'));
 
     // RATE LIMITING: Only for Bedrock/cloud models (Ollama is FREE and unlimited!)
     if (!isOllamaModel) {
@@ -879,17 +879,16 @@ export const incrementUserUsage = internalMutation({
     const user = await ctx.db.get(args.userId);
     if (!user) return;
 
-    const newTestsCount = (user.testsThisMonth || 0) + 1;
-
+    // NOTE: testsThisMonth is already incremented in submitTest for cloud models.
+    // Only update token usage and execution time here to avoid double-counting.
     await ctx.db.patch(args.userId, {
-      testsThisMonth: newTestsCount,
       lastTestAt: Date.now(),
       totalTokensUsed: (user.totalTokensUsed || 0) + (args.usage?.totalTokens || 0),
       totalExecutionTime: (user.totalExecutionTime || 0) + (args.executionTime || 0),
     });
 
     // LOG ONLY WHEN USED (no background processes)
-    await ctx.runMutation(api.auditLogs.logEvent, {
+    await ctx.runMutation(internal.auditLogs.logEvent, {
       eventType: "test_execution",
       userId: args.userId,
       action: "test_completed",
@@ -898,7 +897,7 @@ export const incrementUserUsage = internalMutation({
       success: true,
       details: {
         tier: user.tier,
-        testsThisMonth: newTestsCount,
+        testsThisMonth: user.testsThisMonth || 0,
         tokenUsage: args.usage,
         executionTime: args.executionTime,
         executionMethod: args.executionMethod,

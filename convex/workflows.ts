@@ -414,7 +414,14 @@ function extractModelFromNode(node: WorkflowNode): {
 
   let provider = (config.provider || "").toLowerCase();
   if (!provider) {
-    provider = model.includes(":") ? "ollama" : "bedrock";
+    // Bedrock IDs contain dots before the colon (e.g. "anthropic.claude-3-5-sonnet:0")
+    // Ollama IDs have no dots (e.g. "llama3:latest")
+    if (model.includes(":")) {
+      const prefix = model.split(":")[0];
+      provider = prefix.includes(".") ? "bedrock" : "ollama";
+    } else {
+      provider = "bedrock";
+    }
   }
 
   const deploymentType: "aws" | "ollama" = provider === "ollama" ? "ollama" : "aws";

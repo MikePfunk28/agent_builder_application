@@ -71,7 +71,7 @@ pydantic>=2.5.0
 # SECURITY
 # ============================================================================
 # Cryptography for secure operations
-cryptography>=42.0.0
+cryptography>=44.0.1
 
 # Input validation and sanitization
 bleach>=6.1.0

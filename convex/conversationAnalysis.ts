@@ -66,7 +66,9 @@ async function analyzeWithAI(messages: any[], agent: any) {
       totalMessages: messages.length,
       userTurns: userMessages.length,
       assistantTurns: assistantMessages.length,
-      avgResponseLength: assistantMessages.reduce((acc, m) => acc + m.content.length, 0) / assistantMessages.length,
+      avgResponseLength: assistantMessages.length > 0
+        ? assistantMessages.reduce((acc, m) => acc + m.content.length, 0) / assistantMessages.length
+        : 0,
     },
 
     identifiedIssues: [] as Array<{
@@ -321,7 +323,8 @@ function calculateImpact(analysis: any): {
   const issues = analysis.identifiedIssues.length;
   const successes = analysis.successfulInteractions.length;
 
-  const currentScore = Math.max(0, Math.min(100, (successes / (successes + issues)) * 100));
+  const denom = successes + issues;
+  const currentScore = denom === 0 ? 0 : Math.max(0, Math.min(100, (successes / denom) * 100));
   const projectedScore = Math.min(100, currentScore + (analysis.suggestedImprovements.length * 10));
 
   return {

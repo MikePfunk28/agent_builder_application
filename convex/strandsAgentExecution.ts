@@ -152,7 +152,7 @@ async function executeDirectBedrock(
       "claude-3-5-haiku-20241022": "us.anthropic.claude-3-5-haiku-20241022-v1:0",
       "claude-3-opus-20240229": "anthropic.claude-3-opus-20240229-v1:0",
     };
-    modelId = modelMap[agent.model] || process.env.AGENT_BUILDER_MODEL_ID || "us.anthropic.claude-haiku-4-5-20250514-v1:0";
+    modelId = modelMap[agent.model] || process.env.AGENT_BUILDER_MODEL_ID || "us.anthropic.claude-haiku-4-5-20251001-v1:0";
   }
 
   const payload = {

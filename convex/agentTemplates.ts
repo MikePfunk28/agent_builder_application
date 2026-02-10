@@ -55,7 +55,7 @@ Always provide evidence-based answers with proper citations.`,
   customer_service: {
     name: "Customer Service Agent",
     description: "Handle customer inquiries with empathy",
-    model: "us.anthropic.claude-haiku-4-5-20250514-v1:0",
+    model: "us.anthropic.claude-haiku-4-5-20251001-v1:0",
     systemPrompt: `You are a customer service representative. Help customers efficiently and empathetically.
 
 CUSTOMER SERVICE PRINCIPLES:

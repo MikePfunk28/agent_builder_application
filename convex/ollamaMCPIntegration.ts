@@ -11,6 +11,11 @@ import { action } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 
+/** Resolve the Ollama endpoint once from env (falls back to localhost) */
+function getOllamaEndpoint(): string {
+  return process.env.OLLAMA_ENDPOINT || "http://127.0.0.1:11434";
+}
+
 /**
  * Test agent with Ollama model via MCP
  */
@@ -51,8 +56,8 @@ export const listOllamaModels = action({
   args: {},
   handler: async (ctx) => {
     try {
-      // Call Ollama MCP to list models
-      const response = await fetch("http://127.0.0.1:11434/api/tags");
+      const endpoint = getOllamaEndpoint();
+      const response = await fetch(`${endpoint}/api/tags`);
 
       if (!response.ok) {
         return {
@@ -84,17 +89,18 @@ export const listOllamaModels = action({
 export const checkOllamaStatus = action({
   args: {},
   handler: async (ctx) => {
+    const endpoint = getOllamaEndpoint();
     try {
-      const response = await fetch("http://127.0.0.1:11434/api/tags");
+      const response = await fetch(`${endpoint}/api/tags`);
 
       return {
         running: response.ok,
-        endpoint: "http://127.0.0.1:11434",
+        endpoint,
       };
     } catch (error) {
       return {
         running: false,
-        endpoint: "http://127.0.0.1:11434",
+        endpoint,
         error: "Ollama not accessible",
       };
     }
@@ -115,7 +121,8 @@ export const chatWithOllama = action({
   },
   handler: async (ctx, { model, messages, stream = false }) => {
     try {
-      const response = await fetch("http://127.0.0.1:11434/api/chat", {
+      const endpoint = getOllamaEndpoint();
+      const response = await fetch(`${endpoint}/api/chat`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -163,6 +170,7 @@ export const executeOllamaTest = action({
   },
   handler: async (ctx, args) => {
     const startTime = Date.now();
+    const endpoint = getOllamaEndpoint();
 
     try {
       // Update test status to RUNNING
@@ -176,7 +184,7 @@ export const executeOllamaTest = action({
         testId: args.testId,
         logs: [
           `[${new Date().toISOString()}] Starting Ollama test with model: ${args.model}`,
-          `[${new Date().toISOString()}] Connecting to Ollama at http://127.0.0.1:11434`,
+          `[${new Date().toISOString()}] Connecting to Ollama at ${endpoint}`,
         ],
         timestamp: Date.now(),
       });
@@ -197,7 +205,7 @@ export const executeOllamaTest = action({
       });
 
       // Call Ollama HTTP API
-      const response = await fetch("http://127.0.0.1:11434/api/chat", {
+      const response = await fetch(`${endpoint}/api/chat`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -308,7 +316,8 @@ async function callOllamaMCP(params: {
     content: params.prompt,
   });
 
-  const response = await fetch("http://127.0.0.1:11434/api/chat", {
+  const endpoint = getOllamaEndpoint();
+  const response = await fetch(`${endpoint}/api/chat`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

@@ -11,7 +11,6 @@ export function WorkflowTemplateSelector({ onTemplateSelect }: { onTemplateSelec
     const result = await createWorkflow({
       templateId,
       name: `${templates?.find(t => t.id === templateId)?.name} - ${new Date().toLocaleDateString()}`,
-      userId: "current-user" // Replace with actual user ID
     });
     onTemplateSelect(result.workflow);
   };

@@ -30,7 +30,9 @@ export const getUnifiedUserId = mutation({
       const user = await ctx.db.get(authUserId);
 
       // If they were previously anonymous with this device, merge accounts
-      if (args.deviceId) {
+      // Security: Only merge if the authenticated user's record already has this deviceId
+      // to prevent account takeover via arbitrary deviceId submission
+      if (args.deviceId && user && user.deviceId === args.deviceId) {
         const anonymousUser = await ctx.db
           .query("users")
           .withIndex("by_device_id", (q) => q.eq("deviceId", args.deviceId))

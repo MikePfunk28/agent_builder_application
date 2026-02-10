@@ -80,7 +80,7 @@ const BUILT_IN_MCP_SERVERS = [
     name: "ollama-mcp-server",
     userId: "system" as any,
     command: "node",
-    args: ["C:/Users/mikep/mcp-server/ollama-mcp/build/index.js"],
+    args: [process.env.OLLAMA_MCP_PATH || "ollama-mcp/build/index.js"],
     env: {
       OLLAMA_HOST: "http://127.0.0.1:11434"
     },

@@ -203,10 +203,14 @@ async function executeDirectBedrock(
   const messages: Array<{ role: string; content: Array<{ text: string }> }> = [];
 
   for (const msg of history) {
-    messages.push({
-      role: msg.role,
-      content: [{ text: msg.content }],
-    });
+    // Only include user and assistant roles in messages array;
+    // system messages go to top-level system field, tool messages are skipped
+    if (msg.role === "user" || msg.role === "assistant") {
+      messages.push({
+        role: msg.role,
+        content: [{ text: msg.content }],
+      });
+    }
   }
 
   messages.push({
@@ -224,20 +228,26 @@ async function executeDirectBedrock(
       "claude-3-5-haiku-20241022": "us.anthropic.claude-3-5-haiku-20241022-v1:0",
       "claude-3-opus-20240229": "anthropic.claude-3-opus-20240229-v1:0",
     };
-    modelId = modelMap[modelId] || process.env.AGENT_BUILDER_MODEL_ID || "us.anthropic.claude-haiku-4-5-20250514-v1:0";
+    modelId = modelMap[modelId] || process.env.AGENT_BUILDER_MODEL_ID || "us.anthropic.claude-haiku-4-5-20251001-v1:0";
   }
 
-  const payload = {
-    anthropic_version: "bedrock-2023-05-31",
+  // Only include Claude/Anthropic-specific fields when using an Anthropic model
+  const isAnthropicModel = modelId.includes("anthropic") || modelId.includes("claude");
+
+  const payload: Record<string, unknown> = {
     max_tokens: 4096,
     system: agent.systemPrompt,
     messages: messages,
     temperature: 1,
-    thinking: {
+  };
+
+  if (isAnthropicModel) {
+    payload.anthropic_version = "bedrock-2023-05-31";
+    payload.thinking = {
       type: "enabled",
       budget_tokens: 3000,
-    },
-  };
+    };
+  }
 
   const command = new InvokeModelCommand({
     modelId: modelId,

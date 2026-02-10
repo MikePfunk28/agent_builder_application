@@ -182,16 +182,9 @@ function buildPaletteSections(
           {
             type: "node",
             kind: "Prompt",
-            title: "Prompt Container",
-            description: "Gather background, context, and snippets into one message.",
+            title: "Prompt",
+            description: "The primary prompt node. Configure role, template text with {{handlebars}}, and output validation.",
             badge: "Core",
-          },
-          {
-            type: "node",
-            kind: "PromptText",
-            title: "Prompt Snippet",
-            description: "Add reusable prompt text with roles and handlebars variables.",
-            badge: "Snippet",
             configOverride: {
               role: "system",
               template:
@@ -199,6 +192,7 @@ function buildPaletteSections(
               inputs: {
                 goal: "Solve the user's request with accuracy",
               },
+              validator: undefined,
             },
           },
         ],
@@ -640,10 +634,44 @@ function buildPaletteSections(
     ],
   };
 
+  const agentSection: PaletteSection = {
+    id: "agents",
+    title: "Agents & Swarms",
+    description:
+      "Deploy autonomous agents and multi-agent coordination patterns.",
+    accent: "from-violet-500/60 to-pink-600/60",
+    icon: <Bot className="w-4 h-4 text-white" />,
+    groups: [
+      {
+        id: "agent-core",
+        title: "Agent Nodes",
+        items: [
+          {
+            type: "node",
+            kind: "Agent",
+            title: "Agent",
+            description:
+              "An autonomous agent with its own prompt, model, and tools. Select from your agent library or configure inline.",
+            badge: "Agent",
+          },
+          {
+            type: "node",
+            kind: "SubAgent",
+            title: "Sub-Agent",
+            description:
+              "A child agent within a swarm, graph, or workflow pattern. Connect to a parent Agent node.",
+            badge: "Sub-Agent",
+          },
+        ],
+      },
+    ],
+  };
+
   return [
     templateSection,
     promptSection,
     modelSection,
+    agentSection,
     toolSection,
     memorySection,
     orchestrationSection,
@@ -660,7 +688,6 @@ const defaultLabels: Record<NodeKind, string> = {
   Background: "Background",
   Context: "Context",
   OutputIndicator: "Output Instructions",
-  PromptText: "Prompt Text",
   Prompt: "Prompt",
   Model: "Model",
   ModelSet: "Model Set",
@@ -669,6 +696,8 @@ const defaultLabels: Record<NodeKind, string> = {
   Entrypoint: "Entrypoint",
   Memory: "Memory",
   Router: "Router",
+  Agent: "Agent",
+  SubAgent: "Sub-Agent",
 };
 
 function defaultConfig( kind: NodeKind ): WorkflowNodeData["config"] {
@@ -677,10 +706,8 @@ function defaultConfig( kind: NodeKind ): WorkflowNodeData["config"] {
     case "Context":
     case "OutputIndicator":
       return { text: "" };
-    case "PromptText":
-      return { role: "system", template: "", inputs: {} };
     case "Prompt":
-      return { validator: undefined };
+      return { role: "system", template: "", inputs: {}, validator: undefined };
     case "Model":
       {
         const [firstBedrock] = listModelsByProvider( "bedrock" );
@@ -727,6 +754,15 @@ function defaultConfig( kind: NodeKind ): WorkflowNodeData["config"] {
     case "Router":
       return {
         conditions: [],
+      };
+    case "Agent":
+      return {
+        executionMode: "direct",
+      };
+    case "SubAgent":
+      return {
+        role: "worker",
+        communicationProtocol: "hierarchical",
       };
     default:
       return {};
@@ -778,6 +814,67 @@ function hydrateEdge( raw: any ): FlowEdge {
     targetHandle: raw.targetHandle,
     label: raw.label,
   };
+}
+
+/**
+ * Migrate legacy PromptText nodes into their connected Prompt nodes.
+ * For each PromptText node, merges its role/template/inputs into the
+ * target Prompt, then removes the PromptText node and its edge.
+ */
+function migratePromptTextNodes(
+  nodes: FlowNode[],
+  edges: FlowEdge[]
+): { nodes: FlowNode[]; edges: FlowEdge[] } {
+  const promptTextNodes = nodes.filter((n) => n.data?.type === "PromptText");
+  if (promptTextNodes.length === 0) return { nodes, edges };
+
+  const migratedNodeIds = new Set<string>();
+  const migratedEdgeIds = new Set<string>();
+  const updatedNodes = new Map<string, FlowNode>();
+
+  for (const ptNode of promptTextNodes) {
+    // Find the edge from this PromptText to a Prompt node
+    const outEdge = edges.find(
+      (e) => e.source === ptNode.id && nodes.some((n) => n.id === e.target && n.data?.type === "Prompt")
+    );
+
+    if (outEdge) {
+      const targetPrompt = nodes.find((n) => n.id === outEdge.target);
+      if (targetPrompt) {
+        const ptConfig = ptNode.data?.config as any;
+        const promptConfig = { ...(targetPrompt.data?.config as any) };
+
+        // Merge PromptText fields into Prompt if Prompt doesn't already have them
+        if (!promptConfig.template && ptConfig?.template) {
+          promptConfig.template = ptConfig.template;
+        }
+        if (!promptConfig.role && ptConfig?.role) {
+          promptConfig.role = ptConfig.role;
+        }
+        if (!promptConfig.inputs && ptConfig?.inputs) {
+          promptConfig.inputs = ptConfig.inputs;
+        }
+
+        const updated = updatedNodes.get(targetPrompt.id) ?? { ...targetPrompt };
+        updated.data = { ...updated.data, config: promptConfig };
+        updatedNodes.set(targetPrompt.id, updated);
+
+        migratedEdgeIds.add(outEdge.id);
+      }
+    }
+
+    migratedNodeIds.add(ptNode.id);
+
+    // Also remove any incoming edges to the PromptText node
+    edges.filter((e) => e.target === ptNode.id).forEach((e) => migratedEdgeIds.add(e.id));
+  }
+
+  const finalNodes = nodes
+    .filter((n) => !migratedNodeIds.has(n.id))
+    .map((n) => updatedNodes.get(n.id) ?? n);
+  const finalEdges = edges.filter((e) => !migratedEdgeIds.has(e.id));
+
+  return { nodes: finalNodes, edges: finalEdges };
 }
 
 function createFlowNode(
@@ -891,6 +988,13 @@ const TEMPLATE_DEFINITIONS: Record<string, TemplateDefinition> = {
         { x: 320, y: 160 },
         {
           label: "Research Prompt",
+          config: {
+            role: "system",
+            template:
+              "Follow a three-stage process: 1) Research leads, 2) Analyze data, 3) Draft report. Use tools when you need verification.",
+            inputs: {},
+            validator: undefined,
+          },
         }
       );
       const background = createFlowNode(
@@ -922,19 +1026,6 @@ const TEMPLATE_DEFINITIONS: Record<string, TemplateDefinition> = {
           config: {
             text:
               "Return a markdown report with sections: Summary, Findings, Evidence Table, Next Steps.",
-          },
-        }
-      );
-      const promptText = createFlowNode(
-        "PromptText",
-        { x: 200, y: 40 },
-        {
-          label: "Research Process",
-          config: {
-            role: "system",
-            template:
-              "Follow a three-stage process: 1) Research leads, 2) Analyze data, 3) Draft report. Use tools when you need verification.",
-            inputs: {},
           },
         }
       );
@@ -1020,7 +1111,6 @@ const TEMPLATE_DEFINITIONS: Record<string, TemplateDefinition> = {
         background,
         context,
         outputIndicator,
-        promptText,
         model,
         modelSet,
         factTool,
@@ -1033,7 +1123,6 @@ const TEMPLATE_DEFINITIONS: Record<string, TemplateDefinition> = {
         createEdge( background, prompt, "background" ),
         createEdge( context, prompt, "context" ),
         createEdge( outputIndicator, prompt, "output" ),
-        createEdge( promptText, prompt, "prompt-text" ),
         createEdge( prompt, modelSet ),
         createEdge( model, modelSet ),
         createEdge( modelSet, toolSet ),
@@ -1059,7 +1148,16 @@ const TEMPLATE_DEFINITIONS: Record<string, TemplateDefinition> = {
       const prompt = createFlowNode(
         "Prompt",
         { x: 320, y: 150 },
-        { label: "Writer Prompt" }
+        {
+          label: "Writer Prompt",
+          config: {
+            role: "system",
+            template:
+              "Draft an outline, write the article, then critique and revise to tighten arguments. Keep paragraphs concise.",
+            inputs: {},
+            validator: undefined,
+          },
+        }
       );
       const tone = createFlowNode(
         "Background",
@@ -1091,19 +1189,6 @@ const TEMPLATE_DEFINITIONS: Record<string, TemplateDefinition> = {
           config: {
             text:
               "Return final article with sections: Hook, Key Insights, Action Steps. Include references when applicable.",
-          },
-        }
-      );
-      const draftingPrompt = createFlowNode(
-        "PromptText",
-        { x: 200, y: 40 },
-        {
-          label: "Drafting Instructions",
-          config: {
-            role: "system",
-            template:
-              "Draft an outline, write the article, then critique and revise to tighten arguments. Keep paragraphs concise.",
-            inputs: {},
           },
         }
       );
@@ -1176,7 +1261,6 @@ const TEMPLATE_DEFINITIONS: Record<string, TemplateDefinition> = {
         tone,
         assignment,
         guardrail,
-        draftingPrompt,
         claude,
         editingTool,
         styleTool,
@@ -1188,7 +1272,6 @@ const TEMPLATE_DEFINITIONS: Record<string, TemplateDefinition> = {
         createEdge( tone, prompt ),
         createEdge( assignment, prompt ),
         createEdge( guardrail, prompt ),
-        createEdge( draftingPrompt, prompt ),
         createEdge( prompt, claude ),
         createEdge( claude, toolSet ),
         createEdge( editingTool, toolSet ),
@@ -1215,6 +1298,13 @@ const TEMPLATE_DEFINITIONS: Record<string, TemplateDefinition> = {
         { x: 300, y: 140 },
         {
           label: "Automation Prompt",
+          config: {
+            role: "system",
+            template:
+              "Prefer tools before calling the model. Always log tool outputs to shared context logs.",
+            inputs: {},
+            validator: undefined,
+          },
         }
       );
       const context = createFlowNode(
@@ -1235,19 +1325,6 @@ const TEMPLATE_DEFINITIONS: Record<string, TemplateDefinition> = {
           label: "Validation Rules",
           config: {
             text: "Validate output with JSON schema defined in validator config.",
-          },
-        }
-      );
-      const promptAddon = createFlowNode(
-        "PromptText",
-        { x: 180, y: 40 },
-        {
-          label: "Tool Instructions",
-          config: {
-            role: "system",
-            template:
-              "Prefer tools before calling the model. Always log tool outputs to shared context logs.",
-            inputs: {},
           },
         }
       );
@@ -1306,7 +1383,6 @@ const TEMPLATE_DEFINITIONS: Record<string, TemplateDefinition> = {
         prompt,
         context,
         validator,
-        promptAddon,
         toolMcp,
         toolInternal,
         toolSet,
@@ -1316,7 +1392,6 @@ const TEMPLATE_DEFINITIONS: Record<string, TemplateDefinition> = {
       const edges = [
         createEdge( context, prompt ),
         createEdge( validator, prompt ),
-        createEdge( promptAddon, prompt ),
         createEdge( prompt, toolSet ),
         createEdge( toolMcp, toolSet ),
         createEdge( toolInternal, toolSet ),
@@ -1359,7 +1434,6 @@ export function VisualScriptingBuilder() {
 
   const initialNodes = useMemo<FlowNode[]>( () => {
     const promptId = generateId( "Prompt" );
-    const promptTextId = generateId( "PromptText" );
     const modelId = generateId( "Model" );
     const nodes: FlowNode[] = [
       {
@@ -1368,25 +1442,15 @@ export function VisualScriptingBuilder() {
         position: { x: 200, y: 120 },
         data: {
           type: "Prompt",
-          label: "Primary Prompt",
-          notes: "",
-          config: defaultConfig( "Prompt" ),
-        } as WorkflowNodeData,
-      },
-      {
-        id: promptTextId,
-        type: "workflow",
-        position: { x: 20, y: 40 },
-        data: {
-          type: "PromptText",
           label: "Persona",
           notes: "",
           config: {
             role: "system",
             template: "You are a helpful assistant.",
             inputs: {},
+            validator: undefined,
           },
-        },
+        } as WorkflowNodeData,
       },
       {
         id: modelId,
@@ -1400,22 +1464,16 @@ export function VisualScriptingBuilder() {
         } as WorkflowNodeData,
       },
     ];
-    counterRef.current = 3;
+    counterRef.current = 2;
     return nodes;
   }, [] );
 
   const initialEdges = useMemo<FlowEdge[]>( () => {
     return [
       {
-        id: "promptText-to-prompt",
-        source: ( initialNodes[1] ?? { id: "" } ).id,
-        target: ( initialNodes[0] ?? { id: "" } ).id,
-        type: "smoothstep",
-      },
-      {
         id: "prompt-to-model",
         source: ( initialNodes[0] ?? { id: "" } ).id,
-        target: ( initialNodes[2] ?? { id: "" } ).id,
+        target: ( initialNodes[1] ?? { id: "" } ).id,
         type: "smoothstep",
       },
     ];
@@ -1615,11 +1673,13 @@ export function VisualScriptingBuilder() {
     ( workflow: any ) => {
       const hydratedNodes = ( workflow.nodes ?? [] ).map( hydrateNode );
       const hydratedEdges = ( workflow.edges ?? [] ).map( hydrateEdge );
-      setNodes( hydratedNodes );
-      setEdges( hydratedEdges );
+      // Auto-migrate legacy PromptText nodes into connected Prompt nodes
+      const migrated = migratePromptTextNodes( hydratedNodes, hydratedEdges );
+      setNodes( migrated.nodes );
+      setEdges( migrated.edges );
       setWorkflowName( workflow.name ?? "Untitled Workflow" );
       setActiveWorkflowId( workflow._id );
-      counterRef.current = hydratedNodes.length;
+      counterRef.current = migrated.nodes.length;
     },
     [setNodes, setEdges]
   );
@@ -1887,14 +1947,11 @@ export function VisualScriptingBuilder() {
           <Panel position="bottom-left" className="bg-gray-900/90 rounded p-2 max-w-md">
             <p className="text-xs text-gray-400 leading-relaxed">
               <span className="text-emerald-400 font-semibold">Flow:</span>{" "}
-              Entrypoint → PromptText <span className="text-sky-300">(Persona)</span>{" "}
-              + PromptText <span className="text-sky-300">(User Prompt)</span>{" "}
-              → Prompt → Model → Output.{" "}
+              Background/Context/Output → <span className="text-sky-300">Prompt</span>{" "}
+              → Model → Output.{" "}
               Connect <span className="text-green-300">Tool</span> or{" "}
-              <span className="text-green-300">ToolSet</span> nodes as inputs to
-              the Model for tool calling. Add{" "}
-              <span className="text-cyan-300">MCP tools</span> for external
-              integrations.
+              <span className="text-green-300">ToolSet</span> nodes for tool calling.{" "}
+              Add <span className="text-violet-300">Agent</span> nodes for autonomous execution.
             </p>
           </Panel>
         </ReactFlow>
@@ -1963,8 +2020,7 @@ export function VisualScriptingBuilder() {
 
 const NODE_TOOLTIPS: Record<NodeKind, string> = {
   Entrypoint: "Starting point of the workflow. Defines how this agent is triggered (HTTP, CLI, etc).",
-  PromptText: "Text block injected into the prompt. Set role to 'system' for persona or 'user' for the primary prompt.",
-  Prompt: "Collects all connected PromptText nodes into a single prompt. Optional output validator (regex/JSON schema).",
+  Prompt: "The primary prompt node. Set role, template text with {{handlebars}}, template inputs, and optional output validation.",
   Model: "LLM configuration — pick provider and model. Connect Tool/ToolSet nodes as inputs for tool calling.",
   ModelSet: "Group of models for A/B testing or fallback chains.",
   Tool: "A callable tool — internal (memory, handoff) or MCP (external server). Connect as input to a Model node.",
@@ -1974,15 +2030,19 @@ const NODE_TOOLTIPS: Record<NodeKind, string> = {
   Background: "Background context injected into every turn (e.g. knowledge, rules, constraints).",
   Context: "Dynamic context that changes per-turn (e.g. user profile, session state).",
   OutputIndicator: "Instructions for how the final output should be formatted (e.g. JSON, summary, markdown).",
+  Agent: "An autonomous agent with its own system prompt, model, and tools. Connect SubAgent nodes for multi-agent patterns.",
+  SubAgent: "A child agent within a swarm or graph. Connect as input to an Agent node running in swarm/graph/workflow mode.",
 };
 
 function WorkflowCanvasNode( { data }: NodeProps<WorkflowNodeData> ) {
-  const badgeColor = colorForNodeKind( data.type );
+  // Legacy PromptText nodes map to Prompt for display purposes
+  const displayKind: NodeKind = data.type === "PromptText" ? "Prompt" : data.type;
+  const badgeColor = colorForNodeKind( displayKind );
 
   return (
     <div
       className="rounded-lg border border-gray-700 bg-gray-900 text-gray-100 px-3 py-2 shadow-md min-w-[160px]"
-      title={NODE_TOOLTIPS[data.type] ?? data.type}
+      title={NODE_TOOLTIPS[displayKind] ?? data.type}
     >
       <Handle
         type="target"
@@ -1996,13 +2056,13 @@ function WorkflowCanvasNode( { data }: NodeProps<WorkflowNodeData> ) {
       />
       <div className="flex items-center justify-between gap-2">
         <span className="text-sm font-semibold text-white truncate">
-          {data.label || defaultLabels[data.type]}
+          {data.label || defaultLabels[displayKind]}
         </span>
         <span
           className="text-[10px] uppercase tracking-wide px-2 py-1 rounded-full text-gray-900"
           style={{ backgroundColor: badgeColor }}
         >
-          {data.type}
+          {displayKind}
         </span>
       </div>
       {data.notes && (
@@ -2017,7 +2077,6 @@ function colorForNodeKind( kind: NodeKind, alpha = 1 ): string {
     Background: `rgba(59,130,246,${alpha})`,
     Context: `rgba(96,165,250,${alpha})`,
     OutputIndicator: `rgba(234,179,8,${alpha})`,
-    PromptText: `rgba(14,165,233,${alpha})`,
     Prompt: `rgba(236,72,153,${alpha})`,
     Model: `rgba(139,92,246,${alpha})`,
     ModelSet: `rgba(168,85,247,${alpha})`,
@@ -2026,6 +2085,8 @@ function colorForNodeKind( kind: NodeKind, alpha = 1 ): string {
     Memory: `rgba(249,115,22,${alpha})`,
     Router: `rgba(248,113,113,${alpha})`,
     Entrypoint: `rgba(20,184,166,${alpha})`,
+    Agent: `rgba(167,139,250,${alpha})`,
+    SubAgent: `rgba(196,181,253,${alpha})`,
   };
   return mapper[kind] ?? `rgba(107,114,128,${alpha})`;
 }

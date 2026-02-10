@@ -5,12 +5,19 @@
 
 import { query } from "./_generated/server";
 import { v } from "convex/values";
+import { getAuthUserId } from "@convex-dev/auth/server";
 
 export const calculatePlatformValue = query({
   args: { agentId: v.id("agents") },
   handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
     const agent = await ctx.db.get(args.agentId);
     if (!agent) return null;
+
+    // Only allow owner or public agents
+    const isOwner = userId && agent.createdBy === userId;
+    const isPublic = (agent as any).isPublic === true;
+    if (!isOwner && !isPublic) return null;
 
     const toolCount = agent.tools?.length || 0;
     const mcpCount = 11; // Built-in MCP servers

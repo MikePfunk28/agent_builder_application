@@ -483,8 +483,10 @@ export const detectAndSetupLocalModels = action({
 
       if (detectionResult.detected.length === 0) {
         // Auto-setup Ollama if nothing detected
+        // NOTE: process.platform here is the Convex server's OS, not the end user's.
+        // Default to "linux" for cloud environment; client should provide actual platform.
         const setupResult = await ctx.runAction(internal.localModelDetector.setupOllama, {
-          platform: process.platform,
+          platform: process.env.TARGET_PLATFORM || "linux",
           installModels: ["llama3.2:3b", "mistral:7b"],
         });
 

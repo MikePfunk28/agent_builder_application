@@ -372,19 +372,38 @@ async function executeViaOllama(params: {
       content: params.input,
     });
 
-    // Call Ollama's OpenAI-compatible endpoint
-    const response = await fetch(`${params.ollamaEndpoint}/v1/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: params.modelId,
-        messages: messages,
-        temperature: 0.7,
-        max_tokens: 4096,
-      }),
-    });
+    // Validate Ollama endpoint to prevent SSRF
+    const allowedHosts = ["localhost", "127.0.0.1", "0.0.0.0", "::1"];
+    try {
+      const endpointUrl = new URL(params.ollamaEndpoint);
+      if (!allowedHosts.includes(endpointUrl.hostname)) {
+        throw new Error(`Ollama endpoint host '${endpointUrl.hostname}' is not allowed. Only localhost connections are permitted.`);
+      }
+    } catch (e: any) {
+      if (e.message.includes("not allowed")) throw e;
+      throw new Error(`Invalid Ollama endpoint URL: ${params.ollamaEndpoint}`);
+    }
+
+    // Call Ollama's OpenAI-compatible endpoint with timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    try {
+      var response = await fetch(`${params.ollamaEndpoint}/v1/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: params.modelId,
+          messages: messages,
+          temperature: 0.7,
+          max_tokens: 4096,
+        }),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     if (!response.ok) {
       const errorText = await response.text();

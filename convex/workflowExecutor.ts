@@ -46,9 +46,13 @@ export const executeWorkflow = action({
     const hasModelNodes = nodes.some((n) => n.data.type === "Model" || n.data.type === "ModelSet");
     const hasToolNodes = nodes.some((n) => n.data.type === "Tool" || n.data.type === "ToolSet");
     const hasRouterNodes = nodes.some((n) => n.data.type === "Router");
+    const hasAgentNodes = nodes.some((n) => n.data.type === "Agent");
 
     // 3. CHOOSE EXECUTION STRATEGY
-    if (hasPromptNodes && hasModelNodes && !hasRouterNodes) {
+    if (hasAgentNodes) {
+      // Agent-driven workflow — delegate to strands agent or multi-agent runtime
+      return await executeAgentWorkflow(ctx, { nodes, edges, input, startTime });
+    } else if (hasPromptNodes && hasModelNodes && !hasRouterNodes) {
       // Use message composer for Prompt + Model workflows
       return await executePromptModelWorkflow(ctx, { nodes, edges, input, runtimeInputs, startTime });
     } else if (hasRouterNodes) {
@@ -221,40 +225,53 @@ async function executeDAGWorkflow(
     dependencies.set(edge.target, deps);
   });
 
-  // Recursive execution with memoization
+  // In-flight promises prevent duplicate concurrent executions of the same node
+  const inFlight = new Map<string, Promise<any>>();
+
+  // Recursive execution with deduplication
   async function executeNodeRecursive(nodeId: string): Promise<any> {
     if (executed.has(nodeId)) {
       return nodeResults.get(nodeId);
     }
 
-    const node = nodes.find((n) => n.id === nodeId);
-    if (!node) throw new Error(`Node ${nodeId} not found`);
+    // Return existing in-flight promise to prevent race conditions
+    if (inFlight.has(nodeId)) {
+      return inFlight.get(nodeId);
+    }
 
-    // Execute dependencies first (parallel if independent)
-    const deps = dependencies.get(nodeId) || [];
-    const depResults = await Promise.all(
-      deps.map((depId) => executeNodeRecursive(depId))
-    );
+    const promise = (async () => {
+      const node = nodes.find((n) => n.id === nodeId);
+      if (!node) throw new Error(`Node ${nodeId} not found`);
 
-    // Merge dependency outputs
-    const nodeInput = depResults.length === 1 ? depResults[0] : depResults.length > 1 ? depResults : input;
+      // Execute dependencies first (parallel if independent)
+      const deps = dependencies.get(nodeId) || [];
+      const depResults = await Promise.all(
+        deps.map((depId) => executeNodeRecursive(depId))
+      );
 
-    // Execute this node
-    const nodeStartTime = Date.now();
-    const result = await executeNode(ctx, node, nodeInput, nodeResults);
+      // Merge dependency outputs
+      const nodeInput = depResults.length === 1 ? depResults[0] : depResults.length > 1 ? depResults : input;
 
-    executionLog.push({
-      nodeId: node.id,
-      nodeType: node.data.type,
-      nodeLabel: node.data.label || node.id,
-      executionTime: Date.now() - nodeStartTime,
-      result,
-    });
+      // Execute this node
+      const nodeStartTime = Date.now();
+      const result = await executeNode(ctx, node, nodeInput, nodeResults);
 
-    executed.add(nodeId);
-    nodeResults.set(nodeId, result);
+      executionLog.push({
+        nodeId: node.id,
+        nodeType: node.data.type,
+        nodeLabel: node.data.label || node.id,
+        executionTime: Date.now() - nodeStartTime,
+        result,
+      });
 
-    return result;
+      executed.add(nodeId);
+      nodeResults.set(nodeId, result);
+
+      return result;
+    })();
+
+    inFlight.set(nodeId, promise);
+    return promise;
   }
 
   // Find output nodes (nodes with no outgoing edges)
@@ -291,6 +308,148 @@ async function executeDAGWorkflow(
     executionLog,
     executionTime: Date.now() - startTime,
   };
+}
+
+/**
+ * Execute Agent-driven workflows
+ * - "direct" mode: single agent execution via strandsAgentExecution
+ * - "swarm"/"graph"/"workflow" mode: multi-agent execution via multiAgentRuntime
+ */
+async function executeAgentWorkflow(
+  ctx: any,
+  {
+    nodes,
+    edges,
+    input,
+    startTime,
+  }: {
+    nodes: WorkflowNode[];
+    edges: WorkflowEdge[];
+    input: any;
+    startTime: number;
+  }
+): Promise<{ success: boolean; result?: any; error?: string; executionLog?: any[]; executionTime: number }> {
+  const executionLog: any[] = [];
+  const agentNodes = nodes.filter((n) => n.data.type === "Agent");
+
+  if (agentNodes.length === 0) {
+    throw new Error("No Agent nodes found in workflow");
+  }
+
+  // Use the first Agent node as the primary agent
+  const primaryAgent = agentNodes[0];
+  const agentConfig = primaryAgent.data.config as any;
+  const executionMode = agentConfig.executionMode || "direct";
+  const message = typeof input === "string" ? input : (input?.message ?? JSON.stringify(input));
+
+  if (executionMode === "direct") {
+    // Single agent execution
+    if (!agentConfig.agentId) {
+      return {
+        success: false,
+        error: "Agent node requires an agentId for direct execution. Select an agent in the node settings.",
+        executionTime: Date.now() - startTime,
+      };
+    }
+
+    try {
+      const result: any = await ctx.runAction(api.strandsAgentExecution.executeAgentWithStrandsAgents, {
+        agentId: agentConfig.agentId,
+        message,
+      });
+
+      executionLog.push({
+        nodeId: primaryAgent.id,
+        nodeType: "Agent",
+        nodeLabel: primaryAgent.data.label || agentConfig.name || "Agent",
+        executionTime: Date.now() - startTime,
+        result,
+      });
+
+      return {
+        success: result.success,
+        result: result,
+        executionLog,
+        executionTime: Date.now() - startTime,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error.message,
+        executionLog,
+        executionTime: Date.now() - startTime,
+      };
+    }
+  }
+
+  // Multi-agent mode (swarm/graph/workflow)
+  // Gather SubAgent nodes connected to the primary Agent
+  const subAgentNodes = nodes.filter((n) => n.data.type === "SubAgent");
+  const connectedSubAgents = subAgentNodes.filter((sub) =>
+    edges.some((e) => e.target === primaryAgent.id && e.source === sub.id)
+  );
+
+  if (!agentConfig.agentId) {
+    return {
+      success: false,
+      error: "Agent node requires an agentId for multi-agent execution.",
+      executionTime: Date.now() - startTime,
+    };
+  }
+
+  const agentsList = connectedSubAgents
+    .map((sub) => {
+      const subConfig = sub.data.config as any;
+      if (!subConfig.agentId) return null;
+      return {
+        agentId: subConfig.agentId,
+        role: subConfig.role || sub.data.label || "worker",
+      };
+    })
+    .filter(Boolean);
+
+  if (agentsList.length === 0) {
+    return {
+      success: false,
+      error: `Agent is in "${executionMode}" mode but has no connected SubAgent nodes with valid agentIds.`,
+      executionTime: Date.now() - startTime,
+    };
+  }
+
+  try {
+    const pattern = executionMode === "swarm" ? "swarm" : executionMode === "graph" ? "graph" : "workflow";
+    const result: any = await ctx.runAction(api.multiAgentRuntime.executeMultiAgentPattern, {
+      parentAgentId: agentConfig.agentId,
+      pattern,
+      agents: agentsList,
+      executionMode: pattern === "swarm" ? "parallel" : "sequential",
+      sharedContext: { input: message },
+    });
+
+    executionLog.push({
+      nodeId: primaryAgent.id,
+      nodeType: "Agent",
+      nodeLabel: primaryAgent.data.label || agentConfig.name || "Agent",
+      mode: executionMode,
+      subAgents: agentsList.length,
+      executionTime: Date.now() - startTime,
+      result,
+    });
+
+    return {
+      success: true,
+      result,
+      executionLog,
+      executionTime: Date.now() - startTime,
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      error: error.message,
+      executionLog,
+      executionTime: Date.now() - startTime,
+    };
+  }
 }
 
 /**
@@ -436,6 +595,29 @@ async function executeNode(
       // Entrypoint defines runtime, doesn't execute
       const entrypointConfig = config as any;
       return { runtime: entrypointConfig.runtime, path: entrypointConfig.path };
+    }
+
+    case "Agent": {
+      // Agent execution — delegated to strands agent or multi-agent runtime
+      // Direct execution happens in executeAgentWorkflow; here we return config for DAG
+      const agentConfig = config as any;
+      return {
+        nodeType: "Agent",
+        agentId: agentConfig.agentId,
+        executionMode: agentConfig.executionMode || "direct",
+        name: agentConfig.name,
+      };
+    }
+
+    case "SubAgent": {
+      // SubAgent provides config to parent Agent node — not executed independently
+      const subAgentConfig = config as any;
+      return {
+        nodeType: "SubAgent",
+        agentId: subAgentConfig.agentId,
+        role: subAgentConfig.role,
+        communicationProtocol: subAgentConfig.communicationProtocol || "hierarchical",
+      };
     }
 
     default:

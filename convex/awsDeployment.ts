@@ -600,9 +600,13 @@ function generateAgentCoreRequirements(tools: any[]): string {
 }
 
 function generateAgentCoreDockerfile(agent: any): string {
-  const isOllamaModel = !agent.model?.includes(".");
-  
+  const isOllamaModel = typeof agent.model === "string" && !agent.model.includes(".");
+
   if (isOllamaModel) {
+    // Validate model name to prevent shell injection in entrypoint.sh
+    const safeModelPattern = /^[A-Za-z0-9._:/-]+$/;
+    const modelName = safeModelPattern.test(agent.model) ? agent.model : "llama3:latest";
+
     return `FROM ollama/ollama:latest
 
 RUN apt-get update && apt-get install -y python3.11 python3-pip curl && rm -rf /var/lib/apt/lists/*
@@ -611,7 +615,7 @@ WORKDIR /app
 COPY requirements.txt agent.py ./
 RUN pip3 install --no-cache-dir -r requirements.txt
 
-RUN echo '#!/bin/bash\nollama serve &\nsleep 5\nollama pull ${agent.model}\npython3 agent.py' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
+RUN echo '#!/bin/bash\nollama serve &\nsleep 5\nollama pull ${modelName}\npython3 agent.py' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 
 EXPOSE 8080 11434
 ENTRYPOINT ["/app/entrypoint.sh"]

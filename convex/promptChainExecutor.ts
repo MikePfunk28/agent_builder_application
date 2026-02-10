@@ -246,24 +246,33 @@ async function invokeModel(modelSpec: string, prompt: string, _ctx: any): Promis
  * Invoke Ollama model
  */
 async function invokeOllama(model: string, prompt: string): Promise<string> {
-  const response = await fetch("http://127.0.0.1:11434/api/generate", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      prompt,
-      stream: false,
-    }),
-  });
+  const ollamaHost = process.env.OLLAMA_ENDPOINT || "http://127.0.0.1:11434";
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-  if (!response.ok) {
-    throw new Error(`Ollama request failed: ${response.status}`);
+  try {
+    const response = await fetch(`${ollamaHost}/api/generate`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        prompt,
+        stream: false,
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Ollama request failed: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data.response;
+  } finally {
+    clearTimeout(timeoutId);
   }
-
-  const data = await response.json();
-  return data.response;
 }
 
 /**

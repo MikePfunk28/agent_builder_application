@@ -496,6 +496,20 @@ export const testLocalModel = internalAction({
   handler: async (ctx, args): Promise<{ success: boolean; message: string; latency?: number }> => {
     const startTime = Date.now();
 
+    // Validate endpoint to prevent SSRF - only allow localhost connections
+    const allowedHosts = ["localhost", "127.0.0.1", "0.0.0.0", "::1"];
+    try {
+      const endpointUrl = new URL(args.endpoint);
+      if (!allowedHosts.includes(endpointUrl.hostname)) {
+        return {
+          success: false,
+          message: `Endpoint host '${endpointUrl.hostname}' is not allowed. Only localhost connections are permitted.`,
+        };
+      }
+    } catch {
+      return { success: false, message: `Invalid endpoint URL: ${args.endpoint}` };
+    }
+
     try {
       switch (args.provider) {
         case 'ollama':

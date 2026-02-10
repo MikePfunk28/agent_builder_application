@@ -308,15 +308,24 @@ async function executeVideo(
   message: string,
   decision: UnifiedModelDecision
 ): Promise<UnifiedExecutionResult> {
-  const { BedrockRuntimeClient, InvokeModelCommand } = await import(
+  const { BedrockRuntimeClient, StartAsyncInvokeCommand, GetAsyncInvokeCommand } = await import(
     "@aws-sdk/client-bedrock-runtime"
   );
 
+  const region = process.env.AWS_REGION || "us-east-1";
+  const s3Bucket = process.env.AWS_S3_BUCKET;
+  if (!s3Bucket) {
+    throw new Error("AWS_S3_BUCKET environment variable is required for video generation");
+  }
+  if (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) {
+    throw new Error("AWS credentials (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY) are required for video generation");
+  }
+
   const client = new BedrockRuntimeClient({
-    region: process.env.AWS_REGION || "us-east-1",
+    region,
     credentials: {
-      accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
     },
   });
 
@@ -330,21 +339,52 @@ async function executeVideo(
     videoGenerationConfig: config.videoGenerationConfig,
   };
 
-  const command = new InvokeModelCommand({
+  const s3OutputPrefix = `video-outputs/${agent._id}/${Date.now()}`;
+
+  // Nova Reel requires async invocation pattern
+  const startCommand = new StartAsyncInvokeCommand({
     modelId: config.modelId,
-    contentType: "application/json",
-    accept: "application/json",
-    body: JSON.stringify(payload),
+    modelInput: payload,
+    outputDataConfig: {
+      s3OutputDataConfig: {
+        s3Uri: `s3://${s3Bucket}/${s3OutputPrefix}`,
+      },
+    },
   });
 
-  const response = await client.send(command);
-  const responseBody = JSON.parse(new TextDecoder().decode(response.body));
+  const startResponse = await client.send(startCommand);
+  const invocationArn = startResponse.invocationArn;
 
-  // Video comes back as base64
-  const videoBase64 = responseBody.video;
+  if (!invocationArn) {
+    throw new Error("Failed to start async video generation: no invocationArn returned");
+  }
 
-  // Upload to S3
-  const s3Key = await uploadVideoToS3(ctx, videoBase64, agent._id);
+  // Poll for completion (max ~5 minutes)
+  const maxAttempts = 60;
+  const pollIntervalMs = 5000;
+  let status = "InProgress";
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+
+    const getCommand = new GetAsyncInvokeCommand({ invocationArn });
+    const getResponse = await client.send(getCommand);
+    status = getResponse.status || "Unknown";
+
+    if (status === "Completed") {
+      break;
+    } else if (status === "Failed") {
+      throw new Error(`Video generation failed: ${getResponse.failureMessage || "unknown error"}`);
+    }
+    // Continue polling for "InProgress"
+  }
+
+  if (status !== "Completed") {
+    throw new Error(`Video generation timed out after ${maxAttempts * pollIntervalMs / 1000}s`);
+  }
+
+  // Read generated video from S3 output location
+  const s3Key = `${s3OutputPrefix}/output.mp4`;
   const videoUrl = await getSignedS3Url(ctx, s3Key);
 
   return {

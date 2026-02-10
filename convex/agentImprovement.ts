@@ -50,7 +50,7 @@ export const applyImprovementPlan = action({
       name: agent.name, // Keep same name
       description: updatedConfig.description,
       systemPrompt: updatedConfig.systemPrompt,
-      tools: agent.tools, // Keep tools as-is for now (tools is complex object)
+      tools: updatedConfig.tools ?? agent.tools, // Use updated tools if provided, else keep existing
       model: updatedConfig.model,
       // Note: lastImprovedAt and improvementSource would need to be added to schema
     });

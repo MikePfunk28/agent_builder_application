@@ -32,6 +32,18 @@ export const executeMultiAgentPattern = action({
     sharedContext: v.optional(v.any()),
   },
   handler: async (ctx: any, args: any): Promise<any> => {
+    // Auth check: verify caller identity before executing multi-agent patterns
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthorized: authentication required to execute multi-agent patterns");
+    }
+
+    // Verify caller has access to the parent agent
+    const parentAgent = await ctx.runQuery(api.agents.get, { id: args.parentAgentId });
+    if (!parentAgent) {
+      throw new Error(`Forbidden: parent agent ${args.parentAgentId} not found or access denied`);
+    }
+
     console.log(`Multi-agent execution requested: ${args.pattern} mode with ${args.agents.length} agents`);
 
     try {

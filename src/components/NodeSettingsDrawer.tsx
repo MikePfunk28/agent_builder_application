@@ -117,14 +117,16 @@ export function NodeSettingsDrawer({
   const updateDraft = (update: Partial<WorkflowNodeData>) => {
     setDraft((current) => {
       if (!current) return current;
-      return { ...current, ...update };
+      return { ...current, ...update } as WorkflowNodeData;
     });
   };
 
   const updateConfig = <T,>(mutator: (config: T) => T) => {
-    if (!draft) return;
-    const nextConfig = mutator(draft.config as T);
-    setDraft({ ...draft, config: nextConfig } as WorkflowNodeData);
+    setDraft((prev) => {
+      if (!prev) return prev;
+      const nextConfig = mutator(prev.config as T);
+      return { ...prev, config: nextConfig } as WorkflowNodeData;
+    });
   };
 
   if (!isOpen || !node || !draft) {
@@ -285,6 +287,22 @@ function renderConfigEditor(
       return (
         <RouterEditor
           config={draft.config as RouterConfig}
+          updateConfig={updateConfig}
+        />
+      );
+
+    case "Agent":
+      return (
+        <AgentEditor
+          config={draft.config as AgentConfig}
+          updateConfig={updateConfig}
+        />
+      );
+
+    case "SubAgent":
+      return (
+        <SubAgentEditor
+          config={draft.config as SubAgentConfig}
           updateConfig={updateConfig}
         />
       );
@@ -1380,6 +1398,186 @@ function RouterEditor({
           </button>
         </div>
       ))}
+    </div>
+  );
+}
+
+const AGENT_EXECUTION_MODES: { value: AgentExecutionMode; label: string; description: string }[] = [
+  { value: "direct", label: "Direct", description: "Execute a single agent directly." },
+  { value: "swarm", label: "Swarm", description: "Parallel multi-agent execution. Connect SubAgent nodes." },
+  { value: "graph", label: "Graph", description: "Dependency-based execution graph. Connect SubAgent nodes." },
+  { value: "workflow", label: "Workflow", description: "Sequential pipeline. Connect SubAgent nodes." },
+];
+
+function AgentEditor({
+  config,
+  updateConfig,
+}: {
+  config: AgentConfig;
+  updateConfig: ConfigUpdater<AgentConfig>;
+}) {
+  const mode = config.executionMode ?? "direct";
+  const activeMode = AGENT_EXECUTION_MODES.find((m) => m.value === mode);
+
+  return (
+    <div className="space-y-4">
+      <label className="block text-sm font-medium text-gray-700">
+        Agent ID
+      </label>
+      <input
+        className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
+        value={config.agentId ?? ""}
+        onChange={(event) =>
+          updateConfig((cfg) => ({ ...cfg, agentId: event.target.value }))
+        }
+        placeholder="Select an agent from your library (paste agent ID)"
+      />
+      <p className="text-xs text-gray-400">
+        Paste the ID of an agent created in the Agent Builder.
+      </p>
+
+      <label className="block text-sm font-medium text-gray-700">
+        Execution Mode
+      </label>
+      <select
+        className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
+        title="Agent execution mode"
+        value={mode}
+        onChange={(event) =>
+          updateConfig((cfg) => ({
+            ...cfg,
+            executionMode: event.target.value as AgentExecutionMode,
+          }))
+        }
+      >
+        {AGENT_EXECUTION_MODES.map((m) => (
+          <option key={m.value} value={m.value}>
+            {m.label}
+          </option>
+        ))}
+      </select>
+      {activeMode && (
+        <p className="text-xs text-gray-500">{activeMode.description}</p>
+      )}
+
+      {!config.agentId && (
+        <div className="border-t border-gray-200 pt-3 space-y-3">
+          <p className="text-xs font-medium text-gray-600">
+            Inline Config (used when no Agent ID is set)
+          </p>
+
+          <label className="block text-sm font-medium text-gray-700">
+            Name
+          </label>
+          <input
+            className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
+            value={config.name ?? ""}
+            onChange={(event) =>
+              updateConfig((cfg) => ({ ...cfg, name: event.target.value }))
+            }
+            placeholder="Agent name"
+          />
+
+          <label className="block text-sm font-medium text-gray-700">
+            System Prompt
+          </label>
+          <textarea
+            rows={4}
+            className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
+            value={config.systemPrompt ?? ""}
+            onChange={(event) =>
+              updateConfig((cfg) => ({ ...cfg, systemPrompt: event.target.value }))
+            }
+            placeholder="You are a helpful assistant..."
+          />
+
+          <label className="block text-sm font-medium text-gray-700">
+            Model
+          </label>
+          <input
+            className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
+            value={config.model ?? ""}
+            onChange={(event) =>
+              updateConfig((cfg) => ({ ...cfg, model: event.target.value }))
+            }
+            placeholder="Model ID (e.g. from agent library)"
+          />
+
+          <label className="block text-sm font-medium text-gray-700">
+            Model Provider
+          </label>
+          <select
+            className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
+            title="Model provider"
+            value={config.modelProvider ?? "bedrock"}
+            onChange={(event) =>
+              updateConfig((cfg) => ({ ...cfg, modelProvider: event.target.value }))
+            }
+          >
+            <option value="bedrock">AWS Bedrock</option>
+            <option value="ollama">Ollama</option>
+            <option value="lmstudio">LMStudio</option>
+          </select>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SubAgentEditor({
+  config,
+  updateConfig,
+}: {
+  config: SubAgentConfig;
+  updateConfig: ConfigUpdater<SubAgentConfig>;
+}) {
+  return (
+    <div className="space-y-4">
+      <label className="block text-sm font-medium text-gray-700">
+        Agent ID
+      </label>
+      <input
+        className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
+        value={config.agentId ?? ""}
+        onChange={(event) =>
+          updateConfig((cfg) => ({ ...cfg, agentId: event.target.value }))
+        }
+        placeholder="Paste the ID of a child agent"
+      />
+      <p className="text-xs text-gray-400">
+        This sub-agent will be coordinated by the parent Agent node.
+      </p>
+
+      <label className="block text-sm font-medium text-gray-700">
+        Role
+      </label>
+      <input
+        className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
+        value={config.role ?? ""}
+        onChange={(event) =>
+          updateConfig((cfg) => ({ ...cfg, role: event.target.value }))
+        }
+        placeholder="e.g. researcher, writer, reviewer"
+      />
+
+      <label className="block text-sm font-medium text-gray-700">
+        Communication Protocol
+      </label>
+      <select
+        className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
+        title="Communication protocol"
+        value={config.communicationProtocol ?? "hierarchical"}
+        onChange={(event) =>
+          updateConfig((cfg) => ({
+            ...cfg,
+            communicationProtocol: event.target.value as SubAgentConfig["communicationProtocol"],
+          }))
+        }
+      >
+        <option value="hierarchical">Hierarchical</option>
+        <option value="broadcast">Broadcast</option>
+        <option value="a2a">Agent-to-Agent (A2A)</option>
+      </select>
     </div>
   );
 }

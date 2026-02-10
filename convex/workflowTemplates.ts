@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { getAuthUserId } from "@convex-dev/auth/server";
 
 // Workflow template definitions
 export const workflowTemplates = {
@@ -21,7 +22,7 @@ export const workflowTemplates = {
       { from: "step3", to: "output" }
     ]
   },
-  
+
   promptChaining: {
     id: "prompt-chaining",
     name: "Prompt Chaining",
@@ -231,23 +232,23 @@ export const workflowTemplates = {
   }
 };
 
-export const getWorkflowTemplates = query({
+export const getWorkflowTemplates = query( {
   handler: async () => {
-    return Object.values(workflowTemplates);
+    return Object.values( workflowTemplates );
   }
-});
+} );
 
-export const getWorkflowTemplate = query({
+export const getWorkflowTemplate = query( {
   args: { templateId: v.string() },
-  handler: async (_, { templateId }) => {
+  handler: async ( _, { templateId } ) => {
     return workflowTemplates[templateId as keyof typeof workflowTemplates] || null;
   }
-});
+} );
 
 /**
  * Maps legacy template node types to valid NodeKind values for the DB schema.
  */
-function mapNodeType(type: string): string {
+function mapNodeType( type: string ): string {
   const typeMap: Record<string, string> = {
     input: "Prompt",
     output: "OutputIndicator",
@@ -270,37 +271,46 @@ function mapNodeType(type: string): string {
   return typeMap[type] || "Prompt";
 }
 
-export const createWorkflowFromTemplate = mutation({
+export const createWorkflowFromTemplate = mutation( {
   args: {
     templateId: v.string(),
     name: v.string(),
     userId: v.string()
   },
-  handler: async (ctx, { templateId, name, userId }) => {
+  handler: async ( ctx, { templateId, name } ) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if ( !identity ) {
+      throw new Error( "Unauthorized" );
+    }
+    const userId = await getAuthUserId( ctx );
+    if ( !userId ) throw new Error( "Unauthorized" );
+
+    // use userId as the owner every time
+
     const template = workflowTemplates[templateId as keyof typeof workflowTemplates];
-    if (!template) throw new Error("Template not found");
+    if ( !template ) throw new Error( "Template not found" );
 
     // Convert template nodes to workflow schema format
-    const nodes = template.nodes.map((n: { id: string; type: string; label: string }, i: number) => ({
+    const nodes = template.nodes.map( ( n: { id: string; type: string; label: string }, i: number ) => ( {
       id: n.id,
       type: "workflow",
-      position: { x: 200 + (i % 3) * 200, y: 100 + Math.floor(i / 3) * 150 },
+      position: { x: 200 + ( i % 3 ) * 200, y: 100 + Math.floor( i / 3 ) * 150 },
       data: {
-        type: mapNodeType(n.type),
+        type: mapNodeType( n.type ),
         label: n.label,
         notes: "",
         config: {},
       },
-    }));
+    } ) );
 
     // Convert template edges to workflow schema format
-    const edges = template.edges.map((e: { from: string; to: string }, i: number) => ({
+    const edges = template.edges.map( ( e: { from: string; to: string }, i: number ) => ( {
       id: `e-${i}`,
       source: e.from,
       target: e.to,
-    }));
+    } ) );
 
-    const workflowId = await ctx.db.insert("workflows", {
+    const workflowId = await ctx.db.insert( "workflows", {
       name,
       userId,
       templateId: template.id,
@@ -309,8 +319,8 @@ export const createWorkflowFromTemplate = mutation({
       status: "draft",
       createdAt: Date.now(),
       updatedAt: Date.now()
-    });
+    } );
 
     return { workflowId, workflow: template };
   }
-});
+} );

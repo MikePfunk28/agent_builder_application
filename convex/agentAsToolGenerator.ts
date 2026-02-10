@@ -41,9 +41,14 @@ function generateToolCode(
   description: string,
   agentId: string
 ): string {
+  // Sanitize inputs to prevent template injection in generated Python code
+  const sanitize = (s: string) => s.replace(/\\/g, "\\\\").replace(/"""/g, '\\"\\"\\"');
+  const safeAgentName = sanitize(agentName);
+  const safeDescription = sanitize(description);
+  const safeAgentId = sanitize(agentId);
   return `"""
-Agent-as-Tool: ${agentName}
-Auto-generated wrapper to use ${agentName} as a tool in other agents.
+Agent-as-Tool: ${safeAgentName}
+Auto-generated wrapper to use ${safeAgentName} as a tool in other agents.
 """
 
 from strandsagents import tool

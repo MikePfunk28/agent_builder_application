@@ -63,6 +63,7 @@ import type * as lib_dynamicModelSwitching from "../lib/dynamicModelSwitching.js
 import type * as lib_fileGenerators from "../lib/fileGenerators.js";
 import type * as lib_memoryStore from "../lib/memoryStore.js";
 import type * as lib_messageExecutor from "../lib/messageExecutor.js";
+import type * as lib_roles from "../lib/roles.js";
 import type * as lib_strandsTools from "../lib/strandsTools.js";
 import type * as lib_unifiedModalitySwitching from "../lib/unifiedModalitySwitching.js";
 import type * as localModelDetector from "../localModelDetector.js";
@@ -168,6 +169,7 @@ declare const fullApi: ApiFromModules<{
   "lib/fileGenerators": typeof lib_fileGenerators;
   "lib/memoryStore": typeof lib_memoryStore;
   "lib/messageExecutor": typeof lib_messageExecutor;
+  "lib/roles": typeof lib_roles;
   "lib/strandsTools": typeof lib_strandsTools;
   "lib/unifiedModalitySwitching": typeof lib_unifiedModalitySwitching;
   localModelDetector: typeof localModelDetector;

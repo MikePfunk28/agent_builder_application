@@ -275,10 +275,10 @@ export const MODEL_BENCHMARKS: ModelBenchmarks[] = [
     recencyScore: 92,
     
     totalScore: 159.4,
-    valueScore: Infinity, // Free model, but compute costs
-    efficiencyScore: Infinity,
+    valueScore: -1, // Free model — sentinel for "not applicable"
+    efficiencyScore: -1,
   },
-  
+
   {
     model: "llama3:8b",
     provider: "ollama",
@@ -309,10 +309,10 @@ export const MODEL_BENCHMARKS: ModelBenchmarks[] = [
     recencyScore: 88,
     
     totalScore: 87.2,
-    valueScore: Infinity,
-    efficiencyScore: Infinity,
+    valueScore: -1,
+    efficiencyScore: -1,
   },
-  
+
   {
     model: "gemma2:27b",
     provider: "ollama",
@@ -343,10 +343,10 @@ export const MODEL_BENCHMARKS: ModelBenchmarks[] = [
     recencyScore: 90,
     
     totalScore: 109.1,
-    valueScore: Infinity,
-    efficiencyScore: Infinity,
+    valueScore: -1,
+    efficiencyScore: -1,
   },
-  
+
   {
     model: "gemma2:2b",
     provider: "ollama",
@@ -377,8 +377,8 @@ export const MODEL_BENCHMARKS: ModelBenchmarks[] = [
     recencyScore: 90,
     
     totalScore: 47.5,
-    valueScore: Infinity,
-    efficiencyScore: Infinity,
+    valueScore: -1,
+    efficiencyScore: -1,
   },
 ];
 
@@ -424,7 +424,7 @@ export function getBestValueModels(
   limit: number = 5
 ): ModelBenchmarks[] {
   return [...MODEL_BENCHMARKS]
-    .filter(m => m.valueScore !== Infinity && m.overallAbility >= minAbility)
+    .filter(m => m.valueScore > 0 && m.overallAbility >= minAbility)
     .sort((a, b) => b.valueScore - a.valueScore)
     .slice(0, limit);
 }

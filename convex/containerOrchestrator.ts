@@ -128,15 +128,9 @@ export const startTestContainer = internalAction({
       console.log(`✅ ECS task started: ${taskArn}`);
       console.log(`📊 Log stream: ${logGroup}/${logStream}`);
 
-      // TRACK USAGE: On successful ECS start
-      const testDetails = await ctx.runQuery(internal.testExecution.getTestByIdInternal, { testId: args.testId });
-      if (testDetails) {
-        await ctx.runMutation(internal.testExecution.incrementUserUsage, {
-          userId: testDetails.userId,
-          testId: args.testId,
-          executionMethod: "fargate",
-        });
-      }
+      // NOTE: Usage is tracked on completion (not start) to avoid double-counting.
+      // submitTest already increments testsThisMonth for cloud models.
+      // incrementUserUsage is called when "TEST COMPLETED SUCCESSFULLY" is detected in logs.
 
       // Schedule timeout handler (single timeout, not recurring - OK)
       await ctx.scheduler.runAfter(args.timeout, internal.containerOrchestrator.handleTimeout, {
