@@ -187,8 +187,8 @@ async function executeViaDirectBedrock(params: {
       },
     });
 
-    // Import comprehensive model catalog
-    const { ALL_MODELS } = await import("./lib/comprehensiveModelCatalog.js");
+    // Import model catalog from authoritative registry
+    const { ALL_MODELS } = await import("./modelRegistry.js");
 
     // Normalize model ID - try to find in catalog first
     let modelId = params.modelId;

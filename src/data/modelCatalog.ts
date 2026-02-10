@@ -241,13 +241,13 @@ export const MODEL_CATALOG: ModelMetadata[] = [
     },
     tags: ["reasoning"],
   },
-  // Ollama
+  // Ollama - Recommended defaults (actual models detected dynamically via useLocalModels hook)
   {
-    id: "llama3.1",
-    label: "Llama 3.1 8B",
-    description: "Meta Llama 3.1 served locally via Ollama.",
+    id: "ministral:3b",
+    label: "Ministral 3B",
+    description: "Lightweight Mistral model for fast local inference.",
     provider: "ollama",
-    family: "Meta Llama",
+    family: "Mistral",
     contextLength: 8000,
     defaultConfig: {
       temperature: 0.4,
@@ -255,60 +255,15 @@ export const MODEL_CATALOG: ModelMetadata[] = [
       numCtx: 8192,
       endpoint: LOCAL_MODEL_ENDPOINTS.ollama,
     },
-    tags: ["local", "general"],
+    tags: ["local", "fast"],
     recommended: true,
   },
   {
-    id: "llama3.1:70b",
-    label: "Llama 3.1 70B",
-    description: "Higher-capacity Llama 3.1 for local reasoning.",
-    provider: "ollama",
-    family: "Meta Llama",
-    contextLength: 8000,
-    defaultConfig: {
-      temperature: 0.35,
-      topP: 0.9,
-      numCtx: 8192,
-      endpoint: LOCAL_MODEL_ENDPOINTS.ollama,
-    },
-    tags: ["local", "reasoning"],
-  },
-  {
-    id: "qwen2.5:14b",
-    label: "Qwen2.5 14B",
-    description: "Alibaba Qwen 2.5 (14B) via Ollama for analytical tasks.",
+    id: "qwen3:4b",
+    label: "Qwen3 4B",
+    description: "Compact Qwen model for local reasoning and coding.",
     provider: "ollama",
     family: "Qwen",
-    contextLength: 10000,
-    defaultConfig: {
-      temperature: 0.35,
-      topP: 0.9,
-      numCtx: 10000,
-      endpoint: LOCAL_MODEL_ENDPOINTS.ollama,
-    },
-    tags: ["local", "analysis"],
-  },
-  {
-    id: "qwen2.5:32b",
-    label: "Qwen2.5 32B",
-    description: "Larger Qwen 2.5 for local research pipelines.",
-    provider: "ollama",
-    family: "Qwen",
-    contextLength: 10000,
-    defaultConfig: {
-      temperature: 0.35,
-      topP: 0.9,
-      numCtx: 10000,
-      endpoint: LOCAL_MODEL_ENDPOINTS.ollama,
-    },
-    tags: ["local", "reasoning"],
-  },
-  {
-    id: "deepseek-r1:8b",
-    label: "DeepSeek R1 8B",
-    description: "DeepSeek reasoning model for local chain-of-thought agents.",
-    provider: "ollama",
-    family: "DeepSeek",
     contextLength: 8000,
     defaultConfig: {
       temperature: 0.4,
@@ -317,38 +272,9 @@ export const MODEL_CATALOG: ModelMetadata[] = [
       endpoint: LOCAL_MODEL_ENDPOINTS.ollama,
     },
     tags: ["local", "reasoning"],
+    recommended: true,
   },
-  {
-    id: "deepseek-r1:14b",
-    label: "DeepSeek R1 14B",
-    description: "Higher-capacity DeepSeek for advanced reasoning on device.",
-    provider: "ollama",
-    family: "DeepSeek",
-    contextLength: 8000,
-    defaultConfig: {
-      temperature: 0.4,
-      topP: 0.9,
-      numCtx: 8192,
-      endpoint: LOCAL_MODEL_ENDPOINTS.ollama,
-    },
-    tags: ["local"],
-  },
-  {
-    id: "phi3:medium",
-    label: "Phi-3 Medium",
-    description: "Microsoft Phi-3 for structured reasoning via Ollama.",
-    provider: "ollama",
-    family: "Phi",
-    contextLength: 8000,
-    defaultConfig: {
-      temperature: 0.3,
-      topP: 0.9,
-      numCtx: 8192,
-      endpoint: LOCAL_MODEL_ENDPOINTS.ollama,
-    },
-    tags: ["local", "structured"],
-  },
-  // LMStudio (OpenAI-compatible local server)
+  // LMStudio - placeholder; actual loaded models detected dynamically via useLocalModels hook
   {
     id: "lmstudio-default",
     label: "LMStudio (Active Model)",
@@ -373,4 +299,35 @@ export function listModelsByProvider(provider: ModelProvider): ModelMetadata[] {
 
 export function getModelMetadata(id: string): ModelMetadata | undefined {
   return MODEL_CATALOG.find((model) => model.id === id);
+}
+
+/**
+ * Merge detected local models with the static catalog defaults.
+ * Detected models take precedence; recommended defaults are kept
+ * only if they weren't already detected (avoids duplicates).
+ */
+export function mergeLocalModels(
+  provider: "ollama" | "lmstudio",
+  detected: ModelMetadata[]
+): ModelMetadata[] {
+  const defaults = MODEL_CATALOG.filter((m) => m.provider === provider);
+  if (detected.length === 0) return defaults;
+
+  const detectedIds = new Set(detected.map((d) => d.id));
+  const kept = defaults.filter((d) => !detectedIds.has(d.id));
+  return [...detected, ...kept];
+}
+
+/**
+ * Look up a model from both the static catalog and an additional
+ * dynamic list (e.g. detected models from useLocalModels).
+ */
+export function getModelFromCatalogOrDetected(
+  id: string,
+  extraModels: ModelMetadata[] = []
+): ModelMetadata | undefined {
+  return (
+    MODEL_CATALOG.find((m) => m.id === id) ??
+    extraModels.find((m) => m.id === id)
+  );
 }

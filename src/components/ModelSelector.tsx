@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react";
-import { ChevronDown, Info } from "lucide-react";
+import { ChevronDown, Info, RefreshCw, Wifi, WifiOff } from "lucide-react";
 import {
   MODEL_CATALOG,
   ModelMetadata,
   ModelProvider,
-  LOCAL_MODEL_ENDPOINTS,
+  mergeLocalModels,
 } from "../data/modelCatalog";
+import { useLocalModels, detectedToMetadata } from "../hooks/useLocalModels";
 
 interface ModelSelectorProps {
   value: string;
@@ -27,10 +28,31 @@ const PROVIDER_OPTIONS: ProviderOption[] = [
 export function ModelSelector({ value, onChange }: ModelSelectorProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [provider, setProvider] = useState<ProviderOption["id"]>("all");
+  const [customModelId, setCustomModelId] = useState("");
+
+  // Detect locally-running models (Ollama + LMStudio) from the browser
+  const {
+    ollamaRunning,
+    lmstudioRunning,
+    ollamaModels,
+    lmstudioModels,
+    loading: detectingLocal,
+    refresh: refreshLocal,
+  } = useLocalModels();
+
+  // Merge detected local models with static catalog defaults
+  const allModels = useMemo(() => {
+    const ollamaDetected = detectedToMetadata(ollamaModels);
+    const lmstudioDetected = detectedToMetadata(lmstudioModels);
+    const mergedOllama = mergeLocalModels("ollama", ollamaDetected);
+    const mergedLmstudio = mergeLocalModels("lmstudio", lmstudioDetected);
+    const bedrock = MODEL_CATALOG.filter((m) => m.provider === "bedrock");
+    return [...bedrock, ...mergedOllama, ...mergedLmstudio];
+  }, [ollamaModels, lmstudioModels]);
 
   const filteredModels = useMemo(() => {
     const lowerSearch = searchTerm.trim().toLowerCase();
-    return MODEL_CATALOG.filter((model) => {
+    return allModels.filter((model) => {
       if (provider !== "all" && model.provider !== provider) {
         return false;
       }
@@ -42,7 +64,7 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
         model.tags?.some((tag) => tag.toLowerCase().includes(lowerSearch))
       );
     });
-  }, [searchTerm, provider]);
+  }, [searchTerm, provider, allModels]);
 
   const groupedByProvider = useMemo(() => {
     return filteredModels.reduce<Record<ModelProvider, ModelMetadata[]>>(
@@ -55,7 +77,7 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
     );
   }, [filteredModels]);
 
-  const currentModel = MODEL_CATALOG.find((model) => model.id === value);
+  const currentModel = allModels.find((model) => model.id === value);
 
   return (
     <div className="space-y-4">
@@ -95,6 +117,29 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
         </div>
       </div>
 
+      {/* Local provider status bar */}
+      {(provider === "all" || provider === "ollama" || provider === "lmstudio") && (
+        <div className="flex items-center gap-3 text-xs text-gray-400">
+          <span className="flex items-center gap-1">
+            {ollamaRunning ? <Wifi className="w-3 h-3 text-green-400" /> : <WifiOff className="w-3 h-3 text-gray-600" />}
+            Ollama {ollamaRunning ? `(${ollamaModels.length} detected)` : "(not running)"}
+          </span>
+          <span className="flex items-center gap-1">
+            {lmstudioRunning ? <Wifi className="w-3 h-3 text-green-400" /> : <WifiOff className="w-3 h-3 text-gray-600" />}
+            LMStudio {lmstudioRunning ? `(${lmstudioModels.length} loaded)` : "(not running)"}
+          </span>
+          <button
+            type="button"
+            onClick={refreshLocal}
+            disabled={detectingLocal}
+            className="ml-auto flex items-center gap-1 text-emerald-400 hover:text-emerald-300 disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3 h-3 ${detectingLocal ? "animate-spin" : ""}`} />
+            {detectingLocal ? "Detecting..." : "Refresh"}
+          </button>
+        </div>
+      )}
+
       <div className="space-y-5">
         {(["bedrock", "ollama", "lmstudio"] as ModelProvider[])
           .filter((providerKey) =>
@@ -106,14 +151,20 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
               return null;
             }
 
+            const isLocal = providerKey === "ollama" || providerKey === "lmstudio";
+            const isRunning = providerKey === "ollama" ? ollamaRunning : providerKey === "lmstudio" ? lmstudioRunning : false;
+
             return (
               <div
                 key={providerKey}
                 className="border border-emerald-500/20 rounded-lg bg-slate-950/80"
               >
                 <div className="px-4 py-3 border-b border-emerald-500/10 flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-emerald-200">
+                  <h3 className="text-sm font-semibold text-emerald-200 flex items-center gap-2">
                     {providerKey === "bedrock" ? "AWS Bedrock" : providerKey === "ollama" ? "Ollama (Local)" : "LMStudio (Local)"}
+                    {isLocal && (
+                      <span className={`inline-block w-2 h-2 rounded-full ${isRunning ? "bg-green-400" : "bg-gray-600"}`} />
+                    )}
                   </h3>
                   <span className="text-[11px] uppercase tracking-wide text-emerald-400">
                     {models.length} models
@@ -173,6 +224,39 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
               </div>
             );
           })}
+      </div>
+
+      {/* Manual model entry for custom model IDs */}
+      <div className="border border-emerald-500/20 rounded-lg bg-slate-950/80 px-4 py-3">
+        <label className="block text-xs font-medium text-emerald-200 mb-2">
+          Custom Model ID
+        </label>
+        <p className="text-[11px] text-gray-500 mb-2">
+          Enter any Ollama or LMStudio model ID not listed above.
+        </p>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            placeholder="e.g. mistral:7b or my-custom-model"
+            value={customModelId}
+            onChange={(e) => setCustomModelId(e.target.value)}
+            className="flex-1 px-3 py-2 bg-black border border-emerald-500/20 rounded-lg text-emerald-100 placeholder-emerald-700 text-sm focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 outline-none transition-colors"
+          />
+          <button
+            type="button"
+            disabled={!customModelId.trim()}
+            onClick={() => {
+              const trimmed = customModelId.trim();
+              if (trimmed) {
+                onChange(trimmed);
+                setCustomModelId("");
+              }
+            }}
+            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-700 disabled:text-gray-500 text-white text-sm rounded-lg transition-colors"
+          >
+            Use
+          </button>
+        </div>
       </div>
 
       {currentModel && (

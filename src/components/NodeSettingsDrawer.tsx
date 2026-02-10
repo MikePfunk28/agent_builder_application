@@ -13,7 +13,8 @@ import type {
   MemoryConfig,
   RouterConfig,
 } from "../types/workflowNodes";
-import { listModelsByProvider, getModelMetadata, LOCAL_MODEL_ENDPOINTS } from "../data/modelCatalog";
+import { listModelsByProvider, getModelMetadata, getModelFromCatalogOrDetected, mergeLocalModels, LOCAL_MODEL_ENDPOINTS } from "../data/modelCatalog";
+import { useLocalModels, detectedToMetadata } from "../hooks/useLocalModels";
 
 interface NodeSettingsDrawerProps {
   node: WorkflowNode | null;
@@ -531,18 +532,29 @@ function ModelEditor({
   updateConfig: ConfigUpdater<ModelConfig>;
 }) {
   const provider = config.provider;
-  const providerModels = useMemo(
-    () => listModelsByProvider(provider),
-    [provider]
-  );
+
+  // Detect locally-running models from the browser
+  const { ollamaModels, lmstudioModels } = useLocalModels();
+
+  const providerModels = useMemo(() => {
+    if (provider === "ollama") {
+      const detected = detectedToMetadata(ollamaModels);
+      return mergeLocalModels("ollama", detected);
+    }
+    if (provider === "lmstudio") {
+      const detected = detectedToMetadata(lmstudioModels);
+      return mergeLocalModels("lmstudio", detected);
+    }
+    return listModelsByProvider(provider);
+  }, [provider, ollamaModels, lmstudioModels]);
 
   const selectedModelId =
     provider === "bedrock" ? config.modelId ?? "" : config.model ?? "";
 
   const selectedMetadata = useMemo(() => {
     if (!selectedModelId) return undefined;
-    return getModelMetadata(selectedModelId);
-  }, [selectedModelId]);
+    return getModelFromCatalogOrDetected(selectedModelId, providerModels);
+  }, [selectedModelId, providerModels]);
 
   const defaultTemperature =
     selectedMetadata?.defaultConfig.temperature ??
