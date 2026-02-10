@@ -113,7 +113,7 @@ playwright>=1.47
 nest-asyncio>=1.6
 
 # Ollama for local model support (Tier 2 deployments)
-ollama>=0.12.3
+ollama>=0.6.0
 
 # UTCP for agent communication
 strands-utcp>=0.1.0

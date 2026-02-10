@@ -195,8 +195,8 @@ async function executeViaDirectBedrock(params: {
 
     // Check if it's a catalog key (e.g., "bedrock-claude-3.5-sonnet-v2")
     const catalogModel = ALL_MODELS[params.modelId];
-    if (catalogModel && catalogModel.provider === "aws-bedrock") {
-      modelId = catalogModel.modelId;
+    if (catalogModel && catalogModel.provider === "bedrock") {
+      modelId = catalogModel.id;
     } else if (!modelId.includes(":") && !modelId.startsWith("us.") && !modelId.startsWith("anthropic.") && !modelId.startsWith("amazon.") && !modelId.startsWith("meta.") && !modelId.startsWith("mistral.") && !modelId.startsWith("ai21.") && !modelId.startsWith("cohere.") && !modelId.startsWith("stability.")) {
       // Fallback mapping for common short names
       const modelMap: Record<string, string> = {
