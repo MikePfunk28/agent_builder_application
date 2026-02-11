@@ -47,7 +47,7 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
   const [customModelId, setCustomModelId] = useState("");
 
   // Fetch the user's current subscription tier
-  const subscription = useQuery(api.stripe.getSubscriptionStatus);
+  const subscription = useQuery(api.stripeMutations.getSubscriptionStatus);
   const userTier = subscription?.tier ?? "freemium";
 
   // Detect locally-running models (Ollama + LMStudio) from the browser

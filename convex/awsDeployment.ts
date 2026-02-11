@@ -7,6 +7,12 @@
 import { action, internalAction, mutation, query, internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import { internal, api } from "./_generated/api";
+
+// Stripe mutations live in stripeMutations.ts. Cast bridges codegen gap.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const internalStripeMutations = ( internal as any ).stripeMutations;
+// Direct import for mutation handlers (mutations cannot call ctx.runMutation)
+import { incrementUsageAndReportOverageImpl } from "./stripeMutations";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { assembleDeploymentPackageFiles } from "./deploymentPackageGenerator";
 import { sanitizeAgentName } from "./constants";
@@ -57,6 +63,16 @@ export const deployToAWS = action({
 
     const tier = user?.tier || "freemium";
 
+    // PROVIDER GATING: Freemium users cannot deploy to Bedrock (all AWS deployments use Bedrock)
+    const { isProviderAllowedForTier } = await import("./lib/tierConfig");
+    if (!isProviderAllowedForTier(tier, "bedrock")) {
+      throw new Error(
+        "Free tier cannot deploy to AWS Bedrock. " +
+        "Upgrade to Personal ($5/month) for Bedrock access, " +
+        "or use Ollama models for unlimited FREE local testing."
+      );
+    }
+
     // Check if user provided AWS credentials directly (for anonymous/one-time deployment)
     if (args.awsCredentials) {
       // TODO: Implement direct credential deployment
@@ -78,10 +94,12 @@ export const deployToAWS = action({
         throw new Error("Anonymous users must provide AWS credentials or sign in to use the platform.");
       }
 
-      // Tier 1: Check usage limits
-      const testsThisMonth = user?.testsThisMonth || 0;
-      if (testsThisMonth >= 10) {
-        throw new Error("Free tier limit reached (10 tests/month). Configure AWS credentials to deploy to your own account!");
+      // Tier 1: Check usage limits using centralized tier config
+      const executionsThisMonth = user?.executionsThisMonth || 0;
+      const { getTierConfig: getFreeTierCfg } = await import("./lib/tierConfig");
+      const freeLimits = getFreeTierCfg("freemium");
+      if (executionsThisMonth >= freeLimits.monthlyExecutions) {
+        throw new Error(`Free tier limit reached (${freeLimits.monthlyExecutions} executions/month). Configure AWS credentials to deploy to your own account!`);
       }
 
       // Deploy to platform Fargate
@@ -944,8 +962,8 @@ async function deployTier1(ctx: any, args: any, userId: string): Promise<any> {
     deploymentConfig: args.deploymentConfig,
   });
 
-  // Increment usage counter
-  await ctx.runMutation(internal.awsDeployment.incrementUsageInternal, { userId });
+  // Increment usage counter (centralized in stripeMutations.ts)
+  await ctx.runMutation( internalStripeMutations.incrementUsageAndReportOverage, { userId } );
 
   // Start deployment
   await ctx.scheduler.runAfter(0, internal.awsDeployment.executeDeploymentInternal, {
@@ -1022,18 +1040,13 @@ export const getUserAWSAccountInternal = internalQuery({
 });
 
 /**
- * Increment usage counter (internal)
+ * Increment usage counter — delegates to shared helper in stripeMutations.ts
+ * (single source of truth for usage + overage logic).
  */
 export const incrementUsageInternal = internalMutation({
   args: { userId: v.id("users") },
   handler: async (ctx, args) => {
-    const user = await ctx.db.get(args.userId);
-
-    if (!user) return;
-
-    await ctx.db.patch(args.userId, {
-      testsThisMonth: (user.testsThisMonth || 0) + 1,
-    });
+    await incrementUsageAndReportOverageImpl( ctx, args.userId );
   },
 });
 

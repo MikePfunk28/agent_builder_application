@@ -23,6 +23,10 @@ const MAX_CONCURRENT_TESTS = parseInt(process.env.MAX_CONCURRENT_TESTS || "10");
 
 // Rate Limiting - from centralized tier config (convex/lib/tierConfig.ts)
 import { getTierConfig, checkExecutionLimit, isProviderAllowedForTier, getUpgradeMessage } from "./lib/tierConfig";
+import { checkRateLimitInMutation, buildTierRateLimitConfig } from "./rateLimiter";
+
+// Usage increment + overage reporting — single source of truth in stripeMutations.ts.
+import { incrementUsageAndReportOverageImpl } from "./stripeMutations";
 
 // Cost calculation helper
 function calculateBedrockCost(usage: any, modelId: string): number {
@@ -100,10 +104,23 @@ export const submitTest = mutation({
       }
 
       const userTier = user.tier || "freemium";
-      const testsThisMonth = user.testsThisMonth || 0;
+
+      // PROVIDER TIER GATE: Enforce per-tier allowed provider rules (mirrors
+      // strandsAgentExecution.ts and strandsAgentExecutionDynamic.ts logic).
+      const derivedProvider = agent.deploymentType || "bedrock";
+      if ( !isProviderAllowedForTier( userTier, derivedProvider ) ) {
+        const tierConfig = getTierConfig( userTier );
+        throw new Error(
+          `${tierConfig.displayName} tier does not allow ${derivedProvider} models. ` +
+          `Allowed providers: ${tierConfig.allowedProviders.join( ", " )}. ` +
+          `Use Ollama models for unlimited FREE testing, or upgrade your subscription.`
+        );
+      }
+
+      const executionsThisMonth = user.executionsThisMonth || 0;
 
       // Check rate limits using centralized tier config
-      const limitCheck = checkExecutionLimit( userTier, testsThisMonth );
+      const limitCheck = checkExecutionLimit( userTier, executionsThisMonth );
       if ( !limitCheck.allowed ) {
         const tierConfig = getTierConfig( userTier );
         throw new Error(
@@ -111,6 +128,14 @@ export const submitTest = mutation({
           `You can: 1) Use Ollama models for unlimited FREE testing, ` +
           `2) Upgrade to Personal ($5/month) for more capacity, or 3) Deploy to your AWS account.`
         );
+      }
+
+      // Per-minute rate limiting (tier-aware): prevents burst abuse
+      const tierCfgForRL = getTierConfig(userTier);
+      const rlConfig = buildTierRateLimitConfig(tierCfgForRL.maxConcurrentTests, "agentTesting");
+      const rlResult = await checkRateLimitInMutation(ctx, String(userId), "agentTesting", rlConfig);
+      if (!rlResult.allowed) {
+        throw new Error(rlResult.reason || "Rate limited - too many requests per minute");
       }
     }
 
@@ -191,15 +216,9 @@ export const submitTest = mutation({
     // Update test status to QUEUED
     await ctx.db.patch(testId, { status: "QUEUED" });
 
-    // RATE LIMITING: Increment user's test count ONLY for cloud models (not Ollama)
+    // BILLING: Increment user's execution count ONLY for cloud models (not Ollama)
     if (!isOllamaModel) {
-      const user = await ctx.db.get(userId);
-      if (user) {
-        await ctx.db.patch(userId, {
-          testsThisMonth: (user.testsThisMonth || 0) + 1,
-          lastTestAt: Date.now(),
-        });
-      }
+      await incrementUsageAndReportOverageImpl( ctx, userId, { updateLastTestAt: true } );
     }
 
     // Trigger queue processor immediately (on-demand processing to save costs)
@@ -398,10 +417,10 @@ export const retryTest = mutation({
       }
 
       const userTier = user.tier || "freemium";
-      const testsThisMonth = user.testsThisMonth || 0;
+      const executionsThisMonth = user.executionsThisMonth || 0;
 
       // Check rate limits using centralized tier config
-      const retestLimitCheck = checkExecutionLimit(userTier, testsThisMonth);
+      const retestLimitCheck = checkExecutionLimit(userTier, executionsThisMonth);
       if (!retestLimitCheck.allowed) {
         const retestTierCfg = getTierConfig(userTier);
         throw new Error(
@@ -409,6 +428,14 @@ export const retryTest = mutation({
           `(${retestTierCfg.monthlyExecutions} tests/month). ` +
           getUpgradeMessage(userTier)
         );
+      }
+
+      // Per-minute rate limiting (tier-aware): prevents burst abuse
+      const retestTierCfgRL = getTierConfig(userTier);
+      const retestRLConfig = buildTierRateLimitConfig(retestTierCfgRL.maxConcurrentTests, "agentTesting");
+      const retestRLResult = await checkRateLimitInMutation(ctx, String(userId), "agentTesting", retestRLConfig);
+      if (!retestRLResult.allowed) {
+        throw new Error(retestRLResult.reason || "Rate limited - too many requests per minute");
       }
     }
 
@@ -442,15 +469,9 @@ export const retryTest = mutation({
 
     await ctx.db.patch(newTestId, { status: "QUEUED" });
 
-    // RATE LIMITING: Increment user's test count ONLY for cloud models (not Ollama)
+    // BILLING: Increment user's execution count ONLY for cloud models (not Ollama)
     if (!isOllamaModel) {
-      const user = await ctx.db.get(userId);
-      if (user) {
-        await ctx.db.patch(userId, {
-          testsThisMonth: (user.testsThisMonth || 0) + 1,
-          lastTestAt: Date.now(),
-        });
-      }
+      await incrementUsageAndReportOverageImpl( ctx, userId, { updateLastTestAt: true } );
     }
 
     // Trigger queue processor immediately (on-demand processing)
@@ -865,7 +886,7 @@ export const incrementUserUsage = internalMutation({
     const user = await ctx.db.get(args.userId);
     if (!user) return;
 
-    // NOTE: testsThisMonth is already incremented in submitTest for cloud models.
+    // NOTE: executionsThisMonth is already incremented in submitTest for cloud models.
     // Only update token usage and execution time here to avoid double-counting.
     await ctx.db.patch(args.userId, {
       lastTestAt: Date.now(),
@@ -883,7 +904,7 @@ export const incrementUserUsage = internalMutation({
       success: true,
       details: {
         tier: user.tier,
-        testsThisMonth: user.testsThisMonth || 0,
+        executionsThisMonth: user.executionsThisMonth || 0,
         tokenUsage: args.usage,
         executionTime: args.executionTime,
         executionMethod: args.executionMethod,

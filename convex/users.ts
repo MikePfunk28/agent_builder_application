@@ -14,6 +14,7 @@ export enum UserRole {
   USER = "user",
   PAID = "paid",
   GUEST = "guest",
+  ENTERPRISE = "enterprise",
 }
 /**
  * Internal query to get user by ID (no auth required)

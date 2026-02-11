@@ -7,6 +7,7 @@ import { mutation, query, action, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { api, internal } from "./_generated/api";
+import { getTierConfig } from "./lib/tierConfig";
 
 /**
  * Generate API key for user
@@ -244,8 +245,6 @@ export const incrementUsage = mutation({
  * Get tier limits - delegates to centralized tierConfig.
  */
 function getTierLimits(tier: string) {
-  // Import inline to avoid circular dependency with convex runtime
-  const { getTierConfig } = require("./lib/tierConfig");
   const config = getTierConfig(tier);
   return {
     testsPerMonth: config.monthlyExecutions === -1 ? Infinity : config.monthlyExecutions,

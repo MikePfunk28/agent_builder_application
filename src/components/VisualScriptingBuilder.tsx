@@ -554,16 +554,16 @@ function buildPaletteSections(
 
   // Build MCP section dynamically from registered servers
   const mcpItems: PaletteNodeItem[] = [];
-  const activeServers = (mcpServers ?? []).filter(
-    (s) => !s.disabled && s.status !== "error"
+  const activeServers = ( mcpServers ?? [] ).filter(
+    ( s ) => !s.disabled && s.status !== "error"
   );
-  for (const server of activeServers) {
-    if (server.availableTools && server.availableTools.length > 0) {
-      for (const tool of server.availableTools) {
-        mcpItems.push({
+  for ( const server of activeServers ) {
+    if ( server.availableTools && server.availableTools.length > 0 ) {
+      for ( const tool of server.availableTools ) {
+        mcpItems.push( {
           type: "node",
           kind: "Tool",
-          title: `${tool.name} (${server.name.replace(/-mcp-server$/, "")})`,
+          title: `${tool.name} (${server.name.replace( /-mcp-server$/, "" )})`,
           description: tool.description || `MCP tool from ${server.name}`,
           badge: "MCP",
           labelOverride: `MCP: ${tool.name}`,
@@ -573,24 +573,24 @@ function buildPaletteSections(
             tool: tool.name,
             params: {},
           },
-        });
+        } );
       }
     } else {
       // Server with no enumerated tools — add a generic entry
-      mcpItems.push({
+      mcpItems.push( {
         type: "node",
         kind: "Tool",
-        title: server.name.replace(/-mcp-server$/, ""),
+        title: server.name.replace( /-mcp-server$/, "" ),
         description: `MCP server: ${server.name}. Configure tool in the settings drawer.`,
         badge: "MCP",
-        labelOverride: `MCP: ${server.name.replace(/-mcp-server$/, "")}`,
+        labelOverride: `MCP: ${server.name.replace( /-mcp-server$/, "" )}`,
         configOverride: {
           kind: "mcp",
           server: server.name,
           tool: "",
           params: {},
         },
-      });
+      } );
     }
   }
 
@@ -713,7 +713,7 @@ function defaultConfig( kind: NodeKind ): WorkflowNodeData["config"] {
         const [firstBedrock] = listModelsByProvider( "bedrock" );
         return {
           provider: "bedrock",
-          modelId: firstBedrock?.id ?? "us.anthropic.claude-haiku-4-5-20250514-v1:0",
+          modelId: firstBedrock?.id ?? "anthropic.claude-haiku-4-5-20250514-v1:0",
           temperature: firstBedrock?.defaultConfig.temperature ?? 0.2,
           topP: firstBedrock?.defaultConfig.topP ?? 0.9,
           maxTokens: firstBedrock?.defaultConfig.maxTokens ?? 4096,
@@ -825,54 +825,54 @@ function migratePromptTextNodes(
   nodes: FlowNode[],
   edges: FlowEdge[]
 ): { nodes: FlowNode[]; edges: FlowEdge[] } {
-  const promptTextNodes = nodes.filter((n) => n.data?.type === "PromptText");
-  if (promptTextNodes.length === 0) return { nodes, edges };
+  const promptTextNodes = nodes.filter( ( n ) => n.data?.type === "PromptText" );
+  if ( promptTextNodes.length === 0 ) return { nodes, edges };
 
   const migratedNodeIds = new Set<string>();
   const migratedEdgeIds = new Set<string>();
   const updatedNodes = new Map<string, FlowNode>();
 
-  for (const ptNode of promptTextNodes) {
+  for ( const ptNode of promptTextNodes ) {
     // Find the edge from this PromptText to a Prompt node
     const outEdge = edges.find(
-      (e) => e.source === ptNode.id && nodes.some((n) => n.id === e.target && n.data?.type === "Prompt")
+      ( e ) => e.source === ptNode.id && nodes.some( ( n ) => n.id === e.target && n.data?.type === "Prompt" )
     );
 
-    if (outEdge) {
-      const targetPrompt = nodes.find((n) => n.id === outEdge.target);
-      if (targetPrompt) {
+    if ( outEdge ) {
+      const targetPrompt = nodes.find( ( n ) => n.id === outEdge.target );
+      if ( targetPrompt ) {
         const ptConfig = ptNode.data?.config as any;
-        const promptConfig = { ...(targetPrompt.data?.config as any) };
+        const promptConfig = { ...( targetPrompt.data?.config as any ) };
 
         // Merge PromptText fields into Prompt if Prompt doesn't already have them
-        if (!promptConfig.template && ptConfig?.template) {
+        if ( !promptConfig.template && ptConfig?.template ) {
           promptConfig.template = ptConfig.template;
         }
-        if (!promptConfig.role && ptConfig?.role) {
+        if ( !promptConfig.role && ptConfig?.role ) {
           promptConfig.role = ptConfig.role;
         }
-        if (!promptConfig.inputs && ptConfig?.inputs) {
+        if ( !promptConfig.inputs && ptConfig?.inputs ) {
           promptConfig.inputs = ptConfig.inputs;
         }
 
-        const updated = updatedNodes.get(targetPrompt.id) ?? { ...targetPrompt };
+        const updated = updatedNodes.get( targetPrompt.id ) ?? { ...targetPrompt };
         updated.data = { ...updated.data, config: promptConfig };
-        updatedNodes.set(targetPrompt.id, updated);
+        updatedNodes.set( targetPrompt.id, updated );
 
-        migratedEdgeIds.add(outEdge.id);
+        migratedEdgeIds.add( outEdge.id );
       }
     }
 
-    migratedNodeIds.add(ptNode.id);
+    migratedNodeIds.add( ptNode.id );
 
     // Also remove any incoming edges to the PromptText node
-    edges.filter((e) => e.target === ptNode.id).forEach((e) => migratedEdgeIds.add(e.id));
+    edges.filter( ( e ) => e.target === ptNode.id ).forEach( ( e ) => migratedEdgeIds.add( e.id ) );
   }
 
   const finalNodes = nodes
-    .filter((n) => !migratedNodeIds.has(n.id))
-    .map((n) => updatedNodes.get(n.id) ?? n);
-  const finalEdges = edges.filter((e) => !migratedEdgeIds.has(e.id));
+    .filter( ( n ) => !migratedNodeIds.has( n.id ) )
+    .map( ( n ) => updatedNodes.get( n.id ) ?? n );
+  const finalEdges = edges.filter( ( e ) => !migratedEdgeIds.has( e.id ) );
 
   return { nodes: finalNodes, edges: finalEdges };
 }
@@ -1029,7 +1029,7 @@ const TEMPLATE_DEFINITIONS: Record<string, TemplateDefinition> = {
           },
         }
       );
-      const [tplBedrock] = listModelsByProvider("bedrock");
+      const [tplBedrock] = listModelsByProvider( "bedrock" );
       const model = createFlowNode(
         "Model",
         { x: 560, y: 120 },
@@ -1037,7 +1037,7 @@ const TEMPLATE_DEFINITIONS: Record<string, TemplateDefinition> = {
           label: tplBedrock?.label ?? "Claude 4.5 Haiku",
           config: {
             provider: "bedrock",
-            modelId: tplBedrock?.id ?? "us.anthropic.claude-haiku-4-5-20250514-v1:0",
+            modelId: tplBedrock?.id ?? "anthropic.claude-haiku-4-5-20250514-v1:0",
             temperature: 0.3,
             topP: 0.9,
             maxTokens: 4096,
@@ -1192,7 +1192,7 @@ const TEMPLATE_DEFINITIONS: Record<string, TemplateDefinition> = {
           },
         }
       );
-      const [tpl2Bedrock] = listModelsByProvider("bedrock");
+      const [tpl2Bedrock] = listModelsByProvider( "bedrock" );
       const claude = createFlowNode(
         "Model",
         { x: 560, y: 150 },
@@ -1200,7 +1200,7 @@ const TEMPLATE_DEFINITIONS: Record<string, TemplateDefinition> = {
           label: tpl2Bedrock?.label ?? "Claude 4.5 Haiku",
           config: {
             provider: "bedrock",
-            modelId: tpl2Bedrock?.id ?? "us.anthropic.claude-haiku-4-5-20250514-v1:0",
+            modelId: tpl2Bedrock?.id ?? "anthropic.claude-haiku-4-5-20250514-v1:0",
             temperature: 0.5,
             topP: 0.95,
             maxTokens: 4096,

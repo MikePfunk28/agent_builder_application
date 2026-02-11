@@ -57,7 +57,6 @@ export { TEST_CONSTANTS };
 // ============================================================================
 
 export interface TestUser {
-  userId: string;
   email: string;
   name: string;
   tier?: string;
@@ -102,7 +101,6 @@ export const createTestUser = async (
 ): Promise<any> => {
   return await t.run(async (ctx: any) => {
     return await ctx.db.insert("users", {
-      userId,
       email: `${userId}@example.com`,
       name: `${userId} User`,
       tier: "personal",

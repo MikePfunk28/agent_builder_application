@@ -129,7 +129,7 @@ export const startTestContainer = internalAction({
       console.log(`📊 Log stream: ${logGroup}/${logStream}`);
 
       // NOTE: Usage is tracked on completion (not start) to avoid double-counting.
-      // submitTest already increments testsThisMonth for cloud models.
+      // submitTest already increments executionsThisMonth for cloud models.
       // incrementUserUsage is called when "TEST COMPLETED SUCCESSFULLY" is detected in logs.
 
       // Schedule timeout handler (single timeout, not recurring - OK)

@@ -99,7 +99,8 @@ const applicationTables = {
       v.literal( "admin" ),
       v.literal( "user" ),
       v.literal( "paid" ),
-      v.literal( "guest" )
+      v.literal( "guest" ),
+      v.literal( "enterprise" )
     ) ),
     // DO NOT add userId field - use _id (Convex user document ID) instead
     email: v.optional( v.string() ),
@@ -276,6 +277,9 @@ const applicationTables = {
     agentId: v.id( "agents" ),
     userId: v.id( "users" ),
     title: v.string(),
+    // DEPRECATED: Embedded messages array can exceed Convex document size limit.
+    // New code should write to the conversationMessages table instead.
+    // Kept for backward compatibility; existing consumers still read this field.
     messages: v.array( v.object( {
       role: v.union( v.literal( "user" ), v.literal( "assistant" ), v.literal( "system" ) ),
       content: v.string(),
@@ -288,6 +292,19 @@ const applicationTables = {
     .index( "by_user", ["userId"] )
     .index( "by_agent", ["agentId"] )
     .index( "by_agent_user", ["agentId", "userId"] ),
+
+  // Normalized conversation messages (one document per message, mirrors interleavedMessages pattern).
+  // Replaces the unbounded embedded conversations.messages array.
+  conversationMessages: defineTable( {
+    conversationId: v.id( "conversations" ),
+    role: v.union( v.literal( "user" ), v.literal( "assistant" ), v.literal( "system" ) ),
+    content: v.string(),
+    timestamp: v.number(),
+    metadata: v.optional( v.any() ),
+    sequenceNumber: v.number(), // For deterministic ordering
+  } )
+    .index( "by_conversation", ["conversationId", "sequenceNumber"] )
+    .index( "by_conversation_ts", ["conversationId", "timestamp"] ),
 
   // Conversation Analysis for Agent Improvement
   conversationAnalyses: defineTable( {
@@ -430,7 +447,7 @@ const applicationTables = {
     // Server Configuration
     command: v.string(),
     args: v.array( v.string() ),
-    env: v.optional( v.object( {} ) ),
+    env: v.optional( v.any() ), // Accepts arbitrary env maps (e.g. { "PATH": "/usr/bin" })
     disabled: v.boolean(),
     timeout: v.optional( v.number() ), // Timeout in milliseconds
 
@@ -652,10 +669,13 @@ const applicationTables = {
     .index( "by_public", ["isPublic"] ),
 
   // Rate Limiting System
+  // NOTE: The requests array is bounded to MAX_RATE_LIMIT_REQUESTS (200) entries.
+  // Writers (rateLimiter.ts) MUST trim old entries on every write to prevent
+  // unbounded growth. The sliding-window filter + slice enforces this cap.
   rateLimitEntries: defineTable( {
     userId: v.string(),
     action: v.string(),
-    requests: v.array( v.number() ), // Timestamps of requests in current window
+    requests: v.array( v.number() ), // Timestamps of requests in current window (max 200)
     blockedUntil: v.optional( v.number() ), // Timestamp when block expires
     lastRequest: v.number(), // Timestamp of last request
   } )
@@ -728,7 +748,7 @@ const workflowEdgeValidator = v.object( {
 export default defineSchema( {
   workflows: defineTable( {
     name: v.string(),
-    userId: v.string(),
+    userId: v.string(), // Auth identity token (subject/tokenIdentifier), not a Convex doc ID
     templateId: v.string(),
     nodes: v.array( workflowNodeValidator ),
     edges: v.array( workflowEdgeValidator ),
@@ -739,7 +759,7 @@ export default defineSchema( {
 
   workflowExecutions: defineTable( {
     workflowId: v.id( "workflows" ),
-    userId: v.string(),
+    userId: v.string(), // Auth identity token (subject/tokenIdentifier), not a Convex doc ID
     input: v.optional( v.object( {
       userMessage: v.optional( v.string() ),
     } ) ),

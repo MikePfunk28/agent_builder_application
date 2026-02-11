@@ -45,7 +45,7 @@ export const MODEL_CATALOG: ModelMetadata[] = [
     requiredTier: "personal",
   },
   {
-    id: "us.anthropic.claude-haiku-4-5-20250514-v1:0",
+    id: "anthropic.claude-haiku-4-5-20250514-v1:0",
     label: "Claude 4.5 Haiku",
     description: "Fast Claude model tuned for tool creation and thinking loops.",
     provider: "bedrock",
@@ -310,12 +310,12 @@ export const MODEL_CATALOG: ModelMetadata[] = [
   },
 ];
 
-export function listModelsByProvider(provider: ModelProvider): ModelMetadata[] {
-  return MODEL_CATALOG.filter((model) => model.provider === provider);
+export function listModelsByProvider( provider: ModelProvider ): ModelMetadata[] {
+  return MODEL_CATALOG.filter( ( model ) => model.provider === provider );
 }
 
-export function getModelMetadata(id: string): ModelMetadata | undefined {
-  return MODEL_CATALOG.find((model) => model.id === id);
+export function getModelMetadata( id: string ): ModelMetadata | undefined {
+  return MODEL_CATALOG.find( ( model ) => model.id === id );
 }
 
 /**
@@ -327,11 +327,11 @@ export function mergeLocalModels(
   provider: "ollama" | "lmstudio",
   detected: ModelMetadata[]
 ): ModelMetadata[] {
-  const defaults = MODEL_CATALOG.filter((m) => m.provider === provider);
-  if (detected.length === 0) return defaults;
+  const defaults = MODEL_CATALOG.filter( ( m ) => m.provider === provider );
+  if ( detected.length === 0 ) return defaults;
 
-  const detectedIds = new Set(detected.map((d) => d.id));
-  const kept = defaults.filter((d) => !detectedIds.has(d.id));
+  const detectedIds = new Set( detected.map( ( d ) => d.id ) );
+  const kept = defaults.filter( ( d ) => !detectedIds.has( d.id ) );
   return [...detected, ...kept];
 }
 
@@ -344,7 +344,7 @@ export function getModelFromCatalogOrDetected(
   extraModels: ModelMetadata[] = []
 ): ModelMetadata | undefined {
   return (
-    MODEL_CATALOG.find((m) => m.id === id) ??
-    extraModels.find((m) => m.id === id)
+    MODEL_CATALOG.find( ( m ) => m.id === id ) ??
+    extraModels.find( ( m ) => m.id === id )
   );
 }

@@ -7,7 +7,7 @@ import { api } from "../../convex/_generated/api";
  * Highlights overage when past the included amount.
  */
 export function UsageMeter() {
-  const subscription = useQuery(api.stripe.getSubscriptionStatus);
+  const subscription = useQuery(api.stripeMutations.getSubscriptionStatus);
 
   if (!subscription) return null;
 

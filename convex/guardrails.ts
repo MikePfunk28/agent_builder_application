@@ -75,7 +75,7 @@ export function validateMessage(
   const warnings: string[] = [];
 
   // Check message length
-  if (message.length > config.maxTokensPerMessage * 4) { // Rough token estimation
+  if ( message.length > config.maxTokensPerMessage * 4 ) { // Rough token estimation
     return {
       allowed: false,
       reason: `Message too long. Maximum ${config.maxTokensPerMessage} tokens allowed.`,
@@ -85,30 +85,30 @@ export function validateMessage(
 
   // Check for blocked keywords
   const lowerMessage = message.toLowerCase();
-  for (const keyword of config.blockedKeywords) {
-    if (lowerMessage.includes(keyword.toLowerCase())) {
-      warnings.push(`Potentially sensitive keyword detected: ${keyword}`);
+  for ( const keyword of config.blockedKeywords ) {
+    if ( lowerMessage.includes( keyword.toLowerCase() ) ) {
+      warnings.push( `Potentially sensitive keyword detected: ${keyword}` );
     }
   }
 
   // Check for PII patterns
-  if (config.contentFilters.enablePIIDetection) {
+  if ( config.contentFilters.enablePIIDetection ) {
     const piiPatterns = [
       /\b\d{3}-\d{2}-\d{4}\b/, // SSN
       /\b\d{16}\b/, // Credit card
       /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/, // Email
     ];
 
-    for (const pattern of piiPatterns) {
-      if (pattern.test(message)) {
-        warnings.push("Potential PII detected in message");
+    for ( const pattern of piiPatterns ) {
+      if ( pattern.test( message ) ) {
+        warnings.push( "Potential PII detected in message" );
         break;
       }
     }
   }
 
   // Check for code injection attempts
-  if (config.contentFilters.enableCodeInjectionPrevention) {
+  if ( config.contentFilters.enableCodeInjectionPrevention ) {
     const dangerousPatterns = [
       /eval\s*\(/,
       /exec\s*\(/,
@@ -117,8 +117,8 @@ export function validateMessage(
       /os\./,
     ];
 
-    for (const pattern of dangerousPatterns) {
-      if (pattern.test(message)) {
+    for ( const pattern of dangerousPatterns ) {
+      if ( pattern.test( message ) ) {
         return {
           allowed: false,
           reason: "Potential code injection detected",
@@ -141,10 +141,10 @@ export function checkRateLimits(
   config: GuardrailConfig = DEFAULT_GUARDRAILS
 ): { allowed: boolean; reason?: string; resetTime?: number } {
   const messagesPerHour = messageCount;
-  const hoursElapsed = timeWindow / (1000 * 60 * 60);
+  const hoursElapsed = timeWindow / ( 1000 * 60 * 60 );
 
-  if (messagesPerHour > config.maxMessagesPerHour) {
-    const resetTime = Date.now() + (60 * 60 * 1000); // 1 hour from now
+  if ( messagesPerHour > config.maxMessagesPerHour ) {
+    const resetTime = Date.now() + ( 60 * 60 * 1000 ); // 1 hour from now
     return {
       allowed: false,
       reason: `Rate limit exceeded. Maximum ${config.maxMessagesPerHour} messages per hour.`,
@@ -162,16 +162,16 @@ export function calculateMessageCost(
   inputTokens: number,
   outputTokens: number,
   reasoningTokens: number = 0,
-  modelId: string = "us.anthropic.claude-haiku-4-5-20250514-v1:0"
+  modelId: string = "anthropic.claude-haiku-4-5-20250514-v1:0"
 ): number {
   // Claude Haiku 4.5 pricing (as of 2024)
   const inputCostPer1K = 0.00025;  // $0.00025 per 1K input tokens
   const outputCostPer1K = 0.00125; // $0.00125 per 1K output tokens
   const reasoningCostPer1K = 0.00025; // Same as input for reasoning
 
-  const inputCost = (inputTokens / 1000) * inputCostPer1K;
-  const outputCost = (outputTokens / 1000) * outputCostPer1K;
-  const reasoningCost = (reasoningTokens / 1000) * reasoningCostPer1K;
+  const inputCost = ( inputTokens / 1000 ) * inputCostPer1K;
+  const outputCost = ( outputTokens / 1000 ) * outputCostPer1K;
+  const reasoningCost = ( reasoningTokens / 1000 ) * reasoningCostPer1K;
 
   return inputCost + outputCost + reasoningCost;
 }
@@ -185,21 +185,21 @@ export function checkCostLimits(
   userCostThisHour: number,
   config: GuardrailConfig = DEFAULT_GUARDRAILS
 ): { allowed: boolean; reason?: string } {
-  if (estimatedCost > config.costLimits.maxCostPerMessage) {
+  if ( estimatedCost > config.costLimits.maxCostPerMessage ) {
     return {
       allowed: false,
-      reason: `Message cost ($${estimatedCost.toFixed(4)}) exceeds limit ($${config.costLimits.maxCostPerMessage})`,
+      reason: `Message cost ($${estimatedCost.toFixed( 4 )}) exceeds limit ($${config.costLimits.maxCostPerMessage})`,
     };
   }
 
-  if (userCostThisHour + estimatedCost > config.costLimits.maxCostPerHour) {
+  if ( userCostThisHour + estimatedCost > config.costLimits.maxCostPerHour ) {
     return {
       allowed: false,
       reason: `Hourly cost limit ($${config.costLimits.maxCostPerHour}) would be exceeded`,
     };
   }
 
-  if (userCostToday + estimatedCost > config.costLimits.maxCostPerDay) {
+  if ( userCostToday + estimatedCost > config.costLimits.maxCostPerDay ) {
     return {
       allowed: false,
       reason: `Daily cost limit ($${config.costLimits.maxCostPerDay}) would be exceeded`,
@@ -212,7 +212,7 @@ export function checkCostLimits(
 /**
  * Sanitize system prompt to prevent prompt injection
  */
-export function sanitizeSystemPrompt(prompt: string): string {
+export function sanitizeSystemPrompt( prompt: string ): string {
   // Remove potential prompt injection patterns
   const dangerousPatterns = [
     /ignore\s+previous\s+instructions/gi,
@@ -225,8 +225,8 @@ export function sanitizeSystemPrompt(prompt: string): string {
   ];
 
   let sanitized = prompt;
-  for (const pattern of dangerousPatterns) {
-    sanitized = sanitized.replace(pattern, "[FILTERED]");
+  for ( const pattern of dangerousPatterns ) {
+    sanitized = sanitized.replace( pattern, "[FILTERED]" );
   }
 
   return sanitized;
@@ -241,18 +241,18 @@ export function validateToolUsage(
   config: GuardrailConfig = DEFAULT_GUARDRAILS
 ): { allowed: boolean; reason?: string; requiresApproval: boolean } {
   // Check if tool requires approval
-  const requiresApproval = config.requireApprovalFor.some(category => 
-    toolName.toLowerCase().includes(category.toLowerCase())
+  const requiresApproval = config.requireApprovalFor.some( category =>
+    toolName.toLowerCase().includes( category.toLowerCase() )
   );
 
   // Check for dangerous tool parameters
-  if (toolName === "web_search" || toolName === "http_request") {
+  if ( toolName === "web_search" || toolName === "http_request" ) {
     const url = parameters.url || parameters.query;
-    if (url) {
-      const domain = extractDomain(url);
-      if (domain && !config.allowedDomains.some(allowed => 
-        domain.includes(allowed) || allowed.includes(domain)
-      )) {
+    if ( url ) {
+      const domain = extractDomain( url );
+      if ( domain && !config.allowedDomains.some( allowed =>
+        domain.includes( allowed ) || allowed.includes( domain )
+      ) ) {
         return {
           allowed: false,
           reason: `Domain ${domain} not in allowed list`,
@@ -263,7 +263,7 @@ export function validateToolUsage(
   }
 
   // Check for file system access
-  if (toolName.includes("file") || toolName.includes("write") || toolName.includes("delete")) {
+  if ( toolName.includes( "file" ) || toolName.includes( "write" ) || toolName.includes( "delete" ) ) {
     return {
       allowed: false,
       reason: "File system access not permitted",
@@ -277,9 +277,9 @@ export function validateToolUsage(
 /**
  * Extract domain from URL
  */
-function extractDomain(url: string): string | null {
+function extractDomain( url: string ): string | null {
   try {
-    const parsed = new URL(url);
+    const parsed = new URL( url );
     return parsed.hostname;
   } catch {
     return null;
@@ -305,27 +305,27 @@ export function generateGuardrailReport(
   let requiresApproval = false;
 
   // Collect message warnings
-  warnings.push(...messageValidation.warnings);
-  if (!messageValidation.allowed) {
-    errors.push(messageValidation.reason!);
+  warnings.push( ...messageValidation.warnings );
+  if ( !messageValidation.allowed ) {
+    errors.push( messageValidation.reason! );
   }
 
   // Check rate limits
-  if (!rateLimitCheck.allowed) {
-    errors.push(rateLimitCheck.reason!);
+  if ( !rateLimitCheck.allowed ) {
+    errors.push( rateLimitCheck.reason! );
   }
 
   // Check cost limits
-  if (!costCheck.allowed) {
-    errors.push(costCheck.reason!);
+  if ( !costCheck.allowed ) {
+    errors.push( costCheck.reason! );
   }
 
   // Check tool validations
-  for (const toolValidation of toolValidations) {
-    if (!toolValidation.allowed) {
-      errors.push(toolValidation.reason!);
+  for ( const toolValidation of toolValidations ) {
+    if ( !toolValidation.allowed ) {
+      errors.push( toolValidation.reason! );
     }
-    if (toolValidation.requiresApproval) {
+    if ( toolValidation.requiresApproval ) {
       requiresApproval = true;
     }
   }

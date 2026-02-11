@@ -19,7 +19,8 @@ import {
   Network,
   Shield,
   AlertCircle,
-  CheckCircle
+  CheckCircle,
+  Sparkles
 } from "lucide-react";
 import { ModelSelector } from "./ModelSelector";
 import { listModelsByProvider } from "../data/modelCatalog";
@@ -62,87 +63,87 @@ const steps = [
 ];
 
 export function AgentBuilder() {
-  const [currentStep, setCurrentStep] = useState(0);
-  const [config, setConfig] = useState<AgentConfig>({
+  const [currentStep, setCurrentStep] = useState( 0 );
+  const [config, setConfig] = useState<AgentConfig>( {
     name: "",
     description: "",
-    model: (() => { const [m] = listModelsByProvider("bedrock"); return m?.id ?? "us.anthropic.claude-haiku-4-5-20250514-v1:0"; })(),
+    model: ( () => { const [m] = listModelsByProvider( "bedrock" ); return m?.id ?? "anthropic.claude-haiku-4-5-20250514-v1:0"; } )(),
     systemPrompt: "",
     tools: [],
     deploymentType: "aws",
     exposableAsMCPTool: false,
     mcpToolName: "",
     mcpInputSchema: undefined,
-  });
-  const [generatedCode, setGeneratedCode] = useState<string>("");
-  const [dockerConfig, setDockerConfig] = useState<string>("");
-  const [requirementsTxt, setRequirementsTxt] = useState<string>("");
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [savedAgentId, setSavedAgentId] = useState<Id<"agents"> | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  } );
+  const [generatedCode, setGeneratedCode] = useState<string>( "" );
+  const [dockerConfig, setDockerConfig] = useState<string>( "" );
+  const [requirementsTxt, setRequirementsTxt] = useState<string>( "" );
+  const [isGenerating, setIsGenerating] = useState( false );
+  const [savedAgentId, setSavedAgentId] = useState<Id<"agents"> | null>( null );
+  const fileInputRef = useRef<HTMLInputElement | null>( null );
 
   const { automationData, workflowResult, setWorkflowResult, clearAutomation } = useBuilderAutomation();
-  const [automationStatus, setAutomationStatus] = useState<"idle" | "running" | "complete" | "error">("idle");
-  const [automationError, setAutomationError] = useState<string | null>(null);
-  const [automationSummary, setAutomationSummary] = useState<WorkflowResult | null>(workflowResult);
-  const [lastAutomationStamp, setLastAutomationStamp] = useState<number | null>(null);
-  const [isAutoGenerating, setIsAutoGenerating] = useState(false);
+  const [automationStatus, setAutomationStatus] = useState<"idle" | "running" | "complete" | "error">( "idle" );
+  const [automationError, setAutomationError] = useState<string | null>( null );
+  const [automationSummary, setAutomationSummary] = useState<WorkflowResult | null>( workflowResult );
+  const [lastAutomationStamp, setLastAutomationStamp] = useState<number | null>( null );
+  const [isAutoGenerating, setIsAutoGenerating] = useState( false );
 
-  const generateAgent = useAction(api.codeGenerator.generateAgent);
-  const createAgent = useMutation(api.agents.create);
-  const executeWorkflow = useAction(api.agentBuilderWorkflow.executeCompleteWorkflow);
+  const generateAgent = useAction( api.codeGenerator.generateAgent );
+  const createAgent = useMutation( api.agents.create );
+  const executeWorkflow = useAction( api.agentBuilderWorkflow.executeCompleteWorkflow );
 
   const handleNext = () => {
-    if (currentStep < steps.length - 1) {
-      setCurrentStep(currentStep + 1);
+    if ( currentStep < steps.length - 1 ) {
+      setCurrentStep( currentStep + 1 );
     }
   };
 
   const handlePrevious = () => {
-    if (currentStep > 0) {
-      setCurrentStep(currentStep - 1);
+    if ( currentStep > 0 ) {
+      setCurrentStep( currentStep - 1 );
     }
   };
 
   const handleGenerate = () => {
-    if (!config.name || !config.systemPrompt) {
-      toast.error("Please fill in all required fields");
+    if ( !config.name || !config.systemPrompt ) {
+      toast.error( "Please fill in all required fields" );
       return;
     }
 
-    setIsGenerating(true);
-    void (async () => {
+    setIsGenerating( true );
+    void ( async () => {
       try {
-        const result = await generateAgent({
+        const result = await generateAgent( {
           name: config.name,
           model: config.model,
           systemPrompt: config.systemPrompt,
           tools: config.tools,
           deploymentType: config.deploymentType,
-        });
+        } );
 
-        setGeneratedCode(result.generatedCode);
-        setDockerConfig(""); // Docker config not returned by generator
-        setRequirementsTxt(result.requirementsTxt || "");
-        toast.success("Agent generated successfully!");
-      } catch (error) {
-        toast.error("Failed to generate agent");
-        console.error(error);
+        setGeneratedCode( result.generatedCode );
+        setDockerConfig( "" ); // Docker config not returned by generator
+        setRequirementsTxt( result.requirementsTxt || "" );
+        toast.success( "Agent generated successfully!" );
+      } catch ( error ) {
+        toast.error( "Failed to generate agent" );
+        console.error( error );
       } finally {
-        setIsGenerating(false);
+        setIsGenerating( false );
       }
-    })();
+    } )();
   };
 
   const handleSave = () => {
-    if (!generatedCode) {
-      toast.error("Please generate the agent first");
+    if ( !generatedCode ) {
+      toast.error( "Please generate the agent first" );
       return;
     }
 
-    void (async () => {
+    void ( async () => {
       try {
-        const agentId = await createAgent({
+        const agentId = await createAgent( {
           name: config.name,
           description: config.description,
           model: config.model,
@@ -155,115 +156,115 @@ export function AgentBuilder() {
           exposableAsMCPTool: config.exposableAsMCPTool,
           mcpToolName: config.mcpToolName,
           mcpInputSchema: config.mcpInputSchema,
-        });
+        } );
 
-        setSavedAgentId(agentId);
-        toast.success("Agent saved successfully!");
-      } catch (error) {
-        toast.error("Failed to save agent");
-        console.error(error);
+        setSavedAgentId( agentId );
+        toast.success( "Agent saved successfully!" );
+      } catch ( error ) {
+        toast.error( "Failed to save agent" );
+        console.error( error );
       }
-    })();
+    } )();
   };
 
-  const generateDeploymentPackage = useAction(api.deploymentPackageGenerator.generateDeploymentPackage);
-  const generateDeploymentPackageWithoutSaving = useAction(api.deploymentPackageGenerator.generateDeploymentPackageWithoutSaving);
+  const generateDeploymentPackage = useAction( api.deploymentPackageGenerator.generateDeploymentPackage );
+  const generateDeploymentPackageWithoutSaving = useAction( api.deploymentPackageGenerator.generateDeploymentPackageWithoutSaving );
 
-  useEffect(() => {
-    if (!automationData) {
-      setLastAutomationStamp(null);
-      if (!workflowResult) {
-        setAutomationSummary(null);
-        setAutomationStatus("idle");
-        setAutomationError(null);
+  useEffect( () => {
+    if ( !automationData ) {
+      setLastAutomationStamp( null );
+      if ( !workflowResult ) {
+        setAutomationSummary( null );
+        setAutomationStatus( "idle" );
+        setAutomationError( null );
       }
       return;
     }
 
-    if (lastAutomationStamp === automationData.createdAt) {
+    if ( lastAutomationStamp === automationData.createdAt ) {
       return;
     }
 
-    setLastAutomationStamp(automationData.createdAt);
-    setAutomationStatus("running");
-    setAutomationError(null);
-    setAutomationSummary(null);
-    setCurrentStep(0);
-    setGeneratedCode("");
-    setDockerConfig("");
-    setRequirementsTxt("");
-    setSavedAgentId(null);
+    setLastAutomationStamp( automationData.createdAt );
+    setAutomationStatus( "running" );
+    setAutomationError( null );
+    setAutomationSummary( null );
+    setCurrentStep( 0 );
+    setGeneratedCode( "" );
+    setDockerConfig( "" );
+    setRequirementsTxt( "" );
+    setSavedAgentId( null );
 
     let cancelled = false;
 
-    void (async () => {
+    void ( async () => {
       try {
-        const result = await executeWorkflow({
+        const result = await executeWorkflow( {
           userRequest: automationData.prompt,
           conversationId: automationData.conversationId,
-        });
+        } );
 
-        if (cancelled) return;
+        if ( cancelled ) return;
 
-        setAutomationSummary(result as WorkflowResult);
-        setWorkflowResult(result as WorkflowResult);
-        setAutomationStatus("complete");
-        toast.success("Builder automation completed. Review the plan below.");
-      } catch (error: any) {
+        setAutomationSummary( result as WorkflowResult );
+        setWorkflowResult( result as WorkflowResult );
+        setAutomationStatus( "complete" );
+        toast.success( "Builder automation completed. Review the plan below." );
+      } catch ( error: any ) {
         const message = error?.message || "Automation workflow failed";
-        if (cancelled) return;
-        setAutomationStatus("error");
-        setAutomationError(message);
-        toast.error("Automation workflow failed", { description: message });
+        if ( cancelled ) return;
+        setAutomationStatus( "error" );
+        setAutomationError( message );
+        toast.error( "Automation workflow failed", { description: message } );
       }
-    })();
+    } )();
 
     return () => {
       cancelled = true;
     };
-  }, [automationData, executeWorkflow, lastAutomationStamp, setWorkflowResult]);
+  }, [automationData, executeWorkflow, lastAutomationStamp, setWorkflowResult] );
 
-  useEffect(() => {
-    if (workflowResult) {
-      setAutomationSummary(workflowResult);
-      if (automationStatus === "running") {
-        setAutomationStatus("complete");
+  useEffect( () => {
+    if ( workflowResult ) {
+      setAutomationSummary( workflowResult );
+      if ( automationStatus === "running" ) {
+        setAutomationStatus( "complete" );
       }
     }
-  }, [workflowResult, automationStatus]);
+  }, [workflowResult, automationStatus] );
 
-  const handleAutoGenerateFromPlan = useCallback(async () => {
-    if (!automationSummary) {
-      toast.error("No automation plan available yet");
+  const handleAutoGenerateFromPlan = useCallback( async () => {
+    if ( !automationSummary ) {
+      toast.error( "No automation plan available yet" );
       return;
     }
 
-    const requirementsOutput = automationSummary.workflow.find((stage) =>
-      stage.stage.includes("requirements")
+    const requirementsOutput = automationSummary.workflow.find( ( stage ) =>
+      stage.stage.includes( "requirements" )
     )?.output || automationData?.prompt || "";
 
-    const architectureOutput = automationSummary.workflow.find((stage) =>
-      stage.stage.includes("architecture")
+    const architectureOutput = automationSummary.workflow.find( ( stage ) =>
+      stage.stage.includes( "architecture" )
     )?.output || "";
 
-    const implementationOutput = automationSummary.workflow.find((stage) =>
-      stage.stage.includes("implementation")
+    const implementationOutput = automationSummary.workflow.find( ( stage ) =>
+      stage.stage.includes( "implementation" )
     )?.output || "";
 
     const finalOutput = automationSummary.finalOutput || "";
 
-    const nameMatch = requirementsOutput.match(/Agent Name[:\-]\s*(.+)/i);
+    const nameMatch = requirementsOutput.match( /Agent Name[:\-]\s*(.+)/i );
     let derivedName = nameMatch ? nameMatch[1].trim() : "";
-    if (!derivedName) {
+    if ( !derivedName ) {
       derivedName = `Automated Agent ${new Date().toLocaleTimeString()}`;
     }
-    derivedName = derivedName.replace(/["'`]/g, "").slice(0, 80) || "Automated Agent";
+    derivedName = derivedName.replace( /["'`]/g, "" ).slice( 0, 80 ) || "Automated Agent";
 
-    const derivedDescription = requirementsOutput.trim().slice(0, 400) || "Automatically generated agent description.";
+    const derivedDescription = requirementsOutput.trim().slice( 0, 400 ) || "Automatically generated agent description.";
 
     const derivedSystemPrompt = [finalOutput, implementationOutput, architectureOutput]
-      .filter(Boolean)
-      .join("\n\n")
+      .filter( Boolean )
+      .join( "\n\n" )
       .trim() || requirementsOutput.trim();
 
     const autoConfig: AgentConfig = {
@@ -278,37 +279,37 @@ export function AgentBuilder() {
       mcpInputSchema: undefined,
     };
 
-    setConfig(autoConfig);
-    setIsGenerating(true);
-    setIsAutoGenerating(true);
-    setSavedAgentId(null);
+    setConfig( autoConfig );
+    setIsGenerating( true );
+    setIsAutoGenerating( true );
+    setSavedAgentId( null );
 
     try {
-      const response = await generateAgent({
+      const response = await generateAgent( {
         name: autoConfig.name,
         model: autoConfig.model,
         systemPrompt: autoConfig.systemPrompt,
         tools: autoConfig.tools,
         deploymentType: autoConfig.deploymentType,
-      });
+      } );
 
-      setGeneratedCode(response.generatedCode);
-      setDockerConfig("");
-      setRequirementsTxt(response.requirementsTxt || "");
-      toast.success("Agent generated from automation plan");
-      setCurrentStep(4);
-    } catch (error) {
-      console.error(error);
-      toast.error("Automatic generation failed", {
+      setGeneratedCode( response.generatedCode );
+      setDockerConfig( "" );
+      setRequirementsTxt( response.requirementsTxt || "" );
+      toast.success( "Agent generated from automation plan" );
+      setCurrentStep( 4 );
+    } catch ( error ) {
+      console.error( error );
+      toast.error( "Automatic generation failed", {
         description: error instanceof Error ? error.message : undefined,
-      });
+      } );
     } finally {
-      setIsGenerating(false);
-      setIsAutoGenerating(false);
+      setIsGenerating( false );
+      setIsAutoGenerating( false );
     }
-  }, [automationSummary, automationData, config.tools, generateAgent]);
+  }, [automationSummary, automationData, config.tools, generateAgent] );
 
-  const handleExportConfig = useCallback(() => {
+  const handleExportConfig = useCallback( () => {
     const payload = {
       config,
       generatedCode,
@@ -317,59 +318,59 @@ export function AgentBuilder() {
       timestamp: Date.now(),
     };
 
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
+    const blob = new Blob( [JSON.stringify( payload, null, 2 )], { type: "application/json" } );
+    const url = URL.createObjectURL( blob );
+    const link = document.createElement( "a" );
     link.href = url;
-    const safeName = (config.name || "agent").toLowerCase().replace(/[^a-z0-9]+/g, "_");
+    const safeName = ( config.name || "agent" ).toLowerCase().replace( /[^a-z0-9]+/g, "_" );
     link.download = `${safeName || "agent"}_builder_state.json`;
     link.click();
-    URL.revokeObjectURL(url);
-    toast.success("Builder state exported");
-  }, [config, generatedCode, requirementsTxt, automationSummary]);
+    URL.revokeObjectURL( url );
+    toast.success( "Builder state exported" );
+  }, [config, generatedCode, requirementsTxt, automationSummary] );
 
-  const handleImportConfig = useCallback(() => {
+  const handleImportConfig = useCallback( () => {
     fileInputRef.current?.click();
-  }, []);
+  }, [] );
 
-  const handleImportFileSelected = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
+  const handleImportFileSelected = useCallback( async ( event: ChangeEvent<HTMLInputElement> ) => {
     const file = event.target.files?.[0];
-    if (!file) return;
+    if ( !file ) return;
 
     try {
       const text = await file.text();
-      const data = JSON.parse(text);
+      const data = JSON.parse( text );
 
-      if (data.config) {
-        setConfig((prev) => ({
+      if ( data.config ) {
+        setConfig( ( prev ) => ( {
           ...prev,
           ...data.config,
-        }));
+        } ) );
       }
 
-      if (typeof data.generatedCode === "string") {
-        setGeneratedCode(data.generatedCode);
+      if ( typeof data.generatedCode === "string" ) {
+        setGeneratedCode( data.generatedCode );
       }
-      if (typeof data.requirementsTxt === "string") {
-        setRequirementsTxt(data.requirementsTxt);
+      if ( typeof data.requirementsTxt === "string" ) {
+        setRequirementsTxt( data.requirementsTxt );
       }
-      if (data.automationSummary) {
-        setAutomationSummary(data.automationSummary as WorkflowResult);
-        setWorkflowResult(data.automationSummary as WorkflowResult);
-        setAutomationStatus("complete");
-        setAutomationError(null);
+      if ( data.automationSummary ) {
+        setAutomationSummary( data.automationSummary as WorkflowResult );
+        setWorkflowResult( data.automationSummary as WorkflowResult );
+        setAutomationStatus( "complete" );
+        setAutomationError( null );
       }
 
-      setSavedAgentId(null);
-      toast.success("Builder state imported");
-    } catch (error: any) {
-      toast.error("Failed to import configuration", {
+      setSavedAgentId( null );
+      toast.success( "Builder state imported" );
+    } catch ( error: any ) {
+      toast.error( "Failed to import configuration", {
         description: error?.message,
-      });
+      } );
     } finally {
       event.target.value = "";
     }
-  }, [setConfig, setWorkflowResult]);
+  }, [setConfig, setWorkflowResult] );
 
   const handleDownload = async () => {
     // Allow download even without saving - generate package on the fly
@@ -384,22 +385,22 @@ export function AgentBuilder() {
       mcpServers: config.mcpConfig?.servers || [],
     };
 
-    if (!generatedCode) {
-      toast.error("Please generate the agent code first");
+    if ( !generatedCode ) {
+      toast.error( "Please generate the agent code first" );
       return;
     }
 
     try {
-      toast.info("Generating deployment package...");
+      toast.info( "Generating deployment package..." );
 
       const deploymentTarget = config.deploymentType;
-      const includeCLIScript = ["docker", "ollama", "aws"].includes(deploymentTarget);
+      const includeCLIScript = ["docker", "ollama", "aws"].includes( deploymentTarget );
 
       let packageData;
-      
-      if (savedAgentId) {
+
+      if ( savedAgentId ) {
         // Use saved agent
-        packageData = await generateDeploymentPackage({
+        packageData = await generateDeploymentPackage( {
           agentId: savedAgentId,
           options: {
             includeCloudFormation: deploymentTarget === 'aws',
@@ -407,10 +408,10 @@ export function AgentBuilder() {
             includeLambdaConfig: deploymentTarget === 'lambda',
             deploymentTarget,
           },
-        });
+        } );
       } else {
         // Generate package without saving
-        packageData = await generateDeploymentPackageWithoutSaving({
+        packageData = await generateDeploymentPackageWithoutSaving( {
           agent: agentToDownload as any,
           options: {
             includeCloudFormation: deploymentTarget === 'aws',
@@ -418,40 +419,40 @@ export function AgentBuilder() {
             includeLambdaConfig: deploymentTarget === 'lambda',
             deploymentTarget,
           },
-        });
+        } );
       }
 
       // Create ZIP file with JSZip
-      const JSZip = (await import('jszip')).default;
+      const JSZip = ( await import( 'jszip' ) ).default;
       const zip = new JSZip();
 
       // Add all files to ZIP
-      Object.entries(packageData.files).forEach(([filename, content]) => {
+      Object.entries( packageData.files ).forEach( ( [filename, content] ) => {
         // Handle binary files (PNG, images) - they're base64 encoded
-        if (filename.endsWith('.png') || filename.endsWith('.jpg') || filename.endsWith('.jpeg') || filename.endsWith('.svg')) {
-          zip.file(filename, content, { base64: true });
+        if ( filename.endsWith( '.png' ) || filename.endsWith( '.jpg' ) || filename.endsWith( '.jpeg' ) || filename.endsWith( '.svg' ) ) {
+          zip.file( filename, content, { base64: true } );
         } else {
-          zip.file(filename, content);
+          zip.file( filename, content );
         }
-      });
+      } );
 
       // Generate ZIP blob
-      const zipBlob = await zip.generateAsync({ type: 'blob' });
-      
-      // Download ZIP
-      const url = URL.createObjectURL(zipBlob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${config.name.toLowerCase().replace(/\s+/g, "_")}_deployment_package.zip`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      const zipBlob = await zip.generateAsync( { type: 'blob' } );
 
-      toast.success("Deployment package downloaded successfully!");
-    } catch (error: any) {
-      console.error("Download failed:", error);
-      toast.error(error.message || "Failed to download deployment package");
+      // Download ZIP
+      const url = URL.createObjectURL( zipBlob );
+      const a = document.createElement( "a" );
+      a.href = url;
+      a.download = `${config.name.toLowerCase().replace( /\s+/g, "_" )}_deployment_package.zip`;
+      document.body.appendChild( a );
+      a.click();
+      document.body.removeChild( a );
+      URL.revokeObjectURL( url );
+
+      toast.success( "Deployment package downloaded successfully!" );
+    } catch ( error: any ) {
+      console.error( "Download failed:", error );
+      toast.error( error.message || "Failed to download deployment package" );
     }
   };
 
@@ -488,7 +489,7 @@ export function AgentBuilder() {
         </div>
       </div>
 
-      {(automationData || automationSummary) && (
+      {( automationData || automationSummary ) && (
         <AutomationSummaryPanel
           status={automationStatus}
           promptPreview={automationData?.prompt || automationSummary?.workflow?.[0]?.output || ""}
@@ -503,21 +504,20 @@ export function AgentBuilder() {
       {/* Progress Steps */}
       <div className="mb-8">
         <div className="flex items-center justify-between">
-          {steps.map((step, index) => {
+          {steps.map( ( step, index ) => {
             const Icon = step.icon;
             const isActive = index === currentStep;
             const isCompleted = index < currentStep;
-            
+
             return (
               <div key={step.id} className="flex items-center">
                 <div
-                  className={`flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all ${
-                    isActive
-                      ? "border-green-400 bg-green-400/10 text-green-400"
-                      : isCompleted
+                  className={`flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all ${isActive
+                    ? "border-green-400 bg-green-400/10 text-green-400"
+                    : isCompleted
                       ? "border-green-600 bg-green-600/10 text-green-600"
                       : "border-gray-600 text-gray-600"
-                  }`}
+                    }`}
                 >
                   <Icon className="w-5 h-5" />
                 </div>
@@ -531,7 +531,7 @@ export function AgentBuilder() {
                 )}
               </div>
             );
-          })}
+          } )}
         </div>
       </div>
 
@@ -563,8 +563,8 @@ export function AgentBuilder() {
               />
             )}
             {currentStep === 5 && (
-              <DeployStep 
-                config={config} 
+              <DeployStep
+                config={config}
                 setConfig={setConfig}
                 generatedCode={generatedCode}
                 dockerConfig={dockerConfig}
@@ -590,7 +590,7 @@ export function AgentBuilder() {
           <ChevronLeft className="w-4 h-4" />
           Previous
         </button>
-        
+
         <button
           onClick={handleNext}
           disabled={currentStep === steps.length - 1}
@@ -614,7 +614,7 @@ interface AutomationSummaryPanelProps {
   isGenerating?: boolean;
 }
 
-function AutomationSummaryPanel({
+function AutomationSummaryPanel( {
   status,
   promptPreview,
   summary,
@@ -622,9 +622,9 @@ function AutomationSummaryPanel({
   onClear,
   onGenerate,
   isGenerating,
-}: AutomationSummaryPanelProps) {
+}: Readonly<AutomationSummaryPanelProps> ) {
   const statusLabel = () => {
-    switch (status) {
+    switch ( status ) {
       case "running":
         return "Running automation workflow...";
       case "complete":
@@ -640,10 +640,10 @@ function AutomationSummaryPanel({
     status === "complete"
       ? "text-emerald-400"
       : status === "error"
-      ? "text-red-400"
-      : status === "running"
-      ? "text-blue-400"
-      : "text-green-600";
+        ? "text-red-400"
+        : status === "running"
+          ? "text-blue-400"
+          : "text-green-600";
 
   return (
     <div className="mb-8 bg-gray-900/50 border border-green-900/30 rounded-xl p-6">
@@ -684,7 +684,7 @@ function AutomationSummaryPanel({
         <div className="bg-black/40 border border-green-900/30 rounded-lg p-4">
           <h3 className="text-sm font-medium text-green-300 mb-2">Conversation Summary</h3>
           <p className="text-xs text-green-500 whitespace-pre-wrap max-h-40 overflow-y-auto">
-            {promptPreview ? promptPreview.slice(0, 1600) : "Awaiting conversation details..."}
+            {promptPreview ? promptPreview.slice( 0, 1600 ) : "Awaiting conversation details..."}
             {promptPreview.length > 1600 && "..."}
           </p>
         </div>
@@ -713,27 +713,27 @@ function AutomationSummaryPanel({
 
       {summary && (
         <div className="mt-6 space-y-3">
-          {summary.workflow.map((stage) => (
+          {summary.workflow.map( ( stage ) => (
             <details key={stage.stage} className="bg-black/40 border border-green-900/30 rounded-lg">
               <summary className="cursor-pointer text-sm font-medium text-green-300 px-4 py-3">
-                {stage.stage.replace(/_/g, " ")}
+                {stage.stage.replace( /_/g, " " )}
               </summary>
               <div className="px-4 pb-4 text-xs text-green-500 whitespace-pre-wrap">
                 {stage.output}
               </div>
             </details>
-          ))}
+          ) )}
         </div>
       )}
     </div>
   );
 }
 
-function BasicInfoStep({ config, setConfig }: { config: AgentConfig; setConfig: (config: AgentConfig) => void }) {
+function BasicInfoStep( { config, setConfig }: { config: AgentConfig; setConfig: ( config: AgentConfig ) => void } ) {
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-bold text-green-400 mb-6">Basic Information</h2>
-      
+
       <div>
         <label className="block text-sm font-medium text-green-400 mb-2">
           Agent Name *
@@ -741,7 +741,7 @@ function BasicInfoStep({ config, setConfig }: { config: AgentConfig; setConfig: 
         <input
           type="text"
           value={config.name}
-          onChange={(e) => setConfig({ ...config, name: e.target.value })}
+          onChange={( e ) => setConfig( { ...config, name: e.target.value } )}
           placeholder="My Awesome Agent"
           className="w-full px-4 py-3 bg-black border border-green-900/30 rounded-lg text-green-400 placeholder-green-600 focus:border-green-400 focus:ring-1 focus:ring-green-400 outline-none transition-colors"
         />
@@ -753,7 +753,7 @@ function BasicInfoStep({ config, setConfig }: { config: AgentConfig; setConfig: 
         </label>
         <textarea
           value={config.description}
-          onChange={(e) => setConfig({ ...config, description: e.target.value })}
+          onChange={( e ) => setConfig( { ...config, description: e.target.value } )}
           placeholder="Describe what your agent does..."
           rows={4}
           className="w-full px-4 py-3 bg-black border border-green-900/30 rounded-lg text-green-400 placeholder-green-600 focus:border-green-400 focus:ring-1 focus:ring-green-400 outline-none transition-colors resize-none"
@@ -763,14 +763,14 @@ function BasicInfoStep({ config, setConfig }: { config: AgentConfig; setConfig: 
   );
 }
 
-function ModelPromptStep({ config, setConfig }: { config: AgentConfig; setConfig: (config: AgentConfig) => void }) {
+function ModelPromptStep( { config, setConfig }: { config: AgentConfig; setConfig: ( config: AgentConfig ) => void } ) {
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-bold text-green-400 mb-6">Model & System Prompt</h2>
-      
+
       <ModelSelector
         value={config.model}
-        onChange={(model) => setConfig({ ...config, model })}
+        onChange={( model ) => setConfig( { ...config, model } )}
       />
 
       <div>
@@ -779,7 +779,7 @@ function ModelPromptStep({ config, setConfig }: { config: AgentConfig; setConfig
         </label>
         <textarea
           value={config.systemPrompt}
-          onChange={(e) => setConfig({ ...config, systemPrompt: e.target.value })}
+          onChange={( e ) => setConfig( { ...config, systemPrompt: e.target.value } )}
           placeholder="You are a helpful AI agent that..."
           rows={8}
           className="w-full px-4 py-3 bg-black border border-green-900/30 rounded-lg text-green-400 placeholder-green-600 focus:border-green-400 focus:ring-1 focus:ring-green-400 outline-none transition-colors resize-none font-mono text-sm"
@@ -792,31 +792,31 @@ function ModelPromptStep({ config, setConfig }: { config: AgentConfig; setConfig
   );
 }
 
-function ToolsStep({ config, setConfig }: { config: AgentConfig; setConfig: (config: AgentConfig) => void }) {
-  const addTool = (tool: Tool) => {
-    setConfig({
+function ToolsStep( { config, setConfig }: { config: AgentConfig; setConfig: ( config: AgentConfig ) => void } ) {
+  const addTool = ( tool: Tool ) => {
+    setConfig( {
       ...config,
       tools: [...config.tools, tool],
-    });
+    } );
   };
 
-  const removeTool = (index: number) => {
-    setConfig({
+  const removeTool = ( index: number ) => {
+    setConfig( {
       ...config,
-      tools: config.tools.filter((_, i) => i !== index),
-    });
+      tools: config.tools.filter( ( _, i ) => i !== index ),
+    } );
   };
 
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-bold text-green-400 mb-6">Tools & Capabilities</h2>
-      
+
       <ToolSelector onAddTool={addTool} />
 
       {config.tools.length > 0 && (
         <div className="space-y-3">
           <h3 className="text-lg font-medium text-green-400">Selected Tools</h3>
-          {config.tools.map((tool, index) => (
+          {config.tools.map( ( tool, index ) => (
             <div
               key={index}
               className="flex items-center justify-between p-4 bg-black border border-green-900/30 rounded-lg"
@@ -826,25 +826,25 @@ function ToolsStep({ config, setConfig }: { config: AgentConfig; setConfig: (con
                 <div className="text-sm text-green-600">{tool.type}</div>
                 {tool.requiresPip && (
                   <div className="text-xs text-yellow-400 mt-1">
-                    Requires: {tool.pipPackages?.join(", ")}
+                    Requires: {tool.pipPackages?.join( ", " )}
                   </div>
                 )}
               </div>
               <button
-                onClick={() => removeTool(index)}
+                onClick={() => removeTool( index )}
                 className="p-2 text-red-400 hover:text-red-300 transition-colors"
               >
                 <Trash2 className="w-4 h-4" />
               </button>
             </div>
-          ))}
+          ) )}
         </div>
       )}
     </div>
   );
 }
 
-function DeployStep({
+function DeployStep( {
   config,
   setConfig,
   generatedCode,
@@ -857,7 +857,7 @@ function DeployStep({
   onDownload,
 }: {
   config: AgentConfig;
-  setConfig: (config: AgentConfig) => void;
+  setConfig: ( config: AgentConfig ) => void;
   generatedCode: string;
   dockerConfig: string;
   requirementsTxt: string;
@@ -866,66 +866,66 @@ function DeployStep({
   onGenerate: () => void;
   onSave: () => void;
   onDownload: () => void;
-}) {
-  const [showAWSDeployment, setShowAWSDeployment] = useState(false);
-  const [showAWSAuthModal, setShowAWSAuthModal] = useState(false);
-  const [deploymentConfig, setDeploymentConfig] = useState({
+} ) {
+  const [showAWSDeployment, setShowAWSDeployment] = useState( false );
+  const [showAWSAuthModal, setShowAWSAuthModal] = useState( false );
+  const [deploymentConfig, setDeploymentConfig] = useState( {
     region: 'us-east-1',
-    agentName: config.name.replace(/[^a-zA-Z0-9-]/g, '-').toLowerCase() || 'my-agent',
+    agentName: config.name.replace( /[^a-zA-Z0-9-]/g, '-' ).toLowerCase() || 'my-agent',
     description: config.description || '',
     enableMonitoring: true,
     enableAutoScaling: true,
-  });
-  const [isDeploying, setIsDeploying] = useState(false);
-  const hasAWSCredentials = useQuery(api.awsAuth.hasValidAWSCredentials);
+  } );
+  const [isDeploying, setIsDeploying] = useState( false );
+  const hasAWSCredentials = useQuery( api.awsAuth.hasValidAWSCredentials );
 
-  const deployToAWS = useMutation(api.awsDeployment.deployToAWS as any);
+  const deployToAWS = useMutation( api.awsDeployment.deployToAWS as any );
 
-  const handleMCPConfigChange = (mcpConfig: {
+  const handleMCPConfigChange = ( mcpConfig: {
     exposableAsMCPTool: boolean;
     mcpToolName?: string;
     mcpInputSchema?: any;
-  }) => {
-    setConfig({
+  } ) => {
+    setConfig( {
       ...config,
       exposableAsMCPTool: mcpConfig.exposableAsMCPTool,
       mcpToolName: mcpConfig.mcpToolName,
       mcpInputSchema: mcpConfig.mcpInputSchema,
-    });
+    } );
   };
 
   const handleDeployToAWS = () => {
-    if (!savedAgentId) {
-      toast.error("Please save the agent first");
+    if ( !savedAgentId ) {
+      toast.error( "Please save the agent first" );
       return;
     }
 
-    if (hasAWSCredentials === false) {
-      toast.info("Connect your AWS account before deploying.");
-      setShowAWSAuthModal(true);
+    if ( hasAWSCredentials === false ) {
+      toast.info( "Connect your AWS account before deploying." );
+      setShowAWSAuthModal( true );
       return;
     }
 
-    if (hasAWSCredentials === undefined) {
-      toast.info("Checking AWS credentials...");
+    if ( hasAWSCredentials === undefined ) {
+      toast.info( "Checking AWS credentials..." );
       return;
     }
 
-    setIsDeploying(true);
-    void (async () => {
+    setIsDeploying( true );
+    void ( async () => {
       try {
-        await deployToAWS({
+        await deployToAWS( {
           agentId: savedAgentId,
           deploymentConfig,
-        });
-        toast.success("Deployment started successfully!");
-      } catch (error: any) {
-        console.error("Deployment failed:", error);
-        toast.error(error.message || "Deployment failed");
+        } );
+        toast.success( "Deployment started successfully!" );
+      } catch ( error: any ) {
+        console.error( "Deployment failed:", error );
+        toast.error( error.message || "Deployment failed" );
       } finally {
-        setIsDeploying(false);
+        setIsDeploying( false );
       }
-    })();
+    } )();
   };
 
   const regions = [
@@ -939,20 +939,20 @@ function DeployStep({
   const calculateEstimatedCost = () => {
     const baseCost = config.deploymentType === 'aws' ? 0.10 : 0.05;
     const toolCost = config.tools.length * 0.02;
-    return (baseCost + toolCost).toFixed(2);
+    return ( baseCost + toolCost ).toFixed( 2 );
   };
 
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-bold text-green-400 mb-6">Deployment Configuration</h2>
-      
+
       <div>
         <label className="block text-sm font-medium text-green-400 mb-2">
           Deployment Type
         </label>
         <select
           value={config.deploymentType}
-          onChange={(e) => setConfig({ ...config, deploymentType: e.target.value })}
+          onChange={( e ) => setConfig( { ...config, deploymentType: e.target.value } )}
           className="w-full px-4 py-3 bg-black border border-green-900/30 rounded-lg text-green-400 focus:border-green-400 focus:ring-1 focus:ring-green-400 outline-none transition-colors"
         >
           <option value="docker">Docker Container</option>
@@ -987,25 +987,25 @@ function DeployStep({
               <span className="text-yellow-400 font-medium">${calculateEstimatedCost()}/hour</span>
             </div>
           </div>
-          
+
           {/* Tool Dependencies */}
           {config.tools.length > 0 && (
             <div className="mt-4 pt-4 border-t border-green-900/30">
               <h4 className="text-sm font-medium text-green-400 mb-2">Tool Dependencies</h4>
               <div className="space-y-2">
-                {config.tools.map((tool, idx) => (
+                {config.tools.map( ( tool, idx ) => (
                   <div key={idx} className="flex items-start gap-2 text-xs">
                     <div className="w-2 h-2 rounded-full bg-green-500 mt-1" />
                     <div>
                       <div className="text-green-300 font-medium">{tool.name}</div>
                       {tool.pipPackages && tool.pipPackages.length > 0 && (
                         <div className="text-green-600">
-                          Requires: {tool.pipPackages.join(", ")}
+                          Requires: {tool.pipPackages.join( ", " )}
                         </div>
                       )}
                     </div>
                   </div>
-                ))}
+                ) )}
               </div>
             </div>
           )}
@@ -1065,7 +1065,7 @@ function DeployStep({
               <Copy className="w-4 h-4" />
               Save Agent
             </button>
-            
+
             <button
               onClick={onDownload}
               className="flex items-center gap-2 px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
@@ -1076,7 +1076,7 @@ function DeployStep({
 
             {config.deploymentType === 'aws' && (
               <button
-                onClick={() => setShowAWSDeployment(!showAWSDeployment)}
+                onClick={() => setShowAWSDeployment( !showAWSDeployment )}
                 className="flex items-center gap-2 px-6 py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
               >
                 <Rocket className="w-4 h-4" />
@@ -1091,7 +1091,7 @@ function DeployStep({
       {showAWSDeployment && generatedCode && config.deploymentType === 'aws' && (
         <div className="bg-gray-900/30 border border-orange-900/30 rounded-lg p-6">
           <h3 className="text-xl font-bold text-orange-400 mb-4">Deploy to AWS AgentCore</h3>
-          
+
           <div className="space-y-4">
             <div className="flex items-center justify-between gap-4 p-3 bg-black/40 border border-green-900/30 rounded-lg">
               <div className="flex items-center gap-2 text-sm">
@@ -1113,7 +1113,7 @@ function DeployStep({
                 )}
               </div>
               <button
-                onClick={() => setShowAWSAuthModal(true)}
+                onClick={() => setShowAWSAuthModal( true )}
                 className="flex items-center gap-2 px-3 py-2 text-sm bg-green-600 hover:bg-green-700 text-white rounded-md transition-colors"
               >
                 <Shield className="w-4 h-4" />
@@ -1129,7 +1129,7 @@ function DeployStep({
               <input
                 type="text"
                 value={deploymentConfig.agentName}
-                onChange={(e) => setDeploymentConfig(prev => ({ ...prev, agentName: e.target.value }))}
+                onChange={( e ) => setDeploymentConfig( prev => ( { ...prev, agentName: e.target.value } ) )}
                 className="w-full px-4 py-3 bg-black border border-green-900/30 rounded-lg text-green-400 focus:border-green-400 focus:ring-1 focus:ring-green-400 outline-none transition-colors"
                 placeholder="my-agent"
               />
@@ -1145,14 +1145,14 @@ function DeployStep({
               </label>
               <select
                 value={deploymentConfig.region}
-                onChange={(e) => setDeploymentConfig(prev => ({ ...prev, region: e.target.value }))}
+                onChange={( e ) => setDeploymentConfig( prev => ( { ...prev, region: e.target.value } ) )}
                 className="w-full px-4 py-3 bg-black border border-green-900/30 rounded-lg text-green-400 focus:border-green-400 focus:ring-1 focus:ring-green-400 outline-none transition-colors"
               >
-                {regions.map(region => (
+                {regions.map( region => (
                   <option key={region.value} value={region.value}>
                     {region.label}
                   </option>
-                ))}
+                ) )}
               </select>
             </div>
 
@@ -1163,7 +1163,7 @@ function DeployStep({
               </label>
               <textarea
                 value={deploymentConfig.description}
-                onChange={(e) => setDeploymentConfig(prev => ({ ...prev, description: e.target.value }))}
+                onChange={( e ) => setDeploymentConfig( prev => ( { ...prev, description: e.target.value } ) )}
                 rows={2}
                 className="w-full px-4 py-3 bg-black border border-green-900/30 rounded-lg text-green-400 placeholder-green-600 focus:border-green-400 focus:ring-1 focus:ring-green-400 outline-none transition-colors resize-none"
                 placeholder="Describe what this agent does..."
@@ -1176,17 +1176,17 @@ function DeployStep({
                 <input
                   type="checkbox"
                   checked={deploymentConfig.enableMonitoring}
-                  onChange={(e) => setDeploymentConfig(prev => ({ ...prev, enableMonitoring: e.target.checked }))}
+                  onChange={( e ) => setDeploymentConfig( prev => ( { ...prev, enableMonitoring: e.target.checked } ) )}
                   className="rounded border-green-900/30 text-green-600 focus:ring-green-400 bg-black"
                 />
                 <span className="ml-2 text-sm text-green-300">Enable monitoring and logging</span>
               </label>
-              
+
               <label className="flex items-center">
                 <input
                   type="checkbox"
                   checked={deploymentConfig.enableAutoScaling}
-                  onChange={(e) => setDeploymentConfig(prev => ({ ...prev, enableAutoScaling: e.target.checked }))}
+                  onChange={( e ) => setDeploymentConfig( prev => ( { ...prev, enableAutoScaling: e.target.checked } ) )}
                   className="rounded border-green-900/30 text-green-600 focus:ring-green-400 bg-black"
                 />
                 <span className="ml-2 text-sm text-green-300">Enable auto-scaling</span>
@@ -1232,8 +1232,8 @@ function DeployStep({
       )}
 
       {generatedCode && (
-        <CodePreview 
-          code={generatedCode} 
+        <CodePreview
+          code={generatedCode}
           dockerConfig={dockerConfig}
           requirementsTxt={requirementsTxt}
           deploymentType={config.deploymentType}
@@ -1242,48 +1242,48 @@ function DeployStep({
 
       <AWSAuthModal
         isOpen={showAWSAuthModal}
-        onClose={() => setShowAWSAuthModal(false)}
+        onClose={() => setShowAWSAuthModal( false )}
         onSuccess={() => {
-          toast.success("AWS access configured successfully");
+          toast.success( "AWS access configured successfully" );
         }}
       />
     </div>
   );
 }
 
-function ArchitectureStep({ config }: { config: AgentConfig }) {
-  const [showDiagramCode, setShowDiagramCode] = useState(false);
-  const generateDiagram = useAction(api.diagramGenerator.generateArchitectureDiagram);
-  const [diagramCode, setDiagramCode] = useState<string>("");
-  const [isGenerating, setIsGenerating] = useState(false);
+function ArchitectureStep( { config }: { config: AgentConfig } ) {
+  const [showDiagramCode, setShowDiagramCode] = useState( false );
+  const generateDiagram = useAction( api.diagramGenerator.generateArchitectureDiagram );
+  const [diagramCode, setDiagramCode] = useState<string>( "" );
+  const [isGenerating, setIsGenerating] = useState( false );
 
   const handleGenerateDiagram = () => {
-    if (!config.name) return;
-    
-    setIsGenerating(true);
-    void generateDiagram({
+    if ( !config.name ) return;
+
+    setIsGenerating( true );
+    void generateDiagram( {
       agentName: config.name,
       deploymentType: config.deploymentType,
       model: config.model,
       tools: config.tools,
-    }).then((result) => {
-      if (result.success && result.diagramCode) {
-        setDiagramCode(result.diagramCode);
-        setShowDiagramCode(true);
-        toast.success("Diagram code generated! (MCP integration coming soon)");
+    } ).then( ( result ) => {
+      if ( result.success && result.diagramCode ) {
+        setDiagramCode( result.diagramCode );
+        setShowDiagramCode( true );
+        toast.success( "Diagram code generated! (MCP integration coming soon)" );
       }
-    }).catch((error) => {
-      toast.error("Failed to generate diagram");
-      console.error(error);
-    }).finally(() => {
-      setIsGenerating(false);
-    });
+    } ).catch( ( error ) => {
+      toast.error( "Failed to generate diagram" );
+      console.error( error );
+    } ).finally( () => {
+      setIsGenerating( false );
+    } );
   };
 
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-bold text-green-400 mb-6">Architecture Preview</h2>
-      
+
       <ArchitecturePreview
         agentName={config.name}
         model={config.model}
@@ -1324,8 +1324,8 @@ function ArchitectureStep({ config }: { config: AgentConfig }) {
                 <span className="text-sm text-gray-400">Python Diagrams Code</span>
                 <button
                   onClick={() => {
-                    void navigator.clipboard.writeText(diagramCode);
-                    toast.success("Copied to clipboard!");
+                    void navigator.clipboard.writeText( diagramCode );
+                    toast.success( "Copied to clipboard!" );
                   }}
                   className="text-xs text-blue-400 hover:text-blue-300"
                 >
@@ -1357,7 +1357,7 @@ function ArchitectureStep({ config }: { config: AgentConfig }) {
   );
 }
 
-function TestStep({
+function TestStep( {
   agentId,
   agentCode,
   requirements,
@@ -1377,8 +1377,8 @@ function TestStep({
   onGenerate: () => void;
   onSave: () => void;
   isGenerating: boolean;
-}) {
-  if (!agentCode) {
+} ) {
+  if ( !agentCode ) {
     return (
       <div className="space-y-6">
         <h2 className="text-2xl font-bold text-green-400 mb-6">Test Your Agent</h2>
@@ -1409,7 +1409,7 @@ function TestStep({
     );
   }
 
-  if (!agentId) {
+  if ( !agentId ) {
     return (
       <div className="space-y-6">
         <h2 className="text-2xl font-bold text-green-400 mb-6">Test Your Agent</h2>

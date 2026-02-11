@@ -92,6 +92,8 @@ import type * as router from "../router.js";
 import type * as strandsAgentExecution from "../strandsAgentExecution.js";
 import type * as strandsAgentExecutionDynamic from "../strandsAgentExecutionDynamic.js";
 import type * as strandsAgentsTools from "../strandsAgentsTools.js";
+import type * as stripe from "../stripe.js";
+import type * as stripeMutations from "../stripeMutations.js";
 import type * as swarmTestingOrchestrator from "../swarmTestingOrchestrator.js";
 import type * as templates from "../templates.js";
 import type * as testExecution from "../testExecution.js";
@@ -199,6 +201,8 @@ declare const fullApi: ApiFromModules<{
   strandsAgentExecution: typeof strandsAgentExecution;
   strandsAgentExecutionDynamic: typeof strandsAgentExecutionDynamic;
   strandsAgentsTools: typeof strandsAgentsTools;
+  stripe: typeof stripe;
+  stripeMutations: typeof stripeMutations;
   swarmTestingOrchestrator: typeof swarmTestingOrchestrator;
   templates: typeof templates;
   testExecution: typeof testExecution;

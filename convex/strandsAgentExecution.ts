@@ -63,59 +63,75 @@ type BedrockContentBlock =
   | { type: "text"; text: string }
   | { type: "thinking"; thinking: string }
   | { type: "tool_use"; id?: string; name?: string; input?: unknown }
-  | { type: string; [key: string]: unknown };
+  | { type: string;[key: string]: unknown };
 
 type BedrockInvokeResponse = {
   content?: BedrockContentBlock[];
 };
 
-export const executeAgentWithStrandsAgents = action({
+export const executeAgentWithStrandsAgents = action( {
   args: {
-    agentId: v.id("agents"),
-    conversationId: v.optional(v.id("interleavedConversations")),
+    agentId: v.id( "agents" ),
+    conversationId: v.optional( v.id( "interleavedConversations" ) ),
     message: v.string(),
   },
-  handler: async (ctx, args): Promise<AgentExecutionResult> => {
+  handler: async ( ctx, args ): Promise<AgentExecutionResult> => {
     try {
-      const agent = (await ctx.runQuery(internal.strandsAgentExecution.getAgentInternal, {
+      const agent = ( await ctx.runQuery( internal.strandsAgentExecution.getAgentInternal, {
         agentId: args.agentId,
-      })) as AgentDoc | null;
+      } ) ) as AgentDoc | null;
 
-      if (!agent) {
-        throw new Error("Agent not found");
+      if ( !agent ) {
+        throw new Error( "Agent not found" );
       }
 
       // Model gating: Check if user's tier allows the agent's model provider
-      const { isProviderAllowedForTier, isBedrockModelAllowedForTier } = await import("./lib/tierConfig");
-      const agentOwner = await ctx.runQuery(internal.users.getInternal, { id: agent.createdBy });
+      const { isProviderAllowedForTier, isBedrockModelAllowedForTier, getTierConfig } = await import( "./lib/tierConfig" );
+      const agentOwner = await ctx.runQuery( internal.users.getInternal, { id: agent.createdBy } );
       const userTier = agentOwner?.tier || "freemium";
-      const isBedrock = agent.deploymentType !== "ollama" && !agent.model.includes(":");
-      if (isBedrock && !isProviderAllowedForTier(userTier, "bedrock")) {
+
+      // Burst rate limit: enforce tier-aware per-minute ceiling
+      const { checkRateLimit, buildTierRateLimitConfig } = await import( "./rateLimiter" );
+      const tierCfg = getTierConfig( userTier );
+      const rlCfg = buildTierRateLimitConfig( tierCfg.maxConcurrentTests, "agentExecution" );
+      const rlResult = await checkRateLimit( ctx, String( agent.createdBy ), "agentExecution", rlCfg );
+      if ( !rlResult.allowed ) {
+        return {
+          success: false,
+          error: rlResult.reason || "Rate limit exceeded. Please wait before running more executions.",
+        };
+      }
+      // Detect Bedrock: honor explicit deploymentType first, then fall back to
+      // model-ID pattern matching (Bedrock IDs use prefixes like "anthropic.",
+      // "anthropic.", "amazon.", "meta.", "mistral.", "cohere.", "ai21.").
+      const isBedrock = agent.deploymentType === "bedrock"
+        || ( !agent.deploymentType && /^(us\.)?(anthropic|amazon|meta|mistral|cohere|ai21)\./.test( agent.model ) );
+      if ( isBedrock && !isProviderAllowedForTier( userTier, "bedrock" ) ) {
         return {
           success: false,
           error: "Bedrock models require a Personal subscription ($5/month). " +
-                 "Use local Ollama models for free, or upgrade in Settings → Billing.",
+            "Use local Ollama models for free, or upgrade in Settings → Billing.",
         };
       }
-      if (isBedrock && !isBedrockModelAllowedForTier(userTier, agent.model)) {
+      if ( isBedrock && !isBedrockModelAllowedForTier( userTier, agent.model ) ) {
         return {
           success: false,
           error: `Model ${agent.model} is not available on the ${userTier} tier. ` +
-                 "Upgrade your subscription for access to this model.",
+            "Upgrade your subscription for access to this model.",
         };
       }
 
       let history: ConversationMessage[] = [];
-      if (args.conversationId) {
-        history = (await ctx.runQuery(internal.interleavedReasoning.getConversationHistory, {
+      if ( args.conversationId ) {
+        history = ( await ctx.runQuery( internal.interleavedReasoning.getConversationHistory, {
           conversationId: args.conversationId,
           windowSize: 10,
-        })) as ConversationMessage[];
+        } ) ) as ConversationMessage[];
       }
 
-      return await executeViaAgentCore(ctx, agent, args.message, history);
-    } catch (error: unknown) {
-      console.error("Agent execution error:", error);
+      return await executeViaAgentCore( ctx, agent, args.message, history );
+    } catch ( error: unknown ) {
+      console.error( "Agent execution error:", error );
       const message = error instanceof Error ? error.message : "Agent execution failed";
       return {
         success: false,
@@ -123,7 +139,7 @@ export const executeAgentWithStrandsAgents = action({
       };
     }
   },
-});
+} );
 
 async function executeViaAgentCore(
   ctx: ActionCtx,
@@ -131,7 +147,7 @@ async function executeViaAgentCore(
   message: string,
   history: ConversationMessage[]
 ): Promise<AgentExecutionResult> {
-  return await executeDirectBedrock(ctx, agent, message, history);
+  return await executeDirectBedrock( ctx, agent, message, history );
 }
 
 async function executeDirectBedrock(
@@ -141,38 +157,38 @@ async function executeDirectBedrock(
   history: ConversationMessage[]
 ): Promise<AgentExecutionResult> {
   const { BedrockRuntimeClient, InvokeModelCommand } =
-    await import("@aws-sdk/client-bedrock-runtime");
+    await import( "@aws-sdk/client-bedrock-runtime" );
 
-  const client = new BedrockRuntimeClient({
+  const client = new BedrockRuntimeClient( {
     region: process.env.AWS_REGION || "us-east-1",
     credentials: {
       accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
       secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
     },
-  });
+  } );
 
   const messages: Array<{ role: string; content: Array<{ text: string }> }> = [];
 
-  for (const msg of history) {
-    messages.push({
+  for ( const msg of history ) {
+    messages.push( {
       role: msg.role,
       content: [{ text: msg.content }],
-    });
+    } );
   }
 
-  messages.push({
+  messages.push( {
     role: "user",
     content: [{ text: message }],
-  });
+  } );
 
   let modelId = agent.model;
-  if (!modelId.includes(":") && !modelId.startsWith("us.") && !modelId.startsWith("anthropic.")) {
+  if ( !modelId.includes( ":" ) && !modelId.startsWith( "us." ) && !modelId.startsWith( "anthropic." ) ) {
     const modelMap: Record<string, string> = {
-      "claude-3-5-sonnet-20241022": "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
-      "claude-3-5-haiku-20241022": "us.anthropic.claude-3-5-haiku-20241022-v1:0",
+      "claude-3-5-sonnet-20241022": "anthropicaude-3-5-sonnet-20241022-v2:0",
+      "claude-3-5-haiku-20241022": "anthropic.claude-3-5-haiku-20241022-v1:0",
       "claude-3-opus-20240229": "anthropic.claude-3-opus-20240229-v1:0",
     };
-    modelId = modelMap[agent.model] || process.env.AGENT_BUILDER_MODEL_ID || "us.anthropic.claude-haiku-4-5-20251001-v1:0";
+    modelId = modelMap[agent.model] || process.env.AGENT_BUILDER_MODEL_ID || "anthropic.claude-haiku-4-5-20251001-v1:0";
   }
 
   const payload = {
@@ -187,35 +203,35 @@ async function executeDirectBedrock(
     },
   };
 
-  const command = new InvokeModelCommand({
+  const command = new InvokeModelCommand( {
     modelId: modelId,
     contentType: "application/json",
     accept: "application/json",
-    body: JSON.stringify(payload),
-  });
+    body: JSON.stringify( payload ),
+  } );
 
-  const response = await client.send(command);
+  const response = await client.send( command );
   const responseBody = JSON.parse(
-    new TextDecoder().decode(response.body)
+    new TextDecoder().decode( response.body )
   ) as BedrockInvokeResponse;
 
   let content = "";
   let reasoning = "";
   const toolCalls: ToolCall[] = [];
 
-  for (const block of responseBody.content || []) {
-    if (block.type === "text") {
+  for ( const block of responseBody.content || [] ) {
+    if ( block.type === "text" ) {
       content += block.text;
-    } else if (block.type === "thinking") {
+    } else if ( block.type === "thinking" ) {
       reasoning += block.thinking;
-    } else if (block.type === "tool_use") {
+    } else if ( block.type === "tool_use" ) {
       const id = typeof block.id === "string" ? block.id : undefined;
       const name = typeof block.name === "string" ? block.name : undefined;
-      toolCalls.push({
+      toolCalls.push( {
         id,
         name,
         input: block.input,
-      });
+      } );
     }
   }
 
@@ -232,22 +248,22 @@ async function executeDirectBedrock(
   };
 }
 
-export const getAgentInternal = internalQuery({
+export const getAgentInternal = internalQuery( {
   args: {
-    agentId: v.id("agents"),
+    agentId: v.id( "agents" ),
   },
-  handler: async (ctx, args): Promise<AgentDoc | null> => {
-    const agent = (await ctx.db.get(args.agentId)) as AgentDoc | null;
+  handler: async ( ctx, args ): Promise<AgentDoc | null> => {
+    const agent = ( await ctx.db.get( args.agentId ) ) as AgentDoc | null;
     return agent;
   },
-});
+} );
 
-export const testAgentExecution = action({
+export const testAgentExecution = action( {
   args: {
-    agentId: v.id("agents"),
-    testMessage: v.optional(v.string()),
+    agentId: v.id( "agents" ),
+    testMessage: v.optional( v.string() ),
   },
-  handler: async (ctx, args): Promise<
+  handler: async ( ctx, args ): Promise<
     AgentExecutionResult & {
       testMessage: string;
       conversationId: Id<"interleavedConversations">;
@@ -255,16 +271,16 @@ export const testAgentExecution = action({
   > => {
     const testMessage = args.testMessage || "Hello! Please introduce yourself and list your available tools.";
 
-    const conversation = (await ctx.runMutation(api.interleavedReasoning.createConversation, {
+    const conversation = ( await ctx.runMutation( api.interleavedReasoning.createConversation, {
       title: "Agent Test",
       systemPrompt: "Test conversation",
-    })) as ConversationCreateResult;
+    } ) ) as ConversationCreateResult;
 
-    const result = (await ctx.runAction(api.strandsAgentExecution.executeAgentWithStrandsAgents, {
+    const result = ( await ctx.runAction( api.strandsAgentExecution.executeAgentWithStrandsAgents, {
       agentId: args.agentId,
       conversationId: conversation.conversationId,
       message: testMessage,
-    })) as AgentExecutionResult;
+    } ) ) as AgentExecutionResult;
 
     return {
       ...result,
@@ -272,4 +288,4 @@ export const testAgentExecution = action({
       conversationId: conversation.conversationId,
     };
   },
-});
+} );

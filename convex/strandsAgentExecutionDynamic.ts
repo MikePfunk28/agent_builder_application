@@ -67,7 +67,7 @@ type BedrockContentBlock =
   | { type: "text"; text: string }
   | { type: "thinking"; thinking: string }
   | { type: "tool_use"; id?: string; name?: string; input?: unknown }
-  | { type: string; [key: string]: unknown };
+  | { type: string;[key: string]: unknown };
 
 type BedrockInvokeResponse = {
   content?: BedrockContentBlock[];
@@ -76,63 +76,80 @@ type BedrockInvokeResponse = {
 /**
  * Execute agent with dynamic model switching
  */
-export const executeAgentWithDynamicModel = action({
+export const executeAgentWithDynamicModel = action( {
   args: {
-    agentId: v.id("agents"),
-    conversationId: v.optional(v.id("interleavedConversations")),
+    agentId: v.id( "agents" ),
+    conversationId: v.optional( v.id( "interleavedConversations" ) ),
     message: v.string(),
-    enableModelSwitching: v.optional(v.boolean()),
-    preferCost: v.optional(v.boolean()),
-    preferSpeed: v.optional(v.boolean()),
-    preferCapability: v.optional(v.boolean()),
+    enableModelSwitching: v.optional( v.boolean() ),
+    preferCost: v.optional( v.boolean() ),
+    preferSpeed: v.optional( v.boolean() ),
+    preferCapability: v.optional( v.boolean() ),
   },
-  handler: async (ctx, args): Promise<AgentExecutionResult> => {
+  handler: async ( ctx, args ): Promise<AgentExecutionResult> => {
     try {
-      const agent = (await ctx.runQuery(internal.strandsAgentExecution.getAgentInternal, {
+      const agent = ( await ctx.runQuery( internal.strandsAgentExecution.getAgentInternal, {
         agentId: args.agentId,
-      })) as AgentDoc | null;
+      } ) ) as AgentDoc | null;
 
-      if (!agent) {
-        throw new Error("Agent not found");
+      if ( !agent ) {
+        throw new Error( "Agent not found" );
       }
 
       // Get conversation history
       let history: ConversationMessage[] = [];
-      if (args.conversationId) {
-        history = (await ctx.runQuery(internal.interleavedReasoning.getConversationHistory, {
+      if ( args.conversationId ) {
+        history = ( await ctx.runQuery( internal.interleavedReasoning.getConversationHistory, {
           conversationId: args.conversationId,
           windowSize: 10,
-        })) as ConversationMessage[];
+        } ) ) as ConversationMessage[];
       }
 
       // Get user tier for model switching decisions
-      const user = await ctx.runQuery(internal.users.getInternal, { id: agent.createdBy });
-      const userTier = (user?.tier as "freemium" | "personal" | "enterprise") || "freemium";
+      const user = await ctx.runQuery( internal.users.getInternal, { id: agent.createdBy } );
+      const userTier = ( user?.tier as "freemium" | "personal" | "enterprise" ) || "freemium";
 
-      // Model gating: Block freemium users from Bedrock models
-      const { isProviderAllowedForTier } = await import("./lib/tierConfig");
-      const isBedrock = agent.deploymentType !== "ollama" && !agent.model.includes(":");
-      if (isBedrock && !isProviderAllowedForTier(userTier, "bedrock")) {
+      // Burst rate limit: enforce tier-aware per-minute ceiling
+      const { checkRateLimit, buildTierRateLimitConfig } = await import( "./rateLimiter" );
+      const { isProviderAllowedForTier, getTierConfig: getTierCfg } = await import( "./lib/tierConfig" );
+      const tierCfg = getTierCfg( userTier );
+      const rlCfg = buildTierRateLimitConfig( tierCfg.maxConcurrentTests, "agentExecution" );
+      const rlResult = await checkRateLimit( ctx, String( agent.createdBy ), "agentExecution", rlCfg );
+      if ( !rlResult.allowed ) {
+        return {
+          success: false,
+          error: rlResult.reason || "Rate limit exceeded. Please wait before running more executions.",
+        };
+      }
+
+      // Model gating: Block freemium users from Bedrock models.
+      // Positively detect Ollama models so Bedrock IDs with colons (e.g.
+      // "anthropic.claude-haiku-4-5-20251001-v1:0") are not misclassified.
+      const isOllamaModel = agent.deploymentType === "ollama"
+        || agent.model.toLowerCase().includes( "ollama" )
+        || ( !agent.deploymentType && !agent.model.includes( "." ) && agent.model.includes( ":" ) );
+      const isBedrock = !isOllamaModel;
+      if ( isBedrock && !isProviderAllowedForTier( userTier, "bedrock" ) ) {
         return {
           success: false,
           error: "Bedrock models require a Personal subscription ($5/month). " +
-                 "Use local Ollama models for free, or upgrade in Settings → Billing.",
+            "Use local Ollama models for free, or upgrade in Settings → Billing.",
         };
       }
 
       // Execute with or without dynamic model switching
-      if (args.enableModelSwitching !== false) {
-        return await executeWithModelSwitching(ctx, agent, args.message, history, {
+      if ( args.enableModelSwitching !== false ) {
+        return await executeWithModelSwitching( ctx, agent, args.message, history, {
           preferCost: args.preferCost,
           preferSpeed: args.preferSpeed,
           preferCapability: args.preferCapability,
           userTier,
-        });
+        } );
       } else {
-        return await executeDirectBedrock(ctx, agent, args.message, history, undefined);
+        return await executeDirectBedrock( ctx, agent, args.message, history, undefined );
       }
-    } catch (error: unknown) {
-      console.error("Agent execution error:", error);
+    } catch ( error: unknown ) {
+      console.error( "Agent execution error:", error );
       const message = error instanceof Error ? error.message : "Agent execution failed";
       return {
         success: false,
@@ -140,7 +157,7 @@ export const executeAgentWithDynamicModel = action({
       };
     }
   },
-});
+} );
 
 /**
  * Execute with dynamic model switching
@@ -158,18 +175,18 @@ async function executeWithModelSwitching(
   }
 ): Promise<AgentExecutionResult> {
   // Convert conversation history to simple format for analysis
-  const historyForAnalysis = history.map((msg) => ({
+  const historyForAnalysis = history.map( ( msg ) => ( {
     role: msg.role,
     content: msg.content,
-  }));
+  } ) );
 
   // Make model switching decision
-  const decision = decideModelSwitch(message, historyForAnalysis, agent, options);
+  const decision = decideModelSwitch( message, historyForAnalysis, agent, options );
 
-  console.log(`[ModelSwitcher] Complexity: ${decision.complexityScore}/100`);
-  console.log(`[ModelSwitcher] Selected: ${decision.selectedModel.name}`);
-  console.log(`[ModelSwitcher] Reasoning: ${decision.reasoning}`);
-  console.log(`[ModelSwitcher] Estimated cost: $${decision.estimatedCost.toFixed(4)}`);
+  console.log( `[ModelSwitcher] Complexity: ${decision.complexityScore}/100` );
+  console.log( `[ModelSwitcher] Selected: ${decision.selectedModel.name}` );
+  console.log( `[ModelSwitcher] Reasoning: ${decision.reasoning}` );
+  console.log( `[ModelSwitcher] Estimated cost: $${decision.estimatedCost.toFixed( 4 )}` );
 
   // Execute with selected model
   const result = await executeDirectBedrock(
@@ -181,7 +198,7 @@ async function executeWithModelSwitching(
   );
 
   // Add decision metadata to result
-  if (result.success && result.metadata) {
+  if ( result.success && result.metadata ) {
     result.metadata.modelSwitchDecision = decision;
     result.metadata.originalModel = agent.model;
   }
@@ -203,90 +220,123 @@ async function executeDirectBedrock(
     "@aws-sdk/client-bedrock-runtime"
   );
 
-  const client = new BedrockRuntimeClient({
+  const client = new BedrockRuntimeClient( {
     region: process.env.AWS_REGION || "us-east-1",
     credentials: {
       accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
       secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
     },
-  });
+  } );
 
   const messages: Array<{ role: string; content: Array<{ text: string }> }> = [];
 
-  for (const msg of history) {
+  for ( const msg of history ) {
     // Only include user and assistant roles in messages array;
     // system messages go to top-level system field, tool messages are skipped
-    if (msg.role === "user" || msg.role === "assistant") {
-      messages.push({
+    if ( msg.role === "user" || msg.role === "assistant" ) {
+      messages.push( {
         role: msg.role,
         content: [{ text: msg.content }],
-      });
+      } );
     }
   }
 
-  messages.push({
+  messages.push( {
     role: "user",
     content: [{ text: message }],
-  });
+  } );
 
   // Use override model if provided, otherwise use agent's model
   let modelId = overrideModelId || agent.model;
 
   // Normalize model ID
-  if (!modelId.includes(":") && !modelId.startsWith("us.") && !modelId.startsWith("anthropic.")) {
+  if ( !modelId.includes( ":" ) && !modelId.startsWith( "us." ) && !modelId.startsWith( "anthropic." ) ) {
     const modelMap: Record<string, string> = {
-      "claude-3-5-sonnet-20241022": "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
-      "claude-3-5-haiku-20241022": "us.anthropic.claude-3-5-haiku-20241022-v1:0",
+      "claude-3-5-sonnet-20241022": "anthropic.claude-3-5-sonnet-20241022-v2:0",
+      "claude-3-5-haiku-20241022": "anthropic.claude-3-5-haiku-20241022-v1:0",
       "claude-3-opus-20240229": "anthropic.claude-3-opus-20240229-v1:0",
     };
-    modelId = modelMap[modelId] || process.env.AGENT_BUILDER_MODEL_ID || "us.anthropic.claude-haiku-4-5-20251001-v1:0";
+    modelId = modelMap[modelId] || process.env.AGENT_BUILDER_MODEL_ID || "anthropic.claude-haiku-4-5-20251001-v1:0";
   }
 
   // Only include Claude/Anthropic-specific fields when using an Anthropic model
-  const isAnthropicModel = modelId.includes("anthropic") || modelId.includes("claude");
+  const isAnthropicModel = modelId.includes( "anthropic" ) || modelId.includes( "claude" );
 
-  const payload: Record<string, unknown> = {
-    max_tokens: 4096,
-    system: agent.systemPrompt,
-    messages: messages,
-    temperature: 1,
-  };
+  // Branch payload format by provider: Anthropic Messages API vs generic Bedrock
+  let payload: Record<string, unknown>;
 
-  if (isAnthropicModel) {
-    payload.anthropic_version = "bedrock-2023-05-31";
-    payload.thinking = {
-      type: "enabled",
-      budget_tokens: 3000,
+  if ( isAnthropicModel ) {
+    payload = {
+      anthropic_version: "bedrock-2023-05-31",
+      max_tokens: 4096,
+      system: agent.systemPrompt,
+      messages: messages,
+      temperature: 1,
+      thinking: {
+        type: "enabled",
+        budget_tokens: 3000,
+      },
     };
+  } else {
+    // Non-Anthropic Bedrock models (Llama, Mistral, etc.) use a plain
+    // prompt-based payload compatible with InvokeModelCommand.
+    const promptText = messages.map(
+      ( m: { role: string; content: Array<{ text: string }> } ) =>
+        `${m.role}: ${m.content.map( ( c ) => c.text ).join( "" )}`
+    ).join( "\n" );
+    const systemPrefix = agent.systemPrompt ? `system: ${agent.systemPrompt}\n` : "";
+
+    if ( modelId.includes( "meta" ) || modelId.includes( "llama" ) ) {
+      // Meta Llama format
+      payload = {
+        prompt: `${systemPrefix}${promptText}\nassistant:`,
+        max_gen_len: 4096,
+        temperature: 0.7,
+      };
+    } else if ( modelId.includes( "mistral" ) ) {
+      // Mistral format
+      payload = {
+        prompt: `<s>[INST] ${systemPrefix}${promptText} [/INST]`,
+        max_tokens: 4096,
+        temperature: 0.7,
+      };
+    } else {
+      // Generic Bedrock model fallback (Cohere, AI21, etc.)
+      payload = {
+        prompt: `${systemPrefix}${promptText}\nassistant:`,
+        max_tokens: 4096,
+        temperature: 0.7,
+      };
+    }
   }
 
-  const command = new InvokeModelCommand({
+  const command = new InvokeModelCommand( {
     modelId: modelId,
     contentType: "application/json",
     accept: "application/json",
-    body: JSON.stringify(payload),
-  });
+    body: JSON.stringify( payload ),
+  } );
 
-  const response = await client.send(command);
-  const responseBody = JSON.parse(new TextDecoder().decode(response.body)) as BedrockInvokeResponse;
+  const response = await client.send( command );
+  const responseBody = JSON.parse( new TextDecoder().decode( response.body ) ) as BedrockInvokeResponse;
 
   let content = "";
   let reasoning = "";
   const toolCalls: ToolCall[] = [];
 
-  for (const block of responseBody.content || []) {
-    if (block.type === "text") {
+  for ( const block of responseBody.content || [] ) {
+    if ( block.type === "text" ) {
       content += block.text;
-    } else if (block.type === "thinking") {
+    } else if ( block.type === "thinking" ) {
       reasoning += block.thinking;
-    } else if (block.type === "tool_use") {
+    } else if ( block.type === "tool_use" ) {
       const id = typeof block.id === "string" ? block.id : undefined;
       const name = typeof block.name === "string" ? block.name : undefined;
-      toolCalls.push({
+      toolCalls.push( {
         id,
         name,
         input: block.input,
-      });
+      } );
     }
   }
 

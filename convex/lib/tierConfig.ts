@@ -133,7 +133,7 @@ export function isProviderAllowedForTier(
 
 /**
  * Check if a specific Bedrock model family is allowed for a tier.
- * Matches against the model ID string (e.g., "claude-haiku" matches "us.anthropic.claude-haiku-4-5-...")
+ * Matches against the model ID string (e.g., "claude-haiku" matches "anthropic.claude-haiku-4-5-...")
  */
 export function isBedrockModelAllowedForTier(
   tier: string | undefined | null,
@@ -191,8 +191,14 @@ export function checkExecutionLimit(
 export function getTierForRole( role: string | undefined | null ): TierName {
   switch ( role ) {
     case UserRole.PAID:
+      // Both personal and enterprise subscribers get PAID role.
+      // The actual tier is stored on the user record's "tier" field.
+      // This returns "personal" as the minimum tier for any paid user.
       return "personal";
+    case UserRole.ENTERPRISE:
+      return "enterprise";
     case UserRole.ADMIN:
+      // Platform operator gets enterprise-level access
       return "enterprise";
     case UserRole.USER:
     case UserRole.GUEST:
@@ -203,13 +209,17 @@ export function getTierForRole( role: string | undefined | null ): TierName {
 
 /**
  * Get the UserRole that should be assigned when subscribing to a tier.
+ *
+ * ADMIN role is reserved for platform operators only — never auto-assigned
+ * through billing. Enterprise subscribers get the ENTERPRISE role, which
+ * has higher permissions than PAID but is NOT admin.
  */
 export function getRoleForTier( tier: TierName ): string {
   switch ( tier ) {
     case "personal":
       return UserRole.PAID;
     case "enterprise":
-      return UserRole.ADMIN;
+      return UserRole.ENTERPRISE;
     case "freemium":
     default:
       return UserRole.USER;

@@ -32,7 +32,7 @@ Always be respectful, transparent about constraints, and aim for win-win outcome
     capabilities: ["multi-turn", "memory", "reasoning"],
     useCase: "Contract negotiations, salary discussions, vendor agreements"
   },
-  
+
   research: {
     name: "Research Agent",
     description: "Web research with source tracking",
@@ -55,7 +55,7 @@ Always provide evidence-based answers with proper citations.`,
   customer_service: {
     name: "Customer Service Agent",
     description: "Handle customer inquiries with empathy",
-    model: "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+    model: "anthropic.claude-haiku-4-5-20251001-v1:0",
     systemPrompt: `You are a customer service representative. Help customers efficiently and empathetically.
 
 CUSTOMER SERVICE PRINCIPLES:
@@ -92,19 +92,19 @@ Provide constructive feedback with specific examples.`,
   }
 };
 
-export const getAgentTemplates = query({
+export const getAgentTemplates = query( {
   args: {},
   handler: async () => {
-    return Object.entries(AGENT_TEMPLATES).map(([id, template]) => ({
+    return Object.entries( AGENT_TEMPLATES ).map( ( [id, template] ) => ( {
       id,
       ...template
-    }));
+    } ) );
   }
-});
+} );
 
-export const getAgentTemplate = query({
+export const getAgentTemplate = query( {
   args: { templateId: v.string() },
-  handler: async (ctx, args) => {
+  handler: async ( ctx, args ) => {
     return AGENT_TEMPLATES[args.templateId as keyof typeof AGENT_TEMPLATES] || null;
   }
-});
+} );

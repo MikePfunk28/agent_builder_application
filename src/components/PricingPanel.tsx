@@ -87,7 +87,7 @@ function TierCard({
 }
 
 export function PricingPanel() {
-  const subscription = useQuery(api.stripe.getSubscriptionStatus);
+  const subscription = useQuery(api.stripeMutations.getSubscriptionStatus);
   const createCheckout = useAction(api.stripe.createCheckoutSession);
   const createPortal = useAction(api.stripe.createPortalSession);
 

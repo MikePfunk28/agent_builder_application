@@ -71,7 +71,7 @@ export const getUnifiedUserId = mutation({
         deviceId: args.deviceId,
         isAnonymous: true,
         tier: "freemium",
-        testsThisMonth: 0,
+        executionsThisMonth: 0,
         createdAt: Date.now(),
       });
 

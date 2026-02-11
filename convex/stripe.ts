@@ -1,31 +1,27 @@
 "use node";
 
 /**
- * Stripe Integration - Subscription billing for Agent Builder
+ * Stripe Actions - Client-callable and internal actions that need Node.js runtime.
+ *
+ * "use node" files can ONLY contain action / internalAction exports.
+ * Mutations and queries live in stripeMutations.ts (standard Convex runtime).
  *
  * Actions (client-callable, authenticated):
  *   - createCheckoutSession: Redirects user to Stripe Checkout for $5/mo subscription
  *   - createPortalSession: Redirects user to Stripe Customer Portal for self-service
+ *
+ * Internal actions (NOT client-callable):
  *   - reportUsage: Reports metered execution overage to Stripe
- *
- * Internal mutations (webhook-only, NOT client-callable):
- *   - updateSubscription: Sets tier/role/status on checkout or renewal
- *   - cancelSubscription: Downgrades user on cancellation
- *   - resetMonthlyUsage: Zeros executionsThisMonth on invoice.paid
- *
- * Query (client-callable):
- *   - getSubscriptionStatus: Returns current tier, status, usage, period end
  */
 
-import { action, internalMutation, query } from "./_generated/server";
+import { action, internalAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
 
-// Note: `internalStripe.*` references will resolve after running `npx convex dev`
-// to regenerate API types. The cast below bridges the gap until codegen runs.
+// Mutations live in stripeMutations.ts (non-Node runtime).
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const internalStripe = (internal as any).stripe;
+const internalStripeMutations = (internal as any).stripeMutations;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -38,10 +34,24 @@ async function getStripeClient(): Promise<StripeClient> {
   if ( !secretKey ) {
     throw new Error(
       "Missing STRIPE_SECRET_KEY environment variable. " +
-      "Add it to the Convex dashboard under Settings → Environment Variables."
+      "Add it to the Convex dashboard under Settings > Environment Variables."
     );
   }
   return new StripeSDK( secretKey );
+}
+
+/**
+ * Resolve the frontend URL for Stripe redirect callbacks.
+ * Reads FRONTEND_URL first (explicit override), then falls back to SITE_URL
+ * or CONVEX_SITE_URL.
+ */
+function getFrontendUrl(): string {
+  return (
+    process.env.FRONTEND_URL ??
+    process.env.SITE_URL ??
+    process.env.CONVEX_SITE_URL ??
+    "http://localhost:4000"
+  );
 }
 
 // ─── Actions (Client-callable, Authenticated) ───────────────────────────────
@@ -65,11 +75,11 @@ export const createCheckoutSession = action( {
 
     const stripe = await getStripeClient();
 
-    const personalPriceId = process.env.STRIPE_PERSONAL_PRICE_ID;
-    const meteredPriceId = process.env.STRIPE_METERED_PRICE_ID;
+    const personalPriceId = process.env.STRIPE_PERSONAL_PRICE;
+    const meteredPriceId = process.env.STRIPE_METERED_PRICE;
     if ( !personalPriceId || !meteredPriceId ) {
       throw new Error(
-        "Missing STRIPE_PERSONAL_PRICE_ID or STRIPE_METERED_PRICE_ID. " +
+        "Missing STRIPE_PERSONAL_PRICE or STRIPE_METERED_PRICE. " +
         "Create these prices in Stripe Dashboard and add the IDs to Convex env vars."
       );
     }
@@ -84,19 +94,14 @@ export const createCheckoutSession = action( {
       } );
       customerId = customer.id;
 
-      // Persist the customer ID immediately
-      await ctx.runMutation( internalStripe.setStripeCustomerId, {
+      // Persist the customer ID immediately (mutation in stripeMutations.ts)
+      await ctx.runMutation( internalStripeMutations.setStripeCustomerId, {
         userId,
         customerId,
       } );
     }
 
-    // Determine success/cancel URLs from the site URL env var
-    const siteUrl = process.env.CONVEX_SITE_URL ?? process.env.SITE_URL ?? "http://localhost:4000";
-    // Strip the convex URL suffix if present (e.g., .convex.site → use frontend URL instead)
-    const frontendUrl = siteUrl.includes( ".convex." )
-      ? "http://localhost:4000"
-      : siteUrl;
+    const frontendUrl = getFrontendUrl();
 
     const session = await stripe.checkout.sessions.create( {
       customer: customerId,
@@ -137,10 +142,7 @@ export const createPortalSession = action( {
 
     const stripe = await getStripeClient();
 
-    const siteUrl = process.env.CONVEX_SITE_URL ?? process.env.SITE_URL ?? "http://localhost:4000";
-    const frontendUrl = siteUrl.includes( ".convex." )
-      ? "http://localhost:4000"
-      : siteUrl;
+    const frontendUrl = getFrontendUrl();
 
     const session = await stripe.billingPortal.sessions.create( {
       customer: user.stripeCustomerId,
@@ -154,190 +156,49 @@ export const createPortalSession = action( {
 /**
  * Report metered usage to Stripe for overage billing.
  * Called internally after cloud executions that exceed the included 100/month.
+ *
+ * Looks up STRIPE_METERED_PRICE → retrieves the connected Billing Meter →
+ * sends a meter event with the customer ID and quantity. No extra env vars
+ * needed — the meter event name is derived from the price at runtime.
+ *
+ * NOTE: internalAction - NOT client-callable. Only invoked by backend after
+ * cloud executions via ctx.scheduler.runAfter().
  */
-export const reportUsage = action( {
+export const reportUsage = internalAction( {
   args: {
-    subscriptionItemId: v.string(),
+    stripeCustomerId: v.string(),
     quantity: v.number(),
   },
   handler: async ( _ctx, args ) => {
     const stripe = await getStripeClient();
 
-    // Create a usage record on the metered subscription item.
-    // In Stripe SDK v20+, use billing.meterEvents or the REST-compatible path.
-    // The subscriptionItems resource still supports this via the underlying API.
-    await (stripe.subscriptionItems as any).createUsageRecord(
-      args.subscriptionItemId,
-      {
-        quantity: args.quantity,
-        action: "increment",
-        timestamp: Math.floor( Date.now() / 1000 ),
-      }
-    );
-  },
-} );
-
-// ─── Internal Mutations (Webhook-only, NOT client-callable) ──────────────────
-
-/**
- * Persist Stripe customer ID on the user record.
- */
-export const setStripeCustomerId = internalMutation( {
-  args: {
-    userId: v.id( "users" ),
-    customerId: v.string(),
-  },
-  handler: async ( ctx, args ) => {
-    await ctx.db.patch( args.userId, {
-      stripeCustomerId: args.customerId,
-    } );
-  },
-} );
-
-/**
- * Update subscription state after checkout.session.completed or subscription.updated.
- * Sets tier to "personal", role to "paid", and marks subscription as active.
- */
-export const updateSubscription = internalMutation( {
-  args: {
-    stripeCustomerId: v.string(),
-    subscriptionId: v.string(),
-    status: v.string(),
-    currentPeriodEnd: v.number(),
-  },
-  handler: async ( ctx, args ) => {
-    // Find user by Stripe customer ID
-    const user = await ctx.db
-      .query( "users" )
-      .withIndex( "by_stripe_customer_id", ( q ) =>
-        q.eq( "stripeCustomerId", args.stripeCustomerId )
-      )
-      .first();
-
-    if ( !user ) {
-      console.error( `Stripe webhook: No user found for customer ${args.stripeCustomerId}` );
+    const meteredPriceId = process.env.STRIPE_METERED_PRICE;
+    if ( !meteredPriceId ) {
+      console.warn( "STRIPE_METERED_PRICE not set; skipping overage report" );
       return;
     }
 
-    await ctx.db.patch( user._id, {
-      stripeSubscriptionId: args.subscriptionId,
-      subscriptionStatus: args.status,
-      currentPeriodEnd: args.currentPeriodEnd,
-      tier: "personal",
-      role: "paid",
-      upgradedAt: Date.now(),
-    } );
-  },
-} );
-
-/**
- * Handle subscription cancellation. Downgrades user to freemium.
- */
-export const cancelSubscription = internalMutation( {
-  args: {
-    stripeCustomerId: v.string(),
-  },
-  handler: async ( ctx, args ) => {
-    const user = await ctx.db
-      .query( "users" )
-      .withIndex( "by_stripe_customer_id", ( q ) =>
-        q.eq( "stripeCustomerId", args.stripeCustomerId )
-      )
-      .first();
-
-    if ( !user ) {
-      console.error( `Stripe webhook: No user found for customer ${args.stripeCustomerId}` );
+    // Look up the price to find its connected Billing Meter
+    const price = await stripe.prices.retrieve( meteredPriceId );
+    const meterId = price.recurring?.meter;
+    if ( !meterId ) {
+      console.warn(
+        `Price ${meteredPriceId} has no connected Billing Meter. ` +
+        "Create a meter in Stripe Dashboard → Billing → Meters and link it to this price."
+      );
       return;
     }
 
-    await ctx.db.patch( user._id, {
-      subscriptionStatus: "canceled",
-      tier: "freemium",
-      role: "user",
+    // Retrieve the meter to get its event_name
+    const meter = await stripe.billing.meters.retrieve( meterId );
+
+    await stripe.billing.meterEvents.create( {
+      event_name: meter.event_name,
+      payload: {
+        stripe_customer_id: args.stripeCustomerId,
+        value: String( args.quantity ),
+      },
+      timestamp: Math.floor( Date.now() / 1000 ),
     } );
-  },
-} );
-
-/**
- * Reset monthly execution counter at the start of each billing period (invoice.paid).
- */
-export const resetMonthlyUsage = internalMutation( {
-  args: {
-    stripeCustomerId: v.string(),
-    periodStart: v.number(),
-  },
-  handler: async ( ctx, args ) => {
-    const user = await ctx.db
-      .query( "users" )
-      .withIndex( "by_stripe_customer_id", ( q ) =>
-        q.eq( "stripeCustomerId", args.stripeCustomerId )
-      )
-      .first();
-
-    if ( !user ) {
-      console.error( `Stripe webhook: No user found for customer ${args.stripeCustomerId}` );
-      return;
-    }
-
-    await ctx.db.patch( user._id, {
-      executionsThisMonth: 0,
-      billingPeriodStart: args.periodStart,
-    } );
-  },
-} );
-
-/**
- * Mark subscription as past_due when payment fails.
- */
-export const markPastDue = internalMutation( {
-  args: {
-    stripeCustomerId: v.string(),
-  },
-  handler: async ( ctx, args ) => {
-    const user = await ctx.db
-      .query( "users" )
-      .withIndex( "by_stripe_customer_id", ( q ) =>
-        q.eq( "stripeCustomerId", args.stripeCustomerId )
-      )
-      .first();
-
-    if ( !user ) {
-      console.error( `Stripe webhook: No user found for customer ${args.stripeCustomerId}` );
-      return;
-    }
-
-    await ctx.db.patch( user._id, {
-      subscriptionStatus: "past_due",
-    } );
-  },
-} );
-
-// ─── Query (Client-callable) ─────────────────────────────────────────────────
-
-/**
- * Get the current user's subscription status and usage.
- */
-export const getSubscriptionStatus = query( {
-  args: {},
-  handler: async ( ctx ) => {
-    const userId = await getAuthUserId( ctx );
-    if ( !userId ) {
-      return null;
-    }
-
-    const user = await ctx.db.get( userId );
-    if ( !user ) {
-      return null;
-    }
-
-    return {
-      tier: user.tier ?? "freemium",
-      role: user.role ?? "user",
-      subscriptionStatus: user.subscriptionStatus ?? null,
-      executionsThisMonth: user.executionsThisMonth ?? 0,
-      currentPeriodEnd: user.currentPeriodEnd ?? null,
-      stripeCustomerId: user.stripeCustomerId ?? null,
-      hasActiveSubscription: user.subscriptionStatus === "active",
-    };
   },
 } );

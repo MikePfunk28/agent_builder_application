@@ -12,7 +12,8 @@ export function hasPermission( userRole: UserRole, requiredRole: UserRole ): boo
         [UserRole.GUEST]: 0,
         [UserRole.USER]: 1,
         [UserRole.PAID]: 2,
-        [UserRole.ADMIN]: 3,
+        [UserRole.ENTERPRISE]: 3,
+        [UserRole.ADMIN]: 4, // Platform operator — always highest
     };
     return roleHierarchy[userRole] >= roleHierarchy[requiredRole];
 }

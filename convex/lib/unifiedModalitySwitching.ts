@@ -42,7 +42,7 @@ export const UNIFIED_MODEL_CATALOG: Record<string, Record<string, UnifiedModelTi
     haiku: {
       modality: "text",
       name: "Claude 4.5 Haiku",
-      modelId: "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+      modelId: "anthropic.claude-haiku-4-5-20251001-v1:0",
       costPer1KTokensOrUnit: 0.006, // $1/1M input + $5/1M output averaged
       speedRating: 1,
       qualityRating: 1,
@@ -134,24 +134,24 @@ export const UNIFIED_MODEL_CATALOG: Record<string, Record<string, UnifiedModelTi
 /**
  * Detect modality from user message
  */
-export function detectModality(message: string): Modality {
+export function detectModality( message: string ): Modality {
   const lower = message.toLowerCase();
 
   // Check for multiple modalities
-  const hasVideo = /video|clip|animation|footage|reel|explainer/i.test(lower);
-  const hasImage = /image|picture|photo|illustration|graphic|banner|thumbnail/i.test(lower);
-  const hasSpeech = /voice|speech|audio|narration|voiceover|tts|text.to.speech/i.test(lower);
+  const hasVideo = /video|clip|animation|footage|reel|explainer/i.test( lower );
+  const hasImage = /image|picture|photo|illustration|graphic|banner|thumbnail/i.test( lower );
+  const hasSpeech = /voice|speech|audio|narration|voiceover|tts|text.to.speech/i.test( lower );
   const hasText = true; // Always has text (it's a text message)
 
-  const modalityCount = [hasVideo, hasImage, hasSpeech, hasText].filter(Boolean).length;
+  const modalityCount = [hasVideo, hasImage, hasSpeech, hasText].filter( Boolean ).length;
 
-  if (modalityCount > 2 || (hasVideo && hasImage)) {
+  if ( modalityCount > 2 || ( hasVideo && hasImage ) ) {
     return "multimodal";
   }
 
-  if (hasVideo) return "video";
-  if (hasImage) return "image";
-  if (hasSpeech) return "speech";
+  if ( hasVideo ) return "video";
+  if ( hasImage ) return "image";
+  if ( hasSpeech ) return "speech";
   return "text";
 }
 
@@ -207,23 +207,23 @@ export function analyzeUnifiedComplexity(
 
   // Base signals
   const messageLength = message.length;
-  const hasCodeBlocks = /```|`/.test(message);
-  const hasMultipleQuestions = (message.match(/\?/g) || []).length > 1;
-  const hasTechnicalTerms = /algorithm|architecture|implementation|framework|api/i.test(lower);
+  const hasCodeBlocks = /```|`/.test( message );
+  const hasMultipleQuestions = ( message.match( /\?/g ) || [] ).length > 1;
+  const hasTechnicalTerms = /algorithm|architecture|implementation|framework|api/i.test( lower );
 
   // Context
   const conversationLength = conversationHistory.length;
-  const previousFailures = conversationHistory.filter((m) =>
-    m.role === "assistant" && /error|failed|couldn't/i.test(m.content)
+  const previousFailures = conversationHistory.filter( ( m ) =>
+    m.role === "assistant" && /error|failed|couldn't/i.test( m.content )
   ).length;
-  const userExplicitQualityRequest = /high.quality|premium|professional|best/i.test(lower);
+  const userExplicitQualityRequest = /high.quality|premium|professional|best/i.test( lower );
 
   // Modality-specific signals
   const modalitySignals: UnifiedComplexitySignals["modalitySignals"] = {};
 
-  switch (modality) {
+  switch ( modality ) {
     case "image":
-      modalitySignals.requestsHighResolution = /high.res|hd|4k|large|1920|2048/i.test(lower);
+      modalitySignals.requestsHighResolution = /high.res|hd|4k|large|1920|2048/i.test( lower );
       modalitySignals.requestsMultipleVariations = /variation|multiple|different|several/i.test(
         lower
       );
@@ -236,21 +236,21 @@ export function analyzeUnifiedComplexity(
       break;
 
     case "video":
-      modalitySignals.requestsLongDuration = /\d+.second|long|extended|full/i.test(lower);
-      modalitySignals.requestsMultipleScenes = /scene|transition|sequence|story/i.test(lower);
-      modalitySignals.requestsAnimation = /animate|animation|motion|movement/i.test(lower);
-      modalitySignals.requestsProfessionalQuality = /professional|cinematic|polished/i.test(lower);
+      modalitySignals.requestsLongDuration = /\d+.second|long|extended|full/i.test( lower );
+      modalitySignals.requestsMultipleScenes = /scene|transition|sequence|story/i.test( lower );
+      modalitySignals.requestsAnimation = /animate|animation|motion|movement/i.test( lower );
+      modalitySignals.requestsProfessionalQuality = /professional|cinematic|polished/i.test( lower );
       break;
 
     case "speech":
-      modalitySignals.requestsMultipleVoices = /voices|characters|dialogue/i.test(lower);
-      modalitySignals.requestsEmotionalTone = /emotion|expressive|natural|human/i.test(lower);
-      modalitySignals.requestsLongForm = /podcast|audiobook|narration|long/i.test(lower);
+      modalitySignals.requestsMultipleVoices = /voices|characters|dialogue/i.test( lower );
+      modalitySignals.requestsEmotionalTone = /emotion|expressive|natural|human/i.test( lower );
+      modalitySignals.requestsLongForm = /podcast|audiobook|narration|long/i.test( lower );
       break;
 
     case "text":
-      modalitySignals.requestsDeepReasoning = /analyze|explain|prove|reason|why/i.test(lower);
-      modalitySignals.requestsStepByStep = /step.by.step|break.down|detail/i.test(lower);
+      modalitySignals.requestsDeepReasoning = /analyze|explain|prove|reason|why/i.test( lower );
+      modalitySignals.requestsStepByStep = /step.by.step|break.down|detail/i.test( lower );
       break;
   }
 
@@ -276,54 +276,54 @@ export function calculateUnifiedComplexityScore(
   let score = 0;
 
   // Base complexity (0-40 points)
-  if (signals.messageLength > 500) score += 20;
-  else if (signals.messageLength > 200) score += 10;
+  if ( signals.messageLength > 500 ) score += 20;
+  else if ( signals.messageLength > 200 ) score += 10;
   else score += 5;
 
-  if (signals.hasCodeBlocks) score += 5;
-  if (signals.hasMultipleQuestions) score += 5;
-  if (signals.hasTechnicalTerms) score += 10;
+  if ( signals.hasCodeBlocks ) score += 5;
+  if ( signals.hasMultipleQuestions ) score += 5;
+  if ( signals.hasTechnicalTerms ) score += 10;
 
   // Context (0-20 points)
-  if (signals.conversationLength > 10) score += 10;
-  else if (signals.conversationLength > 5) score += 5;
+  if ( signals.conversationLength > 10 ) score += 10;
+  else if ( signals.conversationLength > 5 ) score += 5;
 
-  if (signals.previousFailures > 0) score += 10;
+  if ( signals.previousFailures > 0 ) score += 10;
 
   // Modality-specific complexity (0-40 points)
   const ms = signals.modalitySignals;
 
-  switch (modality) {
+  switch ( modality ) {
     case "image":
-      if (ms.requestsHighResolution) score += 10;
-      if (ms.requestsMultipleVariations) score += 10;
-      if (ms.requestsComplexStyle) score += 10;
-      if (ms.requestsPhotoRealism) score += 10;
+      if ( ms.requestsHighResolution ) score += 10;
+      if ( ms.requestsMultipleVariations ) score += 10;
+      if ( ms.requestsComplexStyle ) score += 10;
+      if ( ms.requestsPhotoRealism ) score += 10;
       break;
 
     case "video":
-      if (ms.requestsLongDuration) score += 10;
-      if (ms.requestsMultipleScenes) score += 15;
-      if (ms.requestsAnimation) score += 5;
-      if (ms.requestsProfessionalQuality) score += 10;
+      if ( ms.requestsLongDuration ) score += 10;
+      if ( ms.requestsMultipleScenes ) score += 15;
+      if ( ms.requestsAnimation ) score += 5;
+      if ( ms.requestsProfessionalQuality ) score += 10;
       break;
 
     case "speech":
-      if (ms.requestsMultipleVoices) score += 15;
-      if (ms.requestsEmotionalTone) score += 10;
-      if (ms.requestsLongForm) score += 15;
+      if ( ms.requestsMultipleVoices ) score += 15;
+      if ( ms.requestsEmotionalTone ) score += 10;
+      if ( ms.requestsLongForm ) score += 15;
       break;
 
     case "text":
-      if (ms.requestsDeepReasoning) score += 20;
-      if (ms.requestsStepByStep) score += 20;
+      if ( ms.requestsDeepReasoning ) score += 20;
+      if ( ms.requestsStepByStep ) score += 20;
       break;
   }
 
   // User explicit quality request (bonus 20 points)
-  if (signals.userExplicitQualityRequest) score += 20;
+  if ( signals.userExplicitQualityRequest ) score += 20;
 
-  return Math.min(score, 100);
+  return Math.min( score, 100 );
 }
 
 /**
@@ -345,36 +345,36 @@ export function selectUnifiedModel(
   // Fallback "multimodal" to "text" since UNIFIED_MODEL_CATALOG has no multimodal key
   const effectiveModality = modality === "multimodal" ? "text" : modality;
   const models = UNIFIED_MODEL_CATALOG[effectiveModality];
-  if (!models) {
-    throw new Error(`No models available for modality: ${modality}`);
+  if ( !models ) {
+    throw new Error( `No models available for modality: ${modality}` );
   }
 
-  const availableModels = Object.values(models);
+  const availableModels = Object.values( models );
 
   // Freemium: always cheapest
-  if (userTier === "freemium") {
+  if ( userTier === "freemium" ) {
     return availableModels.sort(
-      (a, b) => a.costPer1KTokensOrUnit - b.costPer1KTokensOrUnit
+      ( a, b ) => a.costPer1KTokensOrUnit - b.costPer1KTokensOrUnit
     )[0];
   }
 
   // Complexity-based routing
-  if (complexityScore < 30) {
+  if ( complexityScore < 30 ) {
     // Low complexity → Cheapest/Fastest
-    return availableModels.sort((a, b) => {
-      if (preferSpeed) return a.speedRating - b.speedRating;
+    return availableModels.sort( ( a, b ) => {
+      if ( preferSpeed ) return a.speedRating - b.speedRating;
       return a.costPer1KTokensOrUnit - b.costPer1KTokensOrUnit;
-    })[0];
-  } else if (complexityScore < 60) {
+    } )[0];
+  } else if ( complexityScore < 60 ) {
     // Medium complexity → Balanced
-    return availableModels.sort((a, b) => {
-      if (preferQuality) return b.qualityRating - a.qualityRating;
-      if (preferCost) return a.costPer1KTokensOrUnit - b.costPer1KTokensOrUnit;
+    return availableModels.sort( ( a, b ) => {
+      if ( preferQuality ) return b.qualityRating - a.qualityRating;
+      if ( preferCost ) return a.costPer1KTokensOrUnit - b.costPer1KTokensOrUnit;
       return a.speedRating - b.speedRating;
-    })[Math.min(1, availableModels.length - 1)];
+    } )[Math.min( 1, availableModels.length - 1 )];
   } else {
     // High complexity → Best quality
-    return availableModels.sort((a, b) => b.qualityRating - a.qualityRating)[0];
+    return availableModels.sort( ( a, b ) => b.qualityRating - a.qualityRating )[0];
   }
 }
 
@@ -406,20 +406,20 @@ export function decideUnifiedModelSwitch(
   } = {}
 ): UnifiedModelDecision {
   // Detect modality
-  const modality = options.explicitModality || detectModality(message);
+  const modality = options.explicitModality || detectModality( message );
 
   // Analyze complexity
-  const signals = analyzeUnifiedComplexity(message, modality, conversationHistory);
-  const complexityScore = calculateUnifiedComplexityScore(signals, modality);
+  const signals = analyzeUnifiedComplexity( message, modality, conversationHistory );
+  const complexityScore = calculateUnifiedComplexityScore( signals, modality );
 
   // Select model
-  const selectedModel = selectUnifiedModel(modality, complexityScore, options);
+  const selectedModel = selectUnifiedModel( modality, complexityScore, options );
 
   // Calculate estimated cost
   let estimatedCost = 0;
-  switch (modality) {
+  switch ( modality ) {
     case "text":
-      estimatedCost = (1000 / 1000) * selectedModel.costPer1KTokensOrUnit; // 1K tokens avg
+      estimatedCost = ( 1000 / 1000 ) * selectedModel.costPer1KTokensOrUnit; // 1K tokens avg
       break;
     case "image":
       estimatedCost = selectedModel.costPer1KTokensOrUnit; // Per image
@@ -428,26 +428,26 @@ export function decideUnifiedModelSwitch(
       estimatedCost = 6 * selectedModel.costPer1KTokensOrUnit; // 6 seconds
       break;
     case "speech":
-      estimatedCost = (500 / 1000) * selectedModel.costPer1KTokensOrUnit; // 500 chars avg
+      estimatedCost = ( 500 / 1000 ) * selectedModel.costPer1KTokensOrUnit; // 500 chars avg
       break;
   }
 
   // Generate reasoning
   let reasoning = `Modality: ${modality}. Complexity: ${complexityScore}/100. `;
 
-  if (complexityScore < 30) {
+  if ( complexityScore < 30 ) {
     reasoning += `Low complexity - using ${selectedModel.name} (fast, cost-effective).`;
-  } else if (complexityScore < 60) {
+  } else if ( complexityScore < 60 ) {
     reasoning += `Moderate complexity - using ${selectedModel.name} (balanced).`;
   } else {
     reasoning += `High complexity - using ${selectedModel.name} (premium quality).`;
   }
 
-  if (signals.userExplicitQualityRequest) {
+  if ( signals.userExplicitQualityRequest ) {
     reasoning += " User requested high quality.";
   }
 
-  if (signals.previousFailures > 0) {
+  if ( signals.previousFailures > 0 ) {
     reasoning += " Escalating due to previous failures.";
   }
 
@@ -464,10 +464,10 @@ export function decideUnifiedModelSwitch(
 /**
  * Get model configuration for execution
  */
-export function getModelExecutionConfig(decision: UnifiedModelDecision): any {
+export function getModelExecutionConfig( decision: UnifiedModelDecision ): any {
   const { modality, selectedModel } = decision;
 
-  switch (modality) {
+  switch ( modality ) {
     case "text":
       return {
         modelId: selectedModel.modelId,
@@ -504,12 +504,12 @@ export function getModelExecutionConfig(decision: UnifiedModelDecision): any {
 
     case "speech":
       return {
-        engine: selectedModel.modelId.includes("neural") ? "neural" : "standard",
+        engine: selectedModel.modelId.includes( "neural" ) ? "neural" : "standard",
         voiceId: "Joanna", // Can be configured
         languageCode: "en-US",
       };
 
     default:
-      throw new Error(`Unknown modality: ${modality}`);
+      throw new Error( `Unknown modality: ${modality}` );
   }
 }

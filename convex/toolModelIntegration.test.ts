@@ -25,7 +25,6 @@ describe("Tool Loading and Configuration", () => {
     // Create test user
     testUserId = await t.run(async (ctx: any) => {
       return await ctx.db.insert("users", {
-        userId: "test-user-tools",
         email: "tools@test.com",
         name: "Tools Test User",
         tier: "personal",

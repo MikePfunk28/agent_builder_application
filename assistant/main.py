@@ -35,7 +35,7 @@ app.add_middleware(
 
 # AWS Bedrock configuration
 AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
-CLAUDE_HAIKU_MODEL = "us.anthropic.claude-haiku-4-5-20250514-v1:0"
+CLAUDE_HAIKU_MODEL = "anthropic.claude-haiku-4-5-20250514-v1:0"
 
 bedrock_config = Config(
     region_name=AWS_REGION,
@@ -99,13 +99,13 @@ async def chat_with_assistant(request: AssistantRequest):
     try:
         # Build messages for Claude
         messages = [{"role": msg.role, "content": msg.content} for msg in request.messages]
-        
+
         # Add context if provided
         if request.context:
             context_str = f"\n\nCurrent Context:\n{json.dumps(request.context, indent=2)}"
             if messages:
                 messages[-1]["content"] += context_str
-        
+
         # Prepare request body
         body = {
             "anthropic_version": "bedrock-2023-05-31",
@@ -114,28 +114,28 @@ async def chat_with_assistant(request: AssistantRequest):
             "system": SYSTEM_PROMPT,
             "messages": messages
         }
-        
+
         # Invoke Bedrock model (serverless - pay per token)
         logger.info(f"Invoking {CLAUDE_HAIKU_MODEL}")
         response = bedrock_runtime.invoke_model(
             modelId=CLAUDE_HAIKU_MODEL,
             body=json.dumps(body)
         )
-        
+
         # Parse response
         response_body = json.loads(response['body'].read())
         assistant_message = response_body['content'][0]['text']
-        
+
         # Extract suggestions and code snippets if present
         suggestions = extract_suggestions(assistant_message)
         code_snippet = extract_code_snippet(assistant_message)
-        
+
         return AssistantResponse(
             message=assistant_message,
             suggestions=suggestions,
             code_snippet=code_snippet
         )
-        
+
     except Exception as e:
         logger.error(f"Error invoking assistant: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))

@@ -28,11 +28,10 @@ describe("Agent Execution Infrastructure", () => {
     // Create test user
     testUserId = await t.run(async (ctx: any) => {
       return await ctx.db.insert("users", {
-        userId: "test-user-execution",
         email: "test@execution.com",
         name: "Test User",
         tier: "personal",
-        testsThisMonth: 0,
+        executionsThisMonth: 0,
         createdAt: Date.now(),
         isAnonymous: false,
       });
@@ -825,16 +824,16 @@ class BedrockTestAgent(Agent):
         return await ctx.db.get(testUserId);
       });
 
-      const initialCount = user.testsThisMonth || 0;
+      const initialCount = user.executionsThisMonth || 0;
 
       await t.mutation(api.testExecution.submitTest, {
         agentId: ollamaAgentId,
         testQuery: "test",
       });
 
-      // In production, this would increment testsThisMonth
+      // In production, this would increment executionsThisMonth
       // For now, we just verify the field exists
-      expect(user.testsThisMonth).toBeDefined();
+      expect(user.executionsThisMonth).toBeDefined();
     });
   });
 

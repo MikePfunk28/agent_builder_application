@@ -304,7 +304,7 @@ async function analyzeAndAskNext(
     content: [{ text: msg.content }],
   } ) );
 
-  const modelId = process.env.AGENT_BUILDER_MODEL_ID || "us.anthropic.claude-haiku-4-5-20251001-v1:0";
+  const modelId = process.env.AGENT_BUILDER_MODEL_ID || "anthropic.claude-haiku-4-5-20251001-v1:0";
 
   const payload = {
     anthropic_version: "bedrock-2023-05-31",

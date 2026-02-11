@@ -24,7 +24,11 @@ interface RateLimitEntry {
   lastRequest: number;
 }
 
-// Default rate limits by action type
+// Maximum number of timestamp entries stored per rate-limit document.
+// Prevents unbounded Convex document growth for high-traffic users.
+const MAX_RATE_LIMIT_REQUESTS = 200;
+
+// Default rate limits by action type (used when no tier-specific config is provided)
 export const RATE_LIMITS: Record<string, RateLimitConfig> = {
   // Agent execution (most expensive)
   "agentExecution": {
@@ -77,7 +81,89 @@ export const RATE_LIMITS: Record<string, RateLimitConfig> = {
 };
 
 /**
- * Check if request is within rate limits
+ * Build a tier-aware rate limit config for agent execution / testing.
+ * Callers pass maxConcurrentTests from tierConfig to avoid import coupling.
+ * The burst ceiling is maxConcurrentTests * 2 per minute.
+ *
+ * Usage:
+ *   const tierCfg = getTierConfig(userTier);
+ *   const rlCfg = buildTierRateLimitConfig(tierCfg.maxConcurrentTests, "agentExecution");
+ *   const result = await checkRateLimit(ctx, userId, "agentExecution", rlCfg);
+ */
+export function buildTierRateLimitConfig(
+  maxConcurrentTests: number,
+  actionType: "agentExecution" | "agentTesting"
+): RateLimitConfig {
+  const maxPerMinute = maxConcurrentTests * 2; // e.g., freemium=2/min, personal=10/min, enterprise=40/min
+  const base = RATE_LIMITS[actionType];
+  return {
+    windowMs: base.windowMs,
+    maxRequests: maxPerMinute,
+    blockDurationMs: base.blockDurationMs,
+  };
+}
+
+/**
+ * Inline rate limit check for mutations (direct db access).
+ * Mutations cannot use ctx.runQuery/ctx.runMutation, so this accesses
+ * the database directly. Actions should use checkRateLimit() instead.
+ */
+export async function checkRateLimitInMutation(
+  ctx: { db: any; scheduler: any },
+  userId: string,
+  actionName: string,
+  config?: RateLimitConfig
+): Promise<{ allowed: boolean; reason?: string }> {
+  const limitConfig = config || RATE_LIMITS[actionName] || RATE_LIMITS.generalApi;
+
+  const entry = await ctx.db
+    .query("rateLimitEntries")
+    .withIndex("by_user_action", (q: any) =>
+      q.eq("userId", userId).eq("action", actionName)
+    )
+    .first();
+
+  const now = Date.now();
+
+  // Check if user is currently blocked
+  if (entry?.blockedUntil && now < entry.blockedUntil) {
+    return { allowed: false, reason: "Rate limited - try again later" };
+  }
+
+  // Sliding window check
+  const windowStart = now - limitConfig.windowMs;
+  const validRequests = entry?.requests?.filter((t: number) => t > windowStart) || [];
+
+  if (validRequests.length >= limitConfig.maxRequests) {
+    const blockedUntil = now + (limitConfig.blockDurationMs || limitConfig.windowMs);
+    if (entry) {
+      await ctx.db.patch(entry._id, { blockedUntil, lastRequest: now });
+    } else {
+      await ctx.db.insert("rateLimitEntries", {
+        userId, action: actionName, requests: validRequests, blockedUntil, lastRequest: now,
+      });
+    }
+    return {
+      allowed: false,
+      reason: `Rate limit: ${limitConfig.maxRequests} per ${limitConfig.windowMs / 1000}s`,
+    };
+  }
+
+  // Record the request, trimming to MAX_RATE_LIMIT_REQUESTS
+  const newRequests = [...validRequests, now].slice(-MAX_RATE_LIMIT_REQUESTS);
+  if (entry) {
+    await ctx.db.patch(entry._id, { requests: newRequests, lastRequest: now });
+  } else {
+    await ctx.db.insert("rateLimitEntries", {
+      userId, action: actionName, requests: newRequests, lastRequest: now,
+    });
+  }
+
+  return { allowed: true };
+}
+
+/**
+ * Check if request is within rate limits (for actions - uses ctx.runQuery/ctx.runMutation)
  */
 export async function checkRateLimit(
   ctx: ActionCtx,
@@ -138,8 +224,9 @@ export async function checkRateLimit(
     };
   }
 
-  // Update the entry with new request
-  const newRequests = [...validRequests, now];
+  // Update the entry with new request, trimming to MAX_RATE_LIMIT_REQUESTS
+  // to prevent unbounded document growth in Convex.
+  const newRequests = [...validRequests, now].slice(-MAX_RATE_LIMIT_REQUESTS);
   await ctx.runMutation(internal.rateLimiter.updateRateLimitEntry, {
     userId,
     action,

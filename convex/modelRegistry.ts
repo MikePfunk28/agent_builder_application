@@ -1,9 +1,9 @@
 /**
  * Model Registry - Complete Bedrock and Ollama Models
- * 
+ *
  * Provides comprehensive model metadata for both AWS Bedrock and Ollama providers
  * with capability tracking, cost estimates, and recommendations.
- * 
+ *
  * Sources:
  * - docs/update_features.md
  * - docs/model_capabilities.md
@@ -20,10 +20,10 @@ export type ModelProvider = "bedrock" | "ollama" | "openai" | "anthropic" | "azu
 /**
  * Model capabilities
  */
-export type ModelCapability = 
-  | "text" 
-  | "vision" 
-  | "reasoning" 
+export type ModelCapability =
+  | "text"
+  | "vision"
+  | "reasoning"
   | "coding"
   | "image_generation"
   | "video_generation"
@@ -73,8 +73,8 @@ export const BEDROCK_MODELS: Record<string, ModelMetadata> = {
     description: "Latest Claude model with interleaved reasoning, best for complex tasks",
   },
 
-  "us.anthropic.claude-haiku-4-5-20250514-v1:0": {
-    id: "us.anthropic.claude-haiku-4-5-20250514-v1:0",
+  "anthropic.claude-haiku-4-5-20250514-v1:0": {
+    id: "anthropic.claude-haiku-4-5-20250514-v1:0",
     name: "Claude 4.5 Haiku",
     provider: "bedrock",
     providerDisplay: "Anthropic (Bedrock)",
@@ -903,98 +903,98 @@ export const ALL_MODELS = {
 /**
  * Get all available models
  */
-export const getAllModels = query({
+export const getAllModels = query( {
   args: {},
   handler: async () => {
-    return Object.values(ALL_MODELS);
+    return Object.values( ALL_MODELS );
   },
-});
+} );
 
 /**
  * Get models by provider
  */
-export const getModelsByProvider = query({
+export const getModelsByProvider = query( {
   args: { provider: v.string() },
-  handler: async (ctx, args) => {
-    return Object.values(ALL_MODELS).filter(
+  handler: async ( ctx, args ) => {
+    return Object.values( ALL_MODELS ).filter(
       model => model.provider === args.provider
     );
   },
-});
+} );
 
 /**
  * Get models by capability
  */
-export const getModelsByCapability = query({
+export const getModelsByCapability = query( {
   args: { capability: v.string() },
-  handler: async (ctx, args) => {
-    return Object.values(ALL_MODELS).filter(model =>
-      model.capabilities.includes(args.capability as ModelCapability)
+  handler: async ( ctx, args ) => {
+    return Object.values( ALL_MODELS ).filter( model =>
+      model.capabilities.includes( args.capability as ModelCapability )
     );
   },
-});
+} );
 
 /**
  * Get recommended models
  */
-export const getRecommendedModels = query({
+export const getRecommendedModels = query( {
   args: {},
   handler: async () => {
-    return Object.values(ALL_MODELS).filter(model => model.recommended);
+    return Object.values( ALL_MODELS ).filter( model => model.recommended );
   },
-});
+} );
 
 /**
  * Get model by ID
  */
-export const getModelById = query({
+export const getModelById = query( {
   args: { modelId: v.string() },
-  handler: async (ctx, args) => {
+  handler: async ( ctx, args ) => {
     return ALL_MODELS[args.modelId] || null;
   },
-});
+} );
 
 /**
  * Get models by category
  */
-export const getModelsByCategory = query({
+export const getModelsByCategory = query( {
   args: { category: v.string() },
-  handler: async (ctx, args) => {
-    return Object.values(ALL_MODELS).filter(
+  handler: async ( ctx, args ) => {
+    return Object.values( ALL_MODELS ).filter(
       model => model.category === args.category
     );
   },
-});
+} );
 
 /**
  * Search models by name or description
  */
-export const searchModels = query({
+export const searchModels = query( {
   args: { query: v.string() },
-  handler: async (ctx, args) => {
+  handler: async ( ctx, args ) => {
     const query = args.query.toLowerCase();
-    return Object.values(ALL_MODELS).filter(model =>
-      model.name.toLowerCase().includes(query) ||
-      model.description?.toLowerCase().includes(query) ||
-      model.id.toLowerCase().includes(query)
+    return Object.values( ALL_MODELS ).filter( model =>
+      model.name.toLowerCase().includes( query ) ||
+      model.description?.toLowerCase().includes( query ) ||
+      model.id.toLowerCase().includes( query )
     );
   },
-});
+} );
 
 /**
  * Get model provider-specific configuration
  */
-export function getModelConfig(modelId: string): {
+export function getModelConfig( modelId: string ): {
   provider: ModelProvider;
   imports: string[];
   initCode: string;
 } {
   const model = ALL_MODELS[modelId];
-  if (!model) {
-    throw new Error(`Model ${modelId} not found`);
+  if ( !model ) {
+    throw new Error( `Model ${modelId} not found` );
   }
 
-  if (model.provider === "bedrock") {
+  if ( model.provider === "bedrock" ) {
     return {
       provider: "bedrock",
       imports: [
@@ -1017,7 +1017,7 @@ model = BedrockModel(
     };
   }
 
-  if (model.provider === "ollama") {
+  if ( model.provider === "ollama" ) {
     return {
       provider: "ollama",
       imports: [
@@ -1032,5 +1032,5 @@ model = OllamaModel(
     };
   }
 
-  throw new Error(`Provider ${model.provider} not supported`);
+  throw new Error( `Provider ${model.provider} not supported` );
 }
