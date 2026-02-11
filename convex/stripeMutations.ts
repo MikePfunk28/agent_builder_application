@@ -42,7 +42,10 @@ export async function incrementUsageAndReportOverageImpl(
   options?: { updateLastTestAt?: boolean },
 ) {
   const user = await ctx.db.get( userId );
-  if ( !user ) return;
+  if ( !user ) {
+    console.warn( `incrementUsageAndReportOverage: user not found for id ${userId}` );
+    return;
+  }
 
   const newCount = ( user.executionsThisMonth || 0 ) + 1;
 

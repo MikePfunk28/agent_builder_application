@@ -36,9 +36,7 @@ export const seedWorkflowTemplates = internalMutation({
               type: "Prompt",
               label: "Support Assistant",
               notes: "Helpful, patient, and professional",
-              config: {
-                validator: undefined,
-              },
+              config: {},
             },
           },
           {
@@ -130,9 +128,7 @@ export const seedWorkflowTemplates = internalMutation({
               type: "Prompt",
               label: "Tech Assistant",
               notes: "Technical, precise, and helpful. Code review, debugging, API docs.",
-              config: {
-                validator: undefined,
-              },
+              config: {},
             },
           },
           {
@@ -224,9 +220,7 @@ export const seedWorkflowTemplates = internalMutation({
               type: "Prompt",
               label: "Research Assistant",
               notes: "Analytical, thorough, and objective. Web research, data analysis, reports.",
-              config: {
-                validator: undefined,
-              },
+              config: {},
             },
           },
           {
@@ -237,9 +231,7 @@ export const seedWorkflowTemplates = internalMutation({
               type: "Prompt",
               label: "Chain of Thought Reasoning",
               notes: "Step-by-step reasoning with evidence requirements",
-              config: {
-                validator: undefined,
-              },
+              config: {},
             },
           },
           {
@@ -316,9 +308,7 @@ export const seedWorkflowTemplates = internalMutation({
               type: "Prompt",
               label: "Chain of Thought Analyzer",
               notes: "Enables deep thinking with evidence requirements",
-              config: {
-                validator: undefined,
-              },
+              config: {},
             },
           },
           {
@@ -329,9 +319,7 @@ export const seedWorkflowTemplates = internalMutation({
               type: "Prompt",
               label: "Systematic Debugger",
               notes: "Steps: Problem Analysis, Hypothesis Generation, Evidence Gathering, Solution Formulation",
-              config: {
-                validator: undefined,
-              },
+              config: {},
             },
           },
           {
@@ -385,9 +373,7 @@ export const seedWorkflowTemplates = internalMutation({
               type: "Prompt",
               label: "Knowledge Bot",
               notes: "Knowledgeable and precise. Answers from documentation.",
-              config: {
-                validator: undefined,
-              },
+              config: {},
             },
           },
           {

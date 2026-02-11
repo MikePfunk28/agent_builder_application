@@ -81,7 +81,7 @@ async function deployTier1(ctx: any, args: any, userId: any): Promise<any> {
       success: false,
       error: "Free tier limit reached",
       message: `You've used ${executionsThisMonth}/${limit} free tests this month. Upgrade to Personal ($5/month) to deploy to your own AWS account!`,
-      upgradeUrl: "/settings",
+      upgradeUrl: "/settings/aws",
     };
   }
 

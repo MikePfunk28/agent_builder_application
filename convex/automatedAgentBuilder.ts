@@ -113,6 +113,12 @@ export const processResponse = action( {
     userResponse: v.string(),
   },
   handler: async ( ctx, args ) => {
+    // Verify caller owns this session
+    const identity = await ctx.auth.getUserIdentity();
+    if ( !identity ) {
+      throw new Error( "Authentication required" );
+    }
+
     // Get session
     const session = await ctx.runQuery( internal.automatedAgentBuilder.getBuildSessionInternal, {
       sessionId: args.sessionId,
@@ -397,6 +403,12 @@ export const generateAgentFromSession = action( {
     requirementsTxt: string | null;
     mcpConfig: string | null;
   }> => {
+    // Verify caller owns this session
+    const identity = await ctx.auth.getUserIdentity();
+    if ( !identity ) {
+      throw new Error( "Authentication required" );
+    }
+
     const session = await ctx.runQuery( internal.automatedAgentBuilder.getBuildSessionInternal, {
       sessionId: args.sessionId,
     } );

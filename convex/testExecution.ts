@@ -909,7 +909,7 @@ export const incrementUserUsage = internalMutation({
         tokenUsage: args.usage,
         executionTime: args.executionTime,
         executionMethod: args.executionMethod,
-        estimatedCost: args.usage ? calculateBedrockCost(args.usage, args.modelId || "claude-3-5-sonnet") : 0,
+        estimatedCost: args.usage ? calculateBedrockCost(args.usage, args.modelId || "anthropic.claude-3-5-sonnet-20241022-v2:0") : 0,
       },
     });
   },

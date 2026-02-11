@@ -170,6 +170,10 @@ export const reportUsage = internalAction( {
     quantity: v.number(),
   },
   handler: async ( _ctx, args ) => {
+    if ( args.quantity <= 0 ) {
+      throw new Error( "Quantity must be positive" );
+    }
+
     const stripe = await getStripeClient();
 
     const meteredPriceId = process.env.STRIPE_METERED_PRICE;

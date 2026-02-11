@@ -255,7 +255,7 @@ export function withRateLimit<T extends any[], R>(
     return async (ctx: ActionCtx, ...args: T): Promise<R> => {
       // Get user ID from Convex auth
       const identity = await ctx.auth.getUserIdentity();
-      const userId = identity?.subjectId;
+      const userId = identity?.subject;
 
       if (!userId) {
         throw new Error("Authentication required");

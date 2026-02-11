@@ -140,8 +140,8 @@ export function checkRateLimits(
   timeWindow: number,
   config: GuardrailConfig = DEFAULT_GUARDRAILS
 ): { allowed: boolean; reason?: string; resetTime?: number } {
-  const messagesPerHour = messageCount;
-  const hoursElapsed = timeWindow / ( 1000 * 60 * 60 );
+  const hoursElapsed = Math.max( timeWindow / ( 1000 * 60 * 60 ), 1 / 60 ); // min 1 minute
+  const messagesPerHour = messageCount / hoursElapsed;
 
   if ( messagesPerHour > config.maxMessagesPerHour ) {
     const resetTime = Date.now() + ( 60 * 60 * 1000 ); // 1 hour from now

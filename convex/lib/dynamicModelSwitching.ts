@@ -52,7 +52,7 @@ export const MODEL_TIERS: Record<string, ModelTier> = {
     capabilityRating: 2,
   },
 
-  // Capable (highest tier available under cost limits)
+  // Capable (highest auto-selectable tier — Opus is too expensive for auto-selection)
   sonnet45: {
     name: "Claude Sonnet 4.5",
     modelId: "anthropic.claude-sonnet-4-5-20250929-v1:0",

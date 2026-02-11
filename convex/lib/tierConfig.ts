@@ -230,6 +230,9 @@ export function getRoleForTier( tier: TierName ): string {
  * Format the tier limits as a human-readable error message for upgrade prompts.
  */
 export function getUpgradeMessage( tier: string | undefined | null ): string {
+  if ( tier === "enterprise" ) {
+    return "Enterprise tier — contact support if you need higher limits.";
+  }
   const config = getTierConfig( tier );
   const nextTier = tier === "freemium" ? "Personal" : "Enterprise";
   const price = tier === "freemium" ? "$5/month" : "Contact us";

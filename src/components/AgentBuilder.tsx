@@ -51,6 +51,7 @@ interface AgentConfig {
   exposableAsMCPTool?: boolean;
   mcpToolName?: string;
   mcpInputSchema?: any;
+  mcpConfig?: { servers: Array<{ name: string; url: string }> };
 }
 
 const steps = [
