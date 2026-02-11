@@ -240,7 +240,6 @@ export const getSubscriptionStatus = query( {
       subscriptionStatus: user.subscriptionStatus ?? null,
       executionsThisMonth: user.executionsThisMonth ?? 0,
       currentPeriodEnd: user.currentPeriodEnd ?? null,
-      stripeCustomerId: user.stripeCustomerId ?? null,
       hasActiveSubscription: user.subscriptionStatus === "active",
     };
   },

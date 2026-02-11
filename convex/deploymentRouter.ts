@@ -208,6 +208,10 @@ export const incrementUsage = mutation({
     userId: v.id("users"),
   },
   handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if ( !identity ) {
+      throw new Error( "Not authenticated" );
+    }
     await incrementUsageAndReportOverageImpl( ctx, args.userId );
   },
 });

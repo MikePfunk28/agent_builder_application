@@ -881,6 +881,7 @@ export const incrementUserUsage = internalMutation({
     })),
     executionTime: v.optional(v.number()),
     executionMethod: v.optional(v.string()),
+    modelId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await ctx.db.get(args.userId);
@@ -908,7 +909,7 @@ export const incrementUserUsage = internalMutation({
         tokenUsage: args.usage,
         executionTime: args.executionTime,
         executionMethod: args.executionMethod,
-        estimatedCost: args.usage ? calculateBedrockCost(args.usage, "claude-3-5-sonnet") : 0,
+        estimatedCost: args.usage ? calculateBedrockCost(args.usage, args.modelId || "claude-3-5-sonnet") : 0,
       },
     });
   },

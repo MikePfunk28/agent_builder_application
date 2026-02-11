@@ -105,7 +105,7 @@ export const executeAgentWithStrandsAgents = action( {
       // model-ID pattern matching (Bedrock IDs use prefixes like "anthropic.",
       // "anthropic.", "amazon.", "meta.", "mistral.", "cohere.", "ai21.").
       const isBedrock = agent.deploymentType === "bedrock"
-        || ( !agent.deploymentType && /^(us\.)?(anthropic|amazon|meta|mistral|cohere|ai21)\./.test( agent.model ) );
+        || ( !agent.deploymentType && /^(us\.|eu\.|apac\.|global\.)?(anthropic|amazon|meta|mistral|cohere|ai21)\./.test( agent.model ) );
       if ( isBedrock && !isProviderAllowedForTier( userTier, "bedrock" ) ) {
         return {
           success: false,
@@ -184,7 +184,7 @@ async function executeDirectBedrock(
   let modelId = agent.model;
   if ( !modelId.includes( ":" ) && !modelId.startsWith( "us." ) && !modelId.startsWith( "anthropic." ) ) {
     const modelMap: Record<string, string> = {
-      "claude-3-5-sonnet-20241022": "anthropicaude-3-5-sonnet-20241022-v2:0",
+      "claude-3-5-sonnet-20241022": "anthropic.claude-3-5-sonnet-20241022-v2:0",
       "claude-3-5-haiku-20241022": "anthropic.claude-3-5-haiku-20241022-v1:0",
       "claude-3-opus-20240229": "anthropic.claude-3-opus-20240229-v1:0",
     };

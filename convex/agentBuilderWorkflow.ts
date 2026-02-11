@@ -15,7 +15,7 @@ import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedroc
 const WORKFLOW_MODEL_ID =
   process.env.BEDROCK_WORKFLOW_MODEL_ID ||
   process.env.DEFAULT_BEDROCK_MODEL_ID ||
-  "anthropic.claude-haiku-4-5-20250514-v1:0";
+  "anthropic.claude-haiku-4-5-20251001-v1:0";
 const WORKFLOW_REGION =
   process.env.BEDROCK_REGION ||
   process.env.AWS_REGION ||
@@ -197,8 +197,8 @@ export const executeWorkflowStage = action( {
     let contextPrompt = "";
     if ( args.previousContext && args.previousContext.length > 0 ) {
       contextPrompt = "\n\nPREVIOUS WORKFLOW OUTPUTS:\n\n";
-      for ( const ctx of args.previousContext ) {
-        contextPrompt += `=== ${ctx.stage.toUpperCase()} ===\n${ctx.output}\n\n`;
+      for ( const prevCtx of args.previousContext ) {
+        contextPrompt += `=== ${prevCtx.stage.toUpperCase()} ===\n${prevCtx.output}\n\n`;
       }
     }
 
@@ -375,8 +375,8 @@ export const streamWorkflowExecution = action( {
       let contextPrompt = "";
       if ( workflowContext.length > 0 ) {
         contextPrompt = "\n\nPREVIOUS WORKFLOW OUTPUTS:\n\n";
-        for ( const ctx of workflowContext ) {
-          contextPrompt += `=== ${ctx.stage.toUpperCase()} ===\n${ctx.output}\n\n`;
+        for ( const prevCtx of workflowContext ) {
+          contextPrompt += `=== ${prevCtx.stage.toUpperCase()} ===\n${prevCtx.output}\n\n`;
         }
       }
 

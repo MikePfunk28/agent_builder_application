@@ -154,7 +154,7 @@ export const processResponse = action( {
           timestamp: Date.now(),
         },
       ],
-      agentRequirements: requirements,
+      agentRequirements: requirements ?? session.agentRequirements,
       currentQuestion: session.currentQuestion + 1,
       status: readyToGenerate ? "ready_to_generate" : "gathering_requirements",
       generatedAgentConfig: readyToGenerate ? agentConfig : undefined,
@@ -301,7 +301,7 @@ async function analyzeAndAskNext(
   // Build messages in Bedrock format
   const messages = conversationHistory.map( ( msg ) => ( {
     role: msg.role as "user" | "assistant",
-    content: [{ text: msg.content }],
+    content: [{ type: "text", text: msg.content }],
   } ) );
 
   const modelId = process.env.AGENT_BUILDER_MODEL_ID || "anthropic.claude-haiku-4-5-20251001-v1:0";
@@ -375,7 +375,7 @@ async function analyzeAndAskNext(
     // Fallback if JSON parsing fails - treat as next question
     return {
       thinking: "Processing user input...",
-      requirements: {},
+      requirements: null,
       nextQuestion: textResponse,
       readyToGenerate: false,
       agentConfig: null,

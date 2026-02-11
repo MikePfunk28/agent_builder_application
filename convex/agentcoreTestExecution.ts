@@ -147,6 +147,7 @@ export const executeAgentCoreTest = internalAction( {
           usage: result.result?.usage,
           executionTime,
           executionMethod,
+          modelId: agent.model,
         } );
 
         // Update test with success
@@ -233,18 +234,22 @@ async function executeViaDirectBedrock( params: {
       // Fallback mapping for common short names
       const modelMap: Record<string, string> = {
         // Claude 4.5 models (Latest - Oct 2025)
-        "claude-sonnet-4.5": "anthropic.claude-sonnet-4-5-20251015-v1:0",
-        "claude-4.5-sonnet": "anthropic.claude-sonnet-4-5-20251015-v1:0",
-        "claude-haiku-4.5": "anthropic.claude-haiku-4-5-20251015-v1:0",
-        "claude-4.5-haiku": "anthropic.claude-haiku-4-5-20251015-v1:0",
+        "claude-sonnet-4.5": "anthropic.claude-sonnet-4-5-20250929-v1:0",
+        "claude-4.5-sonnet": "anthropic.claude-sonnet-4-5-20250929-v1:0",
+        "claude-haiku-4.5": "anthropic.claude-haiku-4-5-20251001-v1:0",
+        "claude-4.5-haiku": "anthropic.claude-haiku-4-5-20251001-v1:0",
+
+        // Claude 4.6 models (Latest)
+        "claude-opus-4.6": "anthropic.claude-opus-4-6-v1",
+        "claude-4.6-opus": "anthropic.claude-opus-4-6-v1",
 
         // Claude 4.1 models (Aug 2025)
-        "claude-opus-4.1": "anthropic.claude-opus-4-1-20250815-v1:0",
-        "claude-4.1-opus": "anthropic.claude-opus-4-1-20250815-v1:0",
+        "claude-opus-4.1": "anthropic.claude-opus-4-1-20250805-v1:0",
+        "claude-4.1-opus": "anthropic.claude-opus-4-1-20250805-v1:0",
 
         // Claude 4 models (May 2025)
-        "claude-opus-4": "anthropic.claude-opus-4-20250501-v1:0",
-        "claude-4-opus": "anthropic.claude-opus-4-20250501-v1:0",
+        "claude-opus-4": "anthropic.claude-opus-4-20250514-v1:0",
+        "claude-4-opus": "anthropic.claude-opus-4-20250514-v1:0",
         "claude-sonnet-4": "anthropic.claude-sonnet-4-20250501-v1:0",
         "claude-4-sonnet": "anthropic.claude-sonnet-4-20250501-v1:0",
 
@@ -308,10 +313,12 @@ async function executeViaDirectBedrock( params: {
     // Add conversation history if provided (last 5 messages for context)
     if ( params.conversationHistory ) {
       for ( const msg of params.conversationHistory.slice( -5 ) ) {
-        messages.push( {
-          role: msg.role === "assistant" ? "assistant" : "user",
-          content: [{ text: msg.content }],
-        } );
+        if ( msg.role === "user" || msg.role === "assistant" ) {
+          messages.push( {
+            role: msg.role,
+            content: [{ text: msg.content }],
+          } );
+        }
       }
     }
 
@@ -385,11 +392,14 @@ async function executeViaOllama( params: {
 
     // Add conversation history if provided (last 5 messages for context)
     if ( params.conversationHistory ) {
+      const validRoles = ["user", "assistant", "system", "tool"];
       for ( const msg of params.conversationHistory.slice( -5 ) ) {
-        messages.push( {
-          role: msg.role === "assistant" ? "assistant" : "user",
-          content: msg.content,
-        } );
+        if ( validRoles.includes( msg.role ) ) {
+          messages.push( {
+            role: msg.role,
+            content: msg.content,
+          } );
+        }
       }
     }
 
@@ -405,7 +415,7 @@ async function executeViaOllama( params: {
     } );
 
     // Validate Ollama endpoint to prevent SSRF
-    const allowedHosts = ["localhost", "127.0.0.1", "0.0.0.0", "::1"];
+    const allowedHosts = ["localhost", "127.0.0.1", "::1"];
     try {
       const endpointUrl = new URL( params.ollamaEndpoint );
       if ( !allowedHosts.includes( endpointUrl.hostname ) ) {
@@ -419,8 +429,9 @@ async function executeViaOllama( params: {
     // Call Ollama's OpenAI-compatible endpoint with timeout
     const controller = new AbortController();
     const timeoutId = setTimeout( () => controller.abort(), 30000 );
+    let response: Response;
     try {
-      var response = await fetch( `${params.ollamaEndpoint}/v1/chat/completions`, {
+      response = await fetch( `${params.ollamaEndpoint}/v1/chat/completions`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

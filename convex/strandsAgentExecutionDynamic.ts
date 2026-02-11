@@ -71,6 +71,16 @@ type BedrockContentBlock =
 
 type BedrockInvokeResponse = {
   content?: BedrockContentBlock[];
+  // Meta/Llama
+  generation?: string;
+  // Mistral
+  outputs?: Array<{ text?: string }>;
+  // Cohere
+  generations?: Array<{ text?: string }>;
+  // AI21
+  completions?: Array<{ data?: { text?: string } }>;
+  // Amazon Titan
+  results?: Array<{ outputText?: string }>;
 };
 
 /**
@@ -324,20 +334,38 @@ async function executeDirectBedrock(
   let reasoning = "";
   const toolCalls: ToolCall[] = [];
 
-  for ( const block of responseBody.content || [] ) {
-    if ( block.type === "text" ) {
-      content += block.text;
-    } else if ( block.type === "thinking" ) {
-      reasoning += block.thinking;
-    } else if ( block.type === "tool_use" ) {
-      const id = typeof block.id === "string" ? block.id : undefined;
-      const name = typeof block.name === "string" ? block.name : undefined;
-      toolCalls.push( {
-        id,
-        name,
-        input: block.input,
-      } );
+  if ( responseBody.content && Array.isArray( responseBody.content ) ) {
+    // Anthropic models: content is an array of typed blocks
+    for ( const block of responseBody.content ) {
+      if ( block.type === "text" ) {
+        content += block.text;
+      } else if ( block.type === "thinking" ) {
+        reasoning += block.thinking;
+      } else if ( block.type === "tool_use" ) {
+        const id = typeof block.id === "string" ? block.id : undefined;
+        const name = typeof block.name === "string" ? block.name : undefined;
+        toolCalls.push( {
+          id,
+          name,
+          input: block.input,
+        } );
+      }
     }
+  } else if ( typeof responseBody.generation === "string" ) {
+    // Meta/Llama models: single generation string
+    content = responseBody.generation;
+  } else if ( responseBody.outputs && Array.isArray( responseBody.outputs ) ) {
+    // Mistral models: outputs array with text fields
+    content = responseBody.outputs.map( ( o: any ) => o.text || "" ).join( "" );
+  } else if ( responseBody.generations && Array.isArray( responseBody.generations ) ) {
+    // Cohere models: generations array
+    content = responseBody.generations.map( ( g: any ) => g.text || "" ).join( "" );
+  } else if ( responseBody.completions && Array.isArray( responseBody.completions ) ) {
+    // AI21 models: completions array
+    content = responseBody.completions.map( ( c: any ) => c.data?.text || "" ).join( "" );
+  } else if ( responseBody.results && Array.isArray( responseBody.results ) ) {
+    // Amazon Titan models: results array
+    content = responseBody.results.map( ( r: any ) => r.outputText || "" ).join( "" );
   }
 
   return {

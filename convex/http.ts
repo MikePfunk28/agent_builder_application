@@ -457,7 +457,7 @@ http.route({
             const sub = await stripe.subscriptions.retrieve(
               session.subscription as string
             ) as any;
-            await ctx.runMutation((internal as any).stripeMutations.updateSubscription, {
+            await ctx.runMutation(internal.stripeMutations.updateSubscription, {
               stripeCustomerId: session.customer as string,
               subscriptionId: sub.id,
               status: sub.status,
@@ -469,7 +469,7 @@ http.route({
 
         case "customer.subscription.updated": {
           const sub = event.data.object as any; // Stripe.Subscription - cast for current_period_end
-          await ctx.runMutation((internal as any).stripeMutations.updateSubscription, {
+          await ctx.runMutation(internal.stripeMutations.updateSubscription, {
             stripeCustomerId: sub.customer as string,
             subscriptionId: sub.id,
             status: sub.status,
@@ -480,7 +480,7 @@ http.route({
 
         case "customer.subscription.deleted": {
           const sub = event.data.object as Stripe.Subscription;
-          await ctx.runMutation((internal as any).stripeMutations.cancelSubscription, {
+          await ctx.runMutation(internal.stripeMutations.cancelSubscription, {
             stripeCustomerId: sub.customer as string,
           });
           break;
@@ -489,7 +489,7 @@ http.route({
         case "invoice.paid": {
           const invoice = event.data.object as Stripe.Invoice;
           if (invoice.customer) {
-            await ctx.runMutation((internal as any).stripeMutations.resetMonthlyUsage, {
+            await ctx.runMutation(internal.stripeMutations.resetMonthlyUsage, {
               stripeCustomerId: invoice.customer as string,
               periodStart: invoice.period_start,
             });
@@ -500,7 +500,7 @@ http.route({
         case "invoice.payment_failed": {
           const invoice = event.data.object as Stripe.Invoice;
           if (invoice.customer) {
-            await ctx.runMutation((internal as any).stripeMutations.markPastDue, {
+            await ctx.runMutation(internal.stripeMutations.markPastDue, {
               stripeCustomerId: invoice.customer as string,
             });
           }
@@ -512,8 +512,9 @@ http.route({
           break;
       }
     } catch (handlerError: any) {
-      console.error(`Stripe webhook handler error for ${event.type}: ${handlerError.message}`);
-      return new Response("Webhook handler error", { status: 500 });
+      // Always return 200 to Stripe to prevent retries that could cause duplicate mutations.
+      // Log the error for internal alerting/debugging.
+      console.error(`Stripe webhook handler error for ${event.type}: ${handlerError.message}`, handlerError);
     }
 
     return new Response(JSON.stringify({ received: true }), {

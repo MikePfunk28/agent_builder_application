@@ -54,12 +54,12 @@ export const MODEL_TIERS: Record<string, ModelTier> = {
 
   // Slow & Powerful
   opus: {
-    name: "Claude 3 Opus",
-    modelId: "anthropic.claude-3-opus-20240229-v1:0",
-    costPer1KInput: 0.015,
-    costPer1KOutput: 0.075,
-    maxTokens: 4096,
-    speedRating: 3,
+    name: "Claude Sonnet 4.5",
+    modelId: "anthropic.claude-sonnet-4-5-20250929-v1:0",
+    costPer1KInput: 0.003,
+    costPer1KOutput: 0.015,
+    maxTokens: 8192,
+    speedRating: 2,
     capabilityRating: 3,
   },
 
@@ -205,7 +205,8 @@ export function selectModel(
   const { preferCost = false, preferSpeed = false, preferCapability = false, userTier = "freemium" } = options;
 
   // Get available models based on agent configuration
-  const isOllamaAgent = agent.model.includes( ":" ) && !agent.model.includes( "." );
+  const bedrockPrefixes = ["anthropic.", "amazon.", "meta.", "mistral.", "cohere.", "ai21.", "stability.", "us.", "eu.", "apac.", "global."];
+  const isOllamaAgent = agent.model.includes( ":" ) && !bedrockPrefixes.some( prefix => agent.model.startsWith( prefix ) );
   const availableModels = isOllamaAgent
     ? [MODEL_TIERS.ollamaLlama]
     : [MODEL_TIERS.haiku, MODEL_TIERS.sonnet, MODEL_TIERS.opus];
@@ -217,17 +218,28 @@ export function selectModel(
     return isOllamaAgent ? availableModels[0] : MODEL_TIERS.ollamaLlama;
   }
 
-  // Complexity-based routing
+  // Complexity-based routing with preference adjustments
+  let candidateIndex: number;
   if ( complexityScore < 30 ) {
-    // Simple query → Haiku
-    return availableModels[0];
+    candidateIndex = 0; // Simple → Haiku
   } else if ( complexityScore < 60 ) {
-    // Moderate complexity → Sonnet
-    return availableModels[Math.min( 1, availableModels.length - 1 )];
+    candidateIndex = 1; // Moderate → Sonnet
   } else {
-    // High complexity → Opus (if available)
-    return availableModels[Math.min( 2, availableModels.length - 1 )];
+    candidateIndex = 2; // High → Opus-tier
   }
+
+  // Apply preference bias on borderline scores
+  if ( preferCost && candidateIndex > 0 ) {
+    candidateIndex = Math.max( 0, candidateIndex - 1 );
+  }
+  if ( preferSpeed && candidateIndex > 0 ) {
+    candidateIndex = Math.max( 0, candidateIndex - 1 );
+  }
+  if ( preferCapability && candidateIndex < availableModels.length - 1 ) {
+    candidateIndex = Math.min( availableModels.length - 1, candidateIndex + 1 );
+  }
+
+  return availableModels[Math.min( candidateIndex, availableModels.length - 1 )];
 }
 
 /**
