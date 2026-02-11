@@ -512,9 +512,13 @@ http.route({
           break;
       }
     } catch (handlerError: any) {
-      // Always return 200 to Stripe to prevent retries that could cause duplicate mutations.
-      // Log the error for internal alerting/debugging.
-      console.error(`Stripe webhook handler error for ${event.type}: ${handlerError.message}`, handlerError);
+      // Return 500 so Stripe retries — mutations should be idempotent.
+      // Log event.id to correlate retries and detect repeated failures.
+      console.error(`Stripe webhook handler error for event ${event.id} (${event.type}): ${handlerError.message}`, handlerError);
+      return new Response(
+        JSON.stringify({ error: "Webhook handler error", eventId: event.id }),
+        { status: 500, headers: { "Content-Type": "application/json" } }
+      );
     }
 
     return new Response(JSON.stringify({ received: true }), {

@@ -713,7 +713,7 @@ function defaultConfig( kind: NodeKind ): WorkflowNodeData["config"] {
         const [firstBedrock] = listModelsByProvider( "bedrock" );
         return {
           provider: "bedrock",
-          modelId: firstBedrock?.id ?? "anthropic.claude-haiku-4-5-20250514-v1:0",
+          modelId: firstBedrock?.id ?? "anthropic.claude-haiku-4-5-20251001-v1:0",
           temperature: firstBedrock?.defaultConfig.temperature ?? 0.2,
           topP: firstBedrock?.defaultConfig.topP ?? 0.9,
           maxTokens: firstBedrock?.defaultConfig.maxTokens ?? 4096,
@@ -1037,7 +1037,7 @@ const TEMPLATE_DEFINITIONS: Record<string, TemplateDefinition> = {
           label: tplBedrock?.label ?? "Claude 4.5 Haiku",
           config: {
             provider: "bedrock",
-            modelId: tplBedrock?.id ?? "anthropic.claude-haiku-4-5-20250514-v1:0",
+            modelId: tplBedrock?.id ?? "anthropic.claude-haiku-4-5-20251001-v1:0",
             temperature: 0.3,
             topP: 0.9,
             maxTokens: 4096,
@@ -1200,7 +1200,7 @@ const TEMPLATE_DEFINITIONS: Record<string, TemplateDefinition> = {
           label: tpl2Bedrock?.label ?? "Claude 4.5 Haiku",
           config: {
             provider: "bedrock",
-            modelId: tpl2Bedrock?.id ?? "anthropic.claude-haiku-4-5-20250514-v1:0",
+            modelId: tpl2Bedrock?.id ?? "anthropic.claude-haiku-4-5-20251001-v1:0",
             temperature: 0.5,
             topP: 0.95,
             maxTokens: 4096,

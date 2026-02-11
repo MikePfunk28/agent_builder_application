@@ -73,8 +73,8 @@ export const BEDROCK_MODELS: Record<string, ModelMetadata> = {
     description: "Latest Claude model with interleaved reasoning, best for complex tasks",
   },
 
-  "anthropic.claude-haiku-4-5-20250514-v1:0": {
-    id: "anthropic.claude-haiku-4-5-20250514-v1:0",
+  "anthropic.claude-haiku-4-5-20251001-v1:0": {
+    id: "anthropic.claude-haiku-4-5-20251001-v1:0",
     name: "Claude 4.5 Haiku",
     provider: "bedrock",
     providerDisplay: "Anthropic (Bedrock)",
@@ -899,6 +899,115 @@ export const ALL_MODELS = {
   ...BEDROCK_MODELS,
   ...OLLAMA_MODELS,
 };
+
+/**
+ * Short-name to full Bedrock model ID mapping.
+ * Single source of truth — execution files should import this
+ * instead of maintaining their own inline modelMap.
+ */
+export const SHORT_NAME_TO_BEDROCK_ID: Record<string, string> = {
+  // Claude 4.6
+  "claude-opus-4.6": "anthropic.claude-opus-4-6-v1",
+  "claude-4.6-opus": "anthropic.claude-opus-4-6-v1",
+
+  // Claude 4.5 (Latest - Sep/Oct 2025)
+  "claude-sonnet-4.5": "anthropic.claude-sonnet-4-5-20250929-v1:0",
+  "claude-4.5-sonnet": "anthropic.claude-sonnet-4-5-20250929-v1:0",
+  "claude-haiku-4.5": "anthropic.claude-haiku-4-5-20251001-v1:0",
+  "claude-4.5-haiku": "anthropic.claude-haiku-4-5-20251001-v1:0",
+
+  // Claude 4.1
+  "claude-opus-4.1": "anthropic.claude-opus-4-1-20250805-v1:0",
+  "claude-4.1-opus": "anthropic.claude-opus-4-1-20250805-v1:0",
+
+  // Claude 4
+  "claude-opus-4": "anthropic.claude-opus-4-20250514-v1:0",
+  "claude-4-opus": "anthropic.claude-opus-4-20250514-v1:0",
+  "claude-sonnet-4": "anthropic.claude-sonnet-4-20250514-v1:0",
+  "claude-4-sonnet": "anthropic.claude-sonnet-4-20250514-v1:0",
+
+  // Claude 3.7
+  "claude-sonnet-3.7": "anthropic.claude-sonnet-3-7-20250215-v1:0",
+  "claude-3.7-sonnet": "anthropic.claude-sonnet-3-7-20250215-v1:0",
+
+  // Claude 3.5
+  "claude-3-5-sonnet-v2": "anthropic.claude-3-5-sonnet-20241022-v2:0",
+  "claude-3-5-sonnet": "anthropic.claude-3-5-sonnet-20241022-v2:0",
+  "claude-3-5-sonnet-20241022": "anthropic.claude-3-5-sonnet-20241022-v2:0",
+  "claude-3-5-haiku": "anthropic.claude-3-5-haiku-20241022-v1:0",
+  "claude-3-5-haiku-20241022": "anthropic.claude-3-5-haiku-20241022-v1:0",
+
+  // Claude 3
+  "claude-3-opus": "anthropic.claude-3-opus-20240229-v1:0",
+  "claude-3-opus-20240229": "anthropic.claude-3-opus-20240229-v1:0",
+  "claude-3-sonnet": "anthropic.claude-3-sonnet-20240229-v1:0",
+  "claude-3-haiku": "anthropic.claude-3-haiku-20240307-v1:0",
+
+  // Amazon Nova
+  "nova-pro": "us.amazon.nova-pro-v1:0",
+  "nova-lite": "us.amazon.nova-lite-v1:0",
+  "nova-micro": "us.amazon.nova-micro-v1:0",
+
+  // Amazon Titan
+  "titan-text-premier": "amazon.titan-text-premier-v1:0",
+  "titan-text-express": "amazon.titan-text-express-v1",
+  "titan-text-lite": "amazon.titan-text-lite-v1",
+
+  // Meta Llama 3.3
+  "llama-3.3-70b": "us.meta.llama3-3-70b-instruct-v1:0",
+
+  // Meta Llama 3.2
+  "llama-3.2-90b": "us.meta.llama3-2-90b-instruct-v1:0",
+  "llama-3.2-11b": "us.meta.llama3-2-11b-instruct-v1:0",
+  "llama-3.2-3b": "us.meta.llama3-2-3b-instruct-v1:0",
+  "llama-3.2-1b": "us.meta.llama3-2-1b-instruct-v1:0",
+
+  // Meta Llama 3.1
+  "llama-3.1-405b": "meta.llama3-1-405b-instruct-v1:0",
+  "llama-3.1-70b": "meta.llama3-1-70b-instruct-v1:0",
+  "llama-3.1-8b": "meta.llama3-1-8b-instruct-v1:0",
+
+  // Mistral
+  "mistral-large-2": "mistral.mistral-large-2407-v1:0",
+  "mistral-small": "mistral.mistral-small-2402-v1:0",
+  "mixtral-8x7b": "mistral.mixtral-8x7b-instruct-v0:1",
+
+  // AI21 Jamba
+  "jamba-1.5-large": "ai21.jamba-1-5-large-v1:0",
+  "jamba-1.5-mini": "ai21.jamba-1-5-mini-v1:0",
+
+  // Cohere Command
+  "command-r-plus": "cohere.command-r-plus-v1:0",
+  "command-r": "cohere.command-r-v1:0",
+};
+
+/** Bedrock provider prefixes used to identify already-qualified model IDs */
+const BEDROCK_PREFIXES = ["anthropic.", "amazon.", "meta.", "mistral.", "cohere.", "ai21.", "stability.", "us.", "eu.", "apac.", "global."];
+
+/**
+ * Resolve a model name (short or full) to a valid Bedrock model ID.
+ * Checks the full registry, then the short-name map, then falls back to env/default.
+ */
+export function resolveBedrockModelId( modelName: string ): string {
+  // Already a fully qualified Bedrock ID
+  if ( BEDROCK_PREFIXES.some( p => modelName.startsWith( p ) ) ) {
+    return modelName;
+  }
+  // Ollama-style ID (has ":" but no Bedrock prefix)
+  if ( modelName.includes( ":" ) ) {
+    return modelName;
+  }
+  // Check full registry by key
+  if ( ALL_MODELS[modelName] ) {
+    return ALL_MODELS[modelName].id;
+  }
+  // Check short-name map
+  if ( SHORT_NAME_TO_BEDROCK_ID[modelName] ) {
+    return SHORT_NAME_TO_BEDROCK_ID[modelName];
+  }
+  // Fall back to env var or Haiku default
+  return process.env.AGENT_BUILDER_MODEL_ID || "anthropic.claude-haiku-4-5-20251001-v1:0";
+}
 
 /**
  * Get all available models

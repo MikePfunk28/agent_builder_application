@@ -15,6 +15,7 @@ import {
   decideModelSwitch,
   type ModelSwitchDecision,
 } from "./lib/dynamicModelSwitching";
+import { resolveBedrockModelId } from "./modelRegistry";
 
 type AgentDoc = Doc<"agents">;
 
@@ -100,7 +101,7 @@ export const executeAgentWithDynamicModel = action( {
     try {
       const agent = ( await ctx.runQuery( internal.strandsAgentExecution.getAgentInternal, {
         agentId: args.agentId,
-      } ) ) as AgentDoc | null;
+      } ) );
 
       if ( !agent ) {
         throw new Error( "Agent not found" );
@@ -148,15 +149,15 @@ export const executeAgentWithDynamicModel = action( {
       }
 
       // Execute with or without dynamic model switching
-      if ( args.enableModelSwitching !== false ) {
+      if ( args.enableModelSwitching === false ) {
+        return await executeDirectBedrock( ctx, agent, args.message, history );
+      } else {
         return await executeWithModelSwitching( ctx, agent, args.message, history, {
           preferCost: args.preferCost,
           preferSpeed: args.preferSpeed,
           preferCapability: args.preferCapability,
           userTier,
         } );
-      } else {
-        return await executeDirectBedrock( ctx, agent, args.message, history, undefined );
       }
     } catch ( error: unknown ) {
       console.error( "Agent execution error:", error );
@@ -257,17 +258,7 @@ async function executeDirectBedrock(
   } );
 
   // Use override model if provided, otherwise use agent's model
-  let modelId = overrideModelId || agent.model;
-
-  // Normalize model ID
-  if ( !modelId.includes( ":" ) && !modelId.startsWith( "us." ) && !modelId.startsWith( "anthropic." ) ) {
-    const modelMap: Record<string, string> = {
-      "claude-3-5-sonnet-20241022": "anthropic.claude-3-5-sonnet-20241022-v2:0",
-      "claude-3-5-haiku-20241022": "anthropic.claude-3-5-haiku-20241022-v1:0",
-      "claude-3-opus-20240229": "anthropic.claude-3-opus-20240229-v1:0",
-    };
-    modelId = modelMap[modelId] || process.env.AGENT_BUILDER_MODEL_ID || "anthropic.claude-haiku-4-5-20251001-v1:0";
-  }
+  const modelId = resolveBedrockModelId( overrideModelId || agent.model );
 
   // Only include Claude/Anthropic-specific fields when using an Anthropic model
   const isAnthropicModel = modelId.includes( "anthropic" ) || modelId.includes( "claude" );
@@ -366,6 +357,17 @@ async function executeDirectBedrock(
   } else if ( responseBody.results && Array.isArray( responseBody.results ) ) {
     // Amazon Titan models: results array
     content = responseBody.results.map( ( r: any ) => r.outputText || "" ).join( "" );
+  } else {
+    // Fallback: try to extract text from any string field in the response
+    const raw = new TextDecoder().decode( response.body );
+    console.warn( `Unrecognized Bedrock response format for model ${modelId}. Raw preview: ${raw.slice( 0, 200 )}` );
+    // Attempt to use the raw body as text if it looks like a plain string
+    try {
+      const parsed = JSON.parse( raw );
+      content = typeof parsed === "string" ? parsed : JSON.stringify( parsed );
+    } catch {
+      content = raw;
+    }
   }
 
   return {

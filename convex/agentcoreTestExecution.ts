@@ -220,92 +220,9 @@ async function executeViaDirectBedrock( params: {
       },
     } );
 
-    // Import model catalog from authoritative registry
-    const { ALL_MODELS } = await import( "./modelRegistry.js" );
-
-    // Normalize model ID - try to find in catalog first
-    let modelId = params.modelId;
-
-    // Check if it's a catalog key (e.g., "bedrock-claude-3.5-sonnet-v2")
-    const catalogModel = ALL_MODELS[params.modelId];
-    if ( catalogModel && catalogModel.provider === "bedrock" ) {
-      modelId = catalogModel.id;
-    } else if ( !modelId.includes( ":" ) && !modelId.startsWith( "us." ) && !modelId.startsWith( "anthropic." ) && !modelId.startsWith( "amazon." ) && !modelId.startsWith( "meta." ) && !modelId.startsWith( "mistral." ) && !modelId.startsWith( "ai21." ) && !modelId.startsWith( "cohere." ) && !modelId.startsWith( "stability." ) ) {
-      // Fallback mapping for common short names
-      const modelMap: Record<string, string> = {
-        // Claude 4.5 models (Latest - Oct 2025)
-        "claude-sonnet-4.5": "anthropic.claude-sonnet-4-5-20250929-v1:0",
-        "claude-4.5-sonnet": "anthropic.claude-sonnet-4-5-20250929-v1:0",
-        "claude-haiku-4.5": "anthropic.claude-haiku-4-5-20251001-v1:0",
-        "claude-4.5-haiku": "anthropic.claude-haiku-4-5-20251001-v1:0",
-
-        // Claude 4.6 models (Latest)
-        "claude-opus-4.6": "anthropic.claude-opus-4-6-v1",
-        "claude-4.6-opus": "anthropic.claude-opus-4-6-v1",
-
-        // Claude 4.1 models (Aug 2025)
-        "claude-opus-4.1": "anthropic.claude-opus-4-1-20250805-v1:0",
-        "claude-4.1-opus": "anthropic.claude-opus-4-1-20250805-v1:0",
-
-        // Claude 4 models (May 2025)
-        "claude-opus-4": "anthropic.claude-opus-4-20250514-v1:0",
-        "claude-4-opus": "anthropic.claude-opus-4-20250514-v1:0",
-        "claude-sonnet-4": "anthropic.claude-sonnet-4-20250501-v1:0",
-        "claude-4-sonnet": "anthropic.claude-sonnet-4-20250501-v1:0",
-
-        // Claude 3.7 models (Feb 2025)
-        "claude-sonnet-3.7": "anthropic.claude-sonnet-3-7-20250215-v1:0",
-        "claude-3.7-sonnet": "anthropic.claude-sonnet-3-7-20250215-v1:0",
-
-        // Claude 3.5 models
-        "claude-3-5-sonnet-v2": "anthropic.claude-3-5-sonnet-20241022-v2:0",
-        "claude-3-5-sonnet": "anthropic.claude-3-5-sonnet-20241022-v2:0",
-        "claude-3-5-haiku": "anthropic.claude-3-5-haiku-20241022-v1:0",
-
-        // Claude 3 models
-        "claude-3-opus": "anthropic.claude-3-opus-20240229-v1:0",
-        "claude-3-sonnet": "anthropic.claude-3-sonnet-20240229-v1:0",
-        "claude-3-haiku": "anthropic.claude-3-haiku-20240307-v1:0",
-
-        // Amazon Nova models
-        "nova-pro": "us.amazon.nova-pro-v1:0",
-        "nova-lite": "us.amazon.nova-lite-v1:0",
-        "nova-micro": "us.amazon.nova-micro-v1:0",
-
-        // Amazon Titan models
-        "titan-text-premier": "amazon.titan-text-premier-v1:0",
-        "titan-text-express": "amazon.titan-text-express-v1",
-        "titan-text-lite": "amazon.titan-text-lite-v1",
-
-        // Meta Llama 3.3
-        "llama-3.3-70b": "us.meta.llama3-3-70b-instruct-v1:0",
-
-        // Meta Llama 3.2
-        "llama-3.2-90b": "us.meta.llama3-2-90b-instruct-v1:0",
-        "llama-3.2-11b": "us.meta.llama3-2-11b-instruct-v1:0",
-        "llama-3.2-3b": "us.meta.llama3-2-3b-instruct-v1:0",
-        "llama-3.2-1b": "us.meta.llama3-2-1b-instruct-v1:0",
-
-        // Meta Llama 3.1
-        "llama-3.1-405b": "meta.llama3-1-405b-instruct-v1:0",
-        "llama-3.1-70b": "meta.llama3-1-70b-instruct-v1:0",
-        "llama-3.1-8b": "meta.llama3-1-8b-instruct-v1:0",
-
-        // Mistral models
-        "mistral-large-2": "mistral.mistral-large-2407-v1:0",
-        "mistral-small": "mistral.mistral-small-2402-v1:0",
-        "mixtral-8x7b": "mistral.mixtral-8x7b-instruct-v0:1",
-
-        // AI21 Jamba
-        "jamba-1.5-large": "ai21.jamba-1-5-large-v1:0",
-        "jamba-1.5-mini": "ai21.jamba-1-5-mini-v1:0",
-
-        // Cohere Command
-        "command-r-plus": "cohere.command-r-plus-v1:0",
-        "command-r": "cohere.command-r-v1:0",
-      };
-      modelId = modelMap[params.modelId] || process.env.AGENT_BUILDER_MODEL_ID || "anthropic.claude-haiku-4-5-20251001-v1:0";
-    }
+    // Resolve model ID using authoritative shared registry
+    const { resolveBedrockModelId } = await import( "./modelRegistry.js" );
+    const modelId = resolveBedrockModelId( params.modelId );
 
     // Build conversation using Converse API (works with ALL Bedrock models)
     const messages: any[] = [];

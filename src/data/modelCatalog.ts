@@ -45,7 +45,7 @@ export const MODEL_CATALOG: ModelMetadata[] = [
     requiredTier: "personal",
   },
   {
-    id: "anthropic.claude-haiku-4-5-20250514-v1:0",
+    id: "anthropic.claude-haiku-4-5-20251001-v1:0",
     label: "Claude 4.5 Haiku",
     description: "Fast Claude model tuned for tool creation and thinking loops.",
     provider: "bedrock",

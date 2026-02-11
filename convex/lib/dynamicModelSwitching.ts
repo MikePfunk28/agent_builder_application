@@ -52,8 +52,8 @@ export const MODEL_TIERS: Record<string, ModelTier> = {
     capabilityRating: 2,
   },
 
-  // Slow & Powerful
-  opus: {
+  // Capable (highest tier available under cost limits)
+  sonnet45: {
     name: "Claude Sonnet 4.5",
     modelId: "anthropic.claude-sonnet-4-5-20250929-v1:0",
     costPer1KInput: 0.003,
@@ -209,7 +209,7 @@ export function selectModel(
   const isOllamaAgent = agent.model.includes( ":" ) && !bedrockPrefixes.some( prefix => agent.model.startsWith( prefix ) );
   const availableModels = isOllamaAgent
     ? [MODEL_TIERS.ollamaLlama]
-    : [MODEL_TIERS.haiku, MODEL_TIERS.sonnet, MODEL_TIERS.opus];
+    : [MODEL_TIERS.haiku, MODEL_TIERS.sonnet, MODEL_TIERS.sonnet45];
 
   // Freemium users: only local models allowed (no Bedrock access)
   if ( userTier === "freemium" ) {
@@ -228,16 +228,10 @@ export function selectModel(
     candidateIndex = 2; // High → Opus-tier
   }
 
-  // Apply preference bias on borderline scores
-  if ( preferCost && candidateIndex > 0 ) {
-    candidateIndex = Math.max( 0, candidateIndex - 1 );
-  }
-  if ( preferSpeed && candidateIndex > 0 ) {
-    candidateIndex = Math.max( 0, candidateIndex - 1 );
-  }
-  if ( preferCapability && candidateIndex < availableModels.length - 1 ) {
-    candidateIndex = Math.min( availableModels.length - 1, candidateIndex + 1 );
-  }
+  // Apply preference bias (at most ±1 adjustment to avoid overshooting)
+  const costOrSpeedBias = ( preferCost || preferSpeed ) ? -1 : 0;
+  const capabilityBias = preferCapability ? 1 : 0;
+  candidateIndex = Math.max( 0, Math.min( availableModels.length - 1, candidateIndex + costOrSpeedBias + capabilityBias ) );
 
   return availableModels[Math.min( candidateIndex, availableModels.length - 1 )];
 }

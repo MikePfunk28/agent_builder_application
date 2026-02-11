@@ -279,7 +279,7 @@ async function invokeClaudeWithInterleavedThinking(
     },
   };
 
-  const modelId = process.env.AGENT_BUILDER_MODEL_ID || "anthropic.claude-haiku-4-5-20250514-v1:0";
+  const modelId = process.env.AGENT_BUILDER_MODEL_ID || "anthropic.claude-haiku-4-5-20251001-v1:0";
 
   const command = new InvokeModelCommand( {
     modelId,

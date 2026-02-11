@@ -8,6 +8,7 @@ import { v } from "convex/values";
 import { api, internal } from "./_generated/api";
 import type { ActionCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
+import { resolveBedrockModelId } from "./modelRegistry";
 
 type AgentDoc = Doc<"agents">;
 
@@ -181,15 +182,7 @@ async function executeDirectBedrock(
     content: [{ text: message }],
   } );
 
-  let modelId = agent.model;
-  if ( !modelId.includes( ":" ) && !modelId.startsWith( "us." ) && !modelId.startsWith( "anthropic." ) ) {
-    const modelMap: Record<string, string> = {
-      "claude-3-5-sonnet-20241022": "anthropic.claude-3-5-sonnet-20241022-v2:0",
-      "claude-3-5-haiku-20241022": "anthropic.claude-3-5-haiku-20241022-v1:0",
-      "claude-3-opus-20240229": "anthropic.claude-3-opus-20240229-v1:0",
-    };
-    modelId = modelMap[agent.model] || process.env.AGENT_BUILDER_MODEL_ID || "anthropic.claude-haiku-4-5-20251001-v1:0";
-  }
+  const modelId = resolveBedrockModelId( agent.model );
 
   const payload = {
     anthropic_version: "bedrock-2023-05-31",

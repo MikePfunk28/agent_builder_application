@@ -13,16 +13,16 @@ import type { Id } from "./_generated/dataModel";
 /**
  * Generate agent-as-tool wrapper code
  */
-export const generateAgentAsTool = action({
+export const generateAgentAsTool = action( {
   args: {
-    agentId: v.id("agents"),
+    agentId: v.id( "agents" ),
   },
-  handler: async (ctx, args): Promise<{ toolName: string; toolCode: string; importStatement: string }> => {
-    const agent: any = await ctx.runQuery(api.agents.get, { id: args.agentId });
-    if (!agent) throw new Error("Agent not found");
+  handler: async ( ctx, args ): Promise<{ toolName: string; toolCode: string; importStatement: string }> => {
+    const agent: any = await ctx.runQuery( api.agents.get, { id: args.agentId } );
+    if ( !agent ) throw new Error( "Agent not found" );
 
-    const toolName: string = agent.name.replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
-    const toolCode = generateToolCode(agent.name, toolName, agent.description || "", args.agentId);
+    const toolName: string = agent.name.replaceAll( /[^a-zA-Z0-9_]/g, '_' ).toLowerCase();
+    const toolCode = generateToolCode( agent.name, toolName, agent.description || "", args.agentId );
 
     return {
       toolName,
@@ -30,7 +30,7 @@ export const generateAgentAsTool = action({
       importStatement: `from tools.${toolName} import ${toolName}`,
     };
   },
-});
+} );
 
 /**
  * Generate tool wrapper code for an agent
@@ -42,10 +42,8 @@ function generateToolCode(
   agentId: string
 ): string {
   // Sanitize inputs to prevent template injection in generated Python code
-  const sanitize = (s: string) => s.replace(/\\/g, "\\\\").replace(/"""/g, '\\"\\"\\"');
-  const safeAgentName = sanitize(agentName);
-  const safeDescription = sanitize(description);
-  const safeAgentId = sanitize(agentId);
+  const sanitize = ( s: string ) => s.replaceAll( '\\', "\\\\" ).replace( /"""/g, '\\"\\"\\"' );
+  const safeAgentName = sanitize( agentName );
   return `"""
 Agent-as-Tool: ${safeAgentName}
 Auto-generated wrapper to use ${safeAgentName} as a tool in other agents.
@@ -121,34 +119,34 @@ async def ${toolName}(task: str, context: Optional[dict] = None) -> str:
 /**
  * Generate coordinator agent that uses other agents as tools
  */
-export const generateCoordinatorAgent = action({
+export const generateCoordinatorAgent = action( {
   args: {
     coordinatorName: v.string(),
     coordinatorPrompt: v.string(),
-    agentIds: v.array(v.id("agents")),
+    agentIds: v.array( v.id( "agents" ) ),
     coordinationStrategy: v.union(
-      v.literal("sequential"),
-      v.literal("parallel"),
-      v.literal("dynamic")
+      v.literal( "sequential" ),
+      v.literal( "parallel" ),
+      v.literal( "dynamic" )
     ),
   },
-  handler: async (ctx, args): Promise<{ coordinatorCode: string; agentTools: Array<{ name: string; agentId: string; agentName: string; description: string }> }> => {
+  handler: async ( ctx, args ): Promise<{ coordinatorCode: string; agentTools: Array<{ name: string; agentId: string; agentName: string; description: string }> }> => {
     // Get all agents
     const agents: any[] = await Promise.all(
-      args.agentIds.map((id: Id<"agents">) => ctx.runQuery(api.agents.get, { id }))
+      args.agentIds.map( ( id: Id<"agents"> ) => ctx.runQuery( api.agents.get, { id } ) )
     );
 
     // Generate tool wrappers for each agent
-    const agentTools: Array<{ name: string; agentId: string; agentName: string; description: string }> = agents.map((agent: any) => {
-      if (!agent) return null;
-      const toolName: string = agent.name.replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
+    const agentTools: Array<{ name: string; agentId: string; agentName: string; description: string }> = agents.map( ( agent: any ) => {
+      if ( !agent ) return null;
+      const toolName: string = agent.name.replaceAll( /[\W]/g, '_' ).toLowerCase();
       return {
         name: toolName,
         agentId: agent._id,
         agentName: agent.name,
         description: agent.description || `Invoke ${agent.name} agent`,
       };
-    }).filter(Boolean) as Array<{ name: string; agentId: string; agentName: string; description: string }>;
+    } ).filter( Boolean ) as Array<{ name: string; agentId: string; agentName: string; description: string }>;
 
     // Generate coordinator agent code
     const coordinatorCode = generateCoordinatorCode(
@@ -163,7 +161,7 @@ export const generateCoordinatorAgent = action({
       agentTools,
     };
   },
-});
+} );
 
 /**
  * Generate coordinator agent code
@@ -174,10 +172,10 @@ function generateCoordinatorCode(
   agentTools: Array<{ name: string; agentId: string; agentName: string; description: string }>,
   strategy: string
 ): string {
-  const toolImports = agentTools.map(t => `from tools.${t.name} import ${t.name}`).join('\n');
-  const toolList = agentTools.map(t => t.name).join(', ');
+  const toolImports = agentTools.map( t => `from tools.${t.name} import ${t.name}` ).join( '\n' );
+  const toolList = agentTools.map( t => t.name ).join( ', ' );
 
-  return `"""
+  return String.raw`"""
 Coordinator Agent: ${name}
 Coordinates multiple specialized agents to solve complex tasks.
 """
@@ -197,7 +195,7 @@ logger = logging.getLogger(__name__)
     system_prompt="""${systemPrompt}
 
 You are a coordinator agent with access to specialized agents as tools:
-${agentTools.map(t => `- ${t.name}: ${t.description}`).join('\n')}
+${agentTools.map( t => `- ${t.name}: ${t.description}` ).join( '\n' )}
 
 Coordination Strategy: ${strategy}
 ${strategy === 'sequential' ? '- Execute agents one after another, passing output forward' : ''}
@@ -214,7 +212,7 @@ When delegating to agents:
     memory=True,
     reasoning="interleaved"
 )
-class ${name.replace(/[^a-zA-Z0-9]/g, '')}Coordinator(Agent):
+class ${name.replaceAll( /[^a-zA-Z0-9]/g, '' )}Coordinator(Agent):
     """
     Coordinator agent that orchestrates multiple specialized agents.
     """
@@ -235,9 +233,9 @@ class ${name.replace(/[^a-zA-Z0-9]/g, '')}Coordinator(Agent):
         ])
 
         # Synthesize results
-        synthesis = "Results from parallel execution:\\n\\n"
+        synthesis = "Results from parallel execution:\n\n"
         for i, result in enumerate(results):
-            synthesis += f"Agent {i+1}:\\n{result}\\n\\n"
+            synthesis += f"Agent {i+1}:\n{result}\n\n"
 
         return synthesis
 
@@ -250,7 +248,7 @@ async def agent_entrypoint(payload):
     global coordinator
 
     if coordinator is None:
-        coordinator = ${name.replace(/[^a-zA-Z0-9]/g, '')}Coordinator()
+        coordinator = ${name.replaceAll( /[^a-zA-Z0-9]/g, '' )}Coordinator()
 
     user_input = payload.get("prompt", "")
     return await coordinator.run(user_input)
@@ -263,23 +261,23 @@ if __name__ == "__main__":
 /**
  * Link agents together for coordination
  */
-export const linkAgentsForCoordination = action({
+export const linkAgentsForCoordination = action( {
   args: {
-    parentAgentId: v.id("agents"),
-    childAgentIds: v.array(v.id("agents")),
+    parentAgentId: v.id( "agents" ),
+    childAgentIds: v.array( v.id( "agents" ) ),
   },
-  handler: async (ctx, args): Promise<{ success: boolean; parentAgentId: Id<"agents">; childTools: Array<{ name: string; type: string; config: { agentId: Id<"agents">; agentName: string; description: string } }> }> => {
+  handler: async ( ctx, args ): Promise<{ success: boolean; parentAgentId: Id<"agents">; childTools: Array<{ name: string; type: string; config: { agentId: Id<"agents">; agentName: string; description: string } }> }> => {
     // Update parent agent to include child agents as tools
-    const parent: any = await ctx.runQuery(api.agents.get, { id: args.parentAgentId });
-    if (!parent) throw new Error("Parent agent not found");
+    const parent: any = await ctx.runQuery( api.agents.get, { id: args.parentAgentId } );
+    if ( !parent ) throw new Error( "Parent agent not found" );
 
     // Generate tool wrappers for child agents
-    const childTools: Array<{ name: string; type: string; config: { agentId: Id<"agents">; agentName: string; description: string } }> = (await Promise.all(
-      args.childAgentIds.map(async (childId: Id<"agents">) => {
-        const child: any = await ctx.runQuery(api.agents.get, { id: childId });
-        if (!child) return null;
+    const childTools: Array<{ name: string; type: string; config: { agentId: Id<"agents">; agentName: string; description: string } }> = ( await Promise.all(
+      args.childAgentIds.map( async ( childId: Id<"agents"> ) => {
+        const child: any = await ctx.runQuery( api.agents.get, { id: childId } );
+        if ( !child ) return null;
 
-        const toolName: string = child.name.replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
+        const toolName: string = child.name.replaceAll( /[\W]/g, '_' ).toLowerCase();
         return {
           name: toolName,
           type: "agent_tool",
@@ -289,8 +287,8 @@ export const linkAgentsForCoordination = action({
             description: child.description || `Invoke ${child.name} agent`,
           },
         };
-      })
-    )).filter(Boolean) as Array<{ name: string; type: string; config: { agentId: Id<"agents">; agentName: string; description: string } }>;
+      } )
+    ) ).filter( Boolean ) as Array<{ name: string; type: string; config: { agentId: Id<"agents">; agentName: string; description: string } }>;
 
     return {
       success: true,
@@ -298,4 +296,4 @@ export const linkAgentsForCoordination = action({
       childTools,
     };
   },
-});
+} );

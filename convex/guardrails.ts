@@ -162,7 +162,7 @@ export function calculateMessageCost(
   inputTokens: number,
   outputTokens: number,
   reasoningTokens: number = 0,
-  modelId: string = "anthropic.claude-haiku-4-5-20250514-v1:0"
+  modelId: string = "anthropic.claude-haiku-4-5-20251001-v1:0"
 ): number {
   // Claude Haiku 4.5 pricing (as of 2024)
   const inputCostPer1K = 0.00025;  // $0.00025 per 1K input tokens

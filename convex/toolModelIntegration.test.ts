@@ -381,7 +381,7 @@ describe("Tool Loading and Configuration", () => {
         return await ctx.db.insert("agents", {
           name: "Specific Model Agent",
           description: "Agent with specific model",
-          model: "anthropic.claude-haiku-4-5-20250514-v1:0",
+          model: "anthropic.claude-haiku-4-5-20251001-v1:0",
           systemPrompt: "You are a helpful assistant",
           tools: [],
           generatedCode: "# Agent code",
@@ -393,7 +393,7 @@ describe("Tool Loading and Configuration", () => {
       const agent = await t.query(api.agents.get, { id: testAgentId });
 
       expect(agent).toBeDefined();
-      expect(agent.model).toBe("anthropic.claude-haiku-4-5-20250514-v1:0");
+      expect(agent.model).toBe("anthropic.claude-haiku-4-5-20251001-v1:0");
       expect(agent.deploymentType).toBe("bedrock");
     });
   });

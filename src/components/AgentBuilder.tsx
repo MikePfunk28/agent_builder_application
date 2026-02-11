@@ -67,7 +67,7 @@ export function AgentBuilder() {
   const [config, setConfig] = useState<AgentConfig>( {
     name: "",
     description: "",
-    model: ( () => { const [m] = listModelsByProvider( "bedrock" ); return m?.id ?? "anthropic.claude-haiku-4-5-20250514-v1:0"; } )(),
+    model: ( () => { const [m] = listModelsByProvider( "bedrock" ); return m?.id ?? "anthropic.claude-haiku-4-5-20251001-v1:0"; } )(),
     systemPrompt: "",
     tools: [],
     deploymentType: "aws",
