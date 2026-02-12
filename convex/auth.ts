@@ -1,5 +1,4 @@
 import GitHub from "@auth/core/providers/github";
-import Google from "@auth/core/providers/google";
 import { Password } from "@convex-dev/auth/providers/Password";
 import { Anonymous } from "@convex-dev/auth/providers/Anonymous";
 import { convexAuth, getAuthUserId } from "@convex-dev/auth/server";
@@ -7,18 +6,18 @@ import { query } from "./_generated/server";
 import CognitoProvider from '@auth/core/providers/cognito';
 
 // Build providers array with all authentication methods
+// Google OAuth removed - was never approved
 const providers: any[] = [
   Anonymous, // Continue as guest - basic setup, no customization needed
   Password,  // Email/password authentication
   GitHub,    // GitHub OAuth
-  Google,    // Google OAuth
 ];
 
 // AWS Cognito OAuth - OIDC provider for AWS Federated Identity
 // When users sign in with Cognito, they can exchange their ID token for AWS credentials
 // This enables deployment to their own AWS accounts
-if (process.env.COGNITO_ISSUER_URL && process.env.COGNITO_CLIENT_ID && process.env.COGNITO_CLIENT_SECRET) {
-  const CognitoConfig = CognitoProvider({
+if ( process.env.COGNITO_ISSUER_URL && process.env.COGNITO_CLIENT_ID && process.env.COGNITO_CLIENT_SECRET ) {
+  const CognitoConfig = CognitoProvider( {
     id: "cognito",
     name: "AWS Cognito",
     issuer: process.env.COGNITO_ISSUER_URL,
@@ -29,7 +28,7 @@ if (process.env.COGNITO_ISSUER_URL && process.env.COGNITO_CLIENT_ID && process.e
         scope: "openid email profile aws.cognito.signin.user.admin",
       },
     },
-    profile(profile: any) {
+    profile( profile: any ) {
       return {
         id: profile.sub,
         name: profile.name ?? profile.email,
@@ -38,21 +37,21 @@ if (process.env.COGNITO_ISSUER_URL && process.env.COGNITO_CLIENT_ID && process.e
         cognitoUsername: profile["cognito:username"],
       };
     },
-  });
-  providers.push(CognitoConfig);
+  } );
+  providers.push( CognitoConfig );
 }
 
-export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
+export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth( {
   providers,
-});
+} );
 
-export const loggedInUser = query({
-  handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
+export const loggedInUser = query( {
+  handler: async ( ctx ) => {
+    const userId = await getAuthUserId( ctx );
+    if ( !userId ) {
       return null;
     }
-    const user = await ctx.db.get(userId);
+    const user = await ctx.db.get( userId );
     return user ?? null;
   },
-});
+} );

@@ -13,15 +13,6 @@ export const getOAuthConfig = query({
         },
       },
       {
-        id: "google",
-        name: "Google",
-        configured: !!(process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET),
-        envVars: {
-          clientId: process.env.AUTH_GOOGLE_ID ? "✓ Set" : "✗ Missing",
-          clientSecret: process.env.AUTH_GOOGLE_SECRET ? "✓ Set" : "✗ Missing",
-        },
-      },
-      {
         id: "cognito",
         name: "AWS Cognito",
         configured: !!(
@@ -41,7 +32,7 @@ export const getOAuthConfig = query({
     const deploymentUrls = [
       {
         name: "Local Development",
-        url: "http://localhost:3000",
+        url: "http://localhost:4000",
         description: "For local testing during development",
       },
       {

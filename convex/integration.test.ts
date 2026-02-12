@@ -1359,7 +1359,7 @@ describe("Deployment Integration Tests", () => {
           email: "tier1-all@example.com",
           name: "Tier 1 All Tests User",
           tier: "freemium",
-          testsThisMonth: 0,
+          executionsThisMonth: 0,
           createdAt: Date.now(),
         });
       });
@@ -1407,7 +1407,7 @@ describe("Deployment Integration Tests", () => {
           email: "tier1-usage-limits@example.com",
           name: "Tier 1 Usage Limits User",
           tier: "freemium",
-          testsThisMonth: 0,
+          executionsThisMonth: 0,
           createdAt: Date.now(),
         });
       });
@@ -1429,19 +1429,19 @@ describe("Deployment Integration Tests", () => {
 
       // Test usage increment
       const userBefore = await t.query(api.deploymentRouter.getUserTier);
-      const initialUsage = userBefore?.testsThisMonth || 0;
+      const initialUsage = userBefore?.executionsThisMonth || 0;
 
       await t.mutation(api.deploymentRouter.incrementUsage, {
         userId: testUserId,
       });
 
       const userAfter = await t.query(api.deploymentRouter.getUserTier);
-      expect(userAfter?.testsThisMonth).toBe(initialUsage + 1);
+      expect(userAfter?.executionsThisMonth).toBe(initialUsage + 1);
 
       // Test usage limit enforcement
       await t.run(async (ctx) => {
         await ctx.db.patch(testUserId, {
-          testsThisMonth: 10, // At the limit
+          executionsThisMonth: 10, // At the limit
         });
       });
 
@@ -1958,7 +1958,7 @@ describe("Deployment Integration Tests", () => {
           email: "freemium1@example.com",
           name: "Freemium User 1",
           tier: "freemium",
-          testsThisMonth: 5,
+          executionsThisMonth: 5,
           createdAt: Date.now(),
         });
 
@@ -1967,7 +1967,7 @@ describe("Deployment Integration Tests", () => {
           email: "freemium2@example.com",
           name: "Freemium User 2",
           tier: "freemium",
-          testsThisMonth: 8,
+          executionsThisMonth: 8,
           createdAt: Date.now(),
         });
       });
@@ -1987,7 +1987,7 @@ describe("Deployment Integration Tests", () => {
       });
 
       users.forEach((user) => {
-        expect(user.testsThisMonth).toBe(0);
+        expect(user.executionsThisMonth).toBe(0);
       });
     });
 
@@ -2001,7 +2001,7 @@ describe("Deployment Integration Tests", () => {
           email: "personal1@example.com",
           name: "Personal User 1",
           tier: "personal",
-          testsThisMonth: 50,
+          executionsThisMonth: 50,
           createdAt: Date.now(),
         });
       });
@@ -2017,7 +2017,7 @@ describe("Deployment Integration Tests", () => {
           .first();
       });
 
-      expect(user?.testsThisMonth).toBe(50);
+      expect(user?.executionsThisMonth).toBe(50);
     });
   });
 });

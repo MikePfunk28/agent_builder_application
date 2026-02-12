@@ -128,10 +128,10 @@ export const startTestContainer = internalAction({
       console.log(`✅ ECS task started: ${taskArn}`);
       console.log(`📊 Log stream: ${logGroup}/${logStream}`);
 
-      // REMOVED: Log polling causes excessive operations
-      // Instead, logs should be fetched on-demand when user views them
-      // Or use CloudWatch Events to push log updates
-      
+      // NOTE: Usage is tracked on completion (not start) to avoid double-counting.
+      // submitTest already increments executionsThisMonth for cloud models.
+      // incrementUserUsage is called when "TEST COMPLETED SUCCESSFULLY" is detected in logs.
+
       // Schedule timeout handler (single timeout, not recurring - OK)
       await ctx.scheduler.runAfter(args.timeout, internal.containerOrchestrator.handleTimeout, {
         testId: args.testId,
@@ -207,6 +207,17 @@ export const fetchLogs = internalAction({
           // Check for completion markers in logs
           const logsText = newLogs.join("\n");
           if (logsText.includes("TEST COMPLETED SUCCESSFULLY")) {
+            // Get test details for usage tracking
+            const testDetails = await ctx.runQuery(internal.testExecution.getTestByIdInternal, { testId: args.testId });
+            if (testDetails) {
+              // TRACK USAGE: On successful completion
+              await ctx.runMutation(internal.testExecution.incrementUserUsage, {
+                userId: testDetails.userId,
+                testId: args.testId,
+                executionMethod: "fargate",
+              });
+            }
+
             await ctx.runMutation(internal.testExecution.updateStatus, {
               testId: args.testId,
               status: "COMPLETED",

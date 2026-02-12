@@ -3,13 +3,14 @@
  *
  * Manages the complete lifecycle of agent tests from submission to completion.
  * Provides real-time log streaming and test management.
+ *
+ * Cost-optimized execution: Direct Bedrock → Lambda backup → No MCP complexity
  */
 
 import { mutation, query, internalMutation, internalQuery, action } from "./_generated/server";
 import { v } from "convex/values";
 import { internal, api } from "./_generated/api";
 import { getAuthUserId } from "@convex-dev/auth/server";
-// Removed unused import: Id
 
 // Validation constants
 const MAX_QUERY_LENGTH = 2000;
@@ -19,6 +20,29 @@ const MAX_DOCKERFILE_SIZE = 5 * 1024; // 5KB
 const MIN_TIMEOUT = 10000; // 10 seconds
 const MAX_TIMEOUT = 600000; // 10 minutes
 const MAX_CONCURRENT_TESTS = parseInt(process.env.MAX_CONCURRENT_TESTS || "10");
+
+// Rate Limiting - from centralized tier config (convex/lib/tierConfig.ts)
+import { getTierConfig, checkExecutionLimit, isProviderAllowedForTier, getUpgradeMessage } from "./lib/tierConfig";
+import { checkRateLimitInMutation, buildTierRateLimitConfig } from "./rateLimiter";
+
+// Usage increment + overage reporting — single source of truth in stripeMutations.ts.
+import { incrementUsageAndReportOverageImpl } from "./stripeMutations";
+
+// Model registry — authoritative source for cost data
+import { BEDROCK_MODELS } from "./modelRegistry";
+
+// Cost calculation helper — reads pricing from the authoritative model registry.
+// Falls back to Haiku 4.5 pricing ($1/$5 per 1M tokens) for unknown models.
+function calculateBedrockCost(usage: any, modelId: string): number {
+  const model = BEDROCK_MODELS[modelId];
+  const cost = model?.costPer1MTokens ?? { input: 1.0, output: 5.0 };
+
+  // costPer1MTokens is per 1,000,000 tokens; convert to per-token then multiply
+  const inputCost = ( usage.inputTokens || 0 ) * ( cost.input / 1_000_000 );
+  const outputCost = ( usage.outputTokens || 0 ) * ( cost.output / 1_000_000 );
+
+  return Math.round( ( inputCost + outputCost ) * 100 ); // Return cents
+}
 
 /**
  * Submit a new agent test
@@ -38,9 +62,12 @@ export const submitTest = mutation({
   },
   handler: async (ctx, args) => {
     // Authentication - use getAuthUserId for Convex user document ID
-    // Allow anonymous users to test agents
     const userId = await getAuthUserId(ctx);
-    const effectiveUserId = userId || `anon_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    // SECURITY: Require authentication for testing
+    if (!userId) {
+      throw new Error("Authentication required. Please sign in to test agents.");
+    }
 
     // Get agent
     const agent = await ctx.db.get(args.agentId);
@@ -48,25 +75,72 @@ export const submitTest = mutation({
       throw new Error("Agent not found");
     }
 
-    // Verify ownership or public access
+    // SECURITY: Verify ownership
     const isOwner = agent.createdBy === userId;
     const isPublic = Boolean(agent.isPublic);
 
-    // Allow testing for authenticated users (development mode)
-    console.log("Authorization check:", {
-      userId,
-      agentCreatedBy: agent.createdBy,
-      isOwner,
-      isPublic,
-      agentId: args.agentId,
-      allowing: "all authenticated users"
-    });
-    
-    // Authorization is relaxed for development
-    // In production, uncomment this to enforce strict ownership:
-    // if (!isOwner && !isPublic) {
-    //   throw new Error("Not authorized to test this agent");
-    // }
+    if (!isOwner && !isPublic) {
+      throw new Error("Not authorized to test this agent. You can only test agents you created or public agents.");
+    }
+
+    // Determine model provider EARLY to check if it's Ollama
+    // Ollama models are FREE (run locally), so no rate limiting needed!
+    const isOllamaModel = agent.deploymentType === "ollama" || (!agent.deploymentType && agent.model.includes(':') && !agent.model.includes('.'));
+
+    // RATE LIMITING: Only for Bedrock/cloud models (Ollama is FREE and unlimited!)
+    if (!isOllamaModel) {
+      const user = await ctx.db.get(userId);
+      if (!user) {
+        throw new Error("User not found");
+      }
+
+      // ANONYMOUS USER PROTECTION: Block anonymous users from cloud testing to prevent abuse
+      // Anonymous users can still use Ollama for unlimited FREE testing
+      if (user.isAnonymous) {
+        throw new Error(
+          `Anonymous users cannot use cloud models to prevent abuse. ` +
+          `Please sign in with GitHub or Google for cloud testing, ` +
+          `or use Ollama models for unlimited FREE testing without sign-in.`
+        );
+      }
+
+      const userTier = user.tier || "freemium";
+
+      // PROVIDER TIER GATE: Enforce per-tier allowed provider rules (mirrors
+      // strandsAgentExecution.ts and strandsAgentExecutionDynamic.ts logic).
+      const derivedProvider = agent.deploymentType || "bedrock";
+      if ( !isProviderAllowedForTier( userTier, derivedProvider ) ) {
+        const tierConfig = getTierConfig( userTier );
+        throw new Error(
+          `${tierConfig.displayName} tier does not allow ${derivedProvider} models. ` +
+          `Allowed providers: ${tierConfig.allowedProviders.join( ", " )}. ` +
+          `Use Ollama models for unlimited FREE testing, or upgrade your subscription.`
+        );
+      }
+
+      const executionsThisMonth = user.executionsThisMonth || 0;
+
+      // Check rate limits using centralized tier config
+      const limitCheck = checkExecutionLimit( userTier, executionsThisMonth );
+      if ( !limitCheck.allowed ) {
+        const tierConfig = getTierConfig( userTier );
+        throw new Error(
+          `${tierConfig.displayName} tier cloud test limit reached (${tierConfig.monthlyExecutions} tests/month). ` +
+          `You can: 1) Use Ollama models for unlimited FREE testing, ` +
+          `2) Upgrade to Personal ($5/month) for more capacity, or 3) Deploy to your AWS account.`
+        );
+      }
+
+      // Per-minute rate limiting (tier-aware): prevents burst abuse
+      const tierCfgForRL = getTierConfig(userTier);
+      const rlConfig = buildTierRateLimitConfig(tierCfgForRL.maxConcurrentTests, "agentTesting");
+      const rlResult = await checkRateLimitInMutation(ctx, String(userId), "agentTesting", rlConfig);
+      if (!rlResult.allowed) {
+        throw new Error(rlResult.reason || "Rate limited - too many requests per minute");
+      }
+    }
+
+    const effectiveUserId = userId;
 
     // Validate test query
     if (!args.testQuery || args.testQuery.length < 1 || args.testQuery.length > MAX_QUERY_LENGTH) {
@@ -142,6 +216,11 @@ export const submitTest = mutation({
 
     // Update test status to QUEUED
     await ctx.db.patch(testId, { status: "QUEUED" });
+
+    // BILLING: Increment user's weighted execution units ONLY for cloud models (not Ollama)
+    if (!isOllamaModel) {
+      await incrementUsageAndReportOverageImpl( ctx, userId, { updateLastTestAt: true, modelId: agent.model } );
+    }
 
     // Trigger queue processor immediately (on-demand processing to save costs)
     await ctx.scheduler.runAfter(0, internal.queueProcessor.processQueue);
@@ -228,16 +307,20 @@ export const cancelTest = mutation({
   args: { testId: v.id("testExecutions") },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
-    
+
+    // SECURITY: Require authentication
+    if (!userId) {
+      throw new Error("Authentication required. Please sign in to cancel tests.");
+    }
+
     const test = await ctx.db.get(args.testId);
     if (!test) {
       throw new Error("Test not found");
     }
 
-    // Allow anonymous users to cancel their own tests
-    // For authenticated users, verify ownership
-    if (userId && test.userId !== userId) {
-      throw new Error("Not authorized");
+    // SECURITY: Verify ownership
+    if (test.userId !== userId) {
+      throw new Error("Not authorized to cancel this test.");
     }
 
     if (test.status === "COMPLETED" || test.status === "FAILED") {
@@ -307,20 +390,57 @@ export const retryTest = mutation({
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
-    
+
+    // SECURITY: Require authentication
+    if (!userId) {
+      throw new Error("Authentication required. Please sign in to retry tests.");
+    }
+
     const originalTest = await ctx.db.get(args.testId);
     if (!originalTest) {
       throw new Error("Test not found");
     }
 
-    // Allow anonymous users to retry their own tests
-    // For authenticated users, verify ownership
-    if (userId && originalTest.userId !== userId) {
-      throw new Error("Not authorized");
+    // SECURITY: Verify ownership
+    if (originalTest.userId !== userId) {
+      throw new Error("Not authorized to retry this test.");
     }
 
-    // Use original userId (which might be anonymous temp ID)
-    const effectiveUserId = userId || originalTest.userId;
+    // Check if this is an Ollama test (FREE and unlimited!)
+    const agent = await ctx.db.get(originalTest.agentId);
+    const isOllamaModel = agent ? (agent.model.includes(':') || agent.deploymentType === "ollama") : false;
+
+    // RATE LIMITING: Only for cloud models (Ollama is FREE!)
+    if (!isOllamaModel) {
+      const user = await ctx.db.get(userId);
+      if (!user) {
+        throw new Error("User not found");
+      }
+
+      const userTier = user.tier || "freemium";
+      const executionsThisMonth = user.executionsThisMonth || 0;
+
+      // Check rate limits using centralized tier config
+      const retestLimitCheck = checkExecutionLimit(userTier, executionsThisMonth);
+      if (!retestLimitCheck.allowed) {
+        const retestTierCfg = getTierConfig(userTier);
+        throw new Error(
+          `${retestTierCfg.displayName} tier cloud test limit reached ` +
+          `(${retestTierCfg.monthlyExecutions} tests/month). ` +
+          getUpgradeMessage(userTier)
+        );
+      }
+
+      // Per-minute rate limiting (tier-aware): prevents burst abuse
+      const retestTierCfgRL = getTierConfig(userTier);
+      const retestRLConfig = buildTierRateLimitConfig(retestTierCfgRL.maxConcurrentTests, "agentTesting");
+      const retestRLResult = await checkRateLimitInMutation(ctx, String(userId), "agentTesting", retestRLConfig);
+      if (!retestRLResult.allowed) {
+        throw new Error(retestRLResult.reason || "Rate limited - too many requests per minute");
+      }
+    }
+
+    const effectiveUserId = userId;
 
     // Create new test with same configuration
     const newTestId = await ctx.db.insert("testExecutions", {
@@ -349,6 +469,12 @@ export const retryTest = mutation({
     });
 
     await ctx.db.patch(newTestId, { status: "QUEUED" });
+
+    // BILLING: Increment user's weighted execution units ONLY for cloud models (not Ollama)
+    if (!isOllamaModel) {
+      const retryModelId = originalTest.modelConfig?.modelId || originalTest.modelProvider || "anthropic.claude-haiku-4-5-20251001-v1:0";
+      await incrementUsageAndReportOverageImpl( ctx, userId, { updateLastTestAt: true, modelId: retryModelId } );
+    }
 
     // Trigger queue processor immediately (on-demand processing)
     await ctx.scheduler.runAfter(0, internal.queueProcessor.processQueue);
@@ -439,7 +565,7 @@ export const updateStatus = internalMutation({
       if (args.response) {
         updates.response = args.response;
       }
-      
+
       // Add assistant response to conversation if exists
       if (test.conversationId && args.response && args.success) {
         await ctx.runMutation(internal.conversations.addMessageInternal, {
@@ -664,7 +790,7 @@ function extractModelConfig(model: string, deploymentType: string): {
       },
     };
   }
-  
+
   if (deploymentType === "ollama") {
     return {
       modelProvider: "ollama",
@@ -678,8 +804,8 @@ function extractModelConfig(model: string, deploymentType: string): {
 
   // Determine based on model ID format
   // Bedrock models: anthropic.*, amazon.*, ai21.*, cohere.*, meta.*, mistral.*
-  if (model.startsWith("anthropic.") || 
-      model.startsWith("amazon.") || 
+  if (model.startsWith("anthropic.") ||
+      model.startsWith("amazon.") ||
       model.startsWith("ai21.") ||
       model.startsWith("cohere.") ||
       model.startsWith("meta.") ||
@@ -693,7 +819,7 @@ function extractModelConfig(model: string, deploymentType: string): {
       },
     };
   }
-  
+
   // Ollama models: contain colon (e.g., "llama3:8b", "qwen3:4b")
   if (model.includes(':')) {
     return {
@@ -743,35 +869,50 @@ async function getQueuePosition(ctx: any, testId: string): Promise<number> {
 }
 
 /**
- * Execute agent directly (for MCP tool invocation)
- *
- * DEPRECATED: This function is no longer used.
- * Use api.strandsAgentExecution.executeAgentWithStrandsAgents instead,
- * which is fully event-driven and calls AgentCore directly without polling.
- *
- * Kept for backward compatibility only.
+ * Increment user usage counter (internal)
+ * Tracks successful test executions only
  */
-export const executeAgent = action({
+export const incrementUserUsage = internalMutation({
   args: {
-    agentId: v.id("agents"),
-    input: v.string(),
+    userId: v.id("users"),
+    testId: v.id("testExecutions"),
+    usage: v.optional(v.object({
+      inputTokens: v.number(),
+      outputTokens: v.number(),
+      totalTokens: v.number(),
+    })),
+    executionTime: v.optional(v.number()),
+    executionMethod: v.optional(v.string()),
+    modelId: v.optional(v.string()),
   },
-  handler: async (ctx, args): Promise<{
-    success: boolean;
-    response: string | null;
-    error?: string;
-  }> => {
-    // Redirect to event-driven execution
-    const result = await ctx.runAction(api.strandsAgentExecution.executeAgentWithStrandsAgents, {
-      agentId: args.agentId,
-      message: args.input,
-      // No conversationId for MCP tool invocations (stateless)
+  handler: async (ctx, args) => {
+    const user = await ctx.db.get(args.userId);
+    if (!user) return;
+
+    // NOTE: executionsThisMonth is already incremented in submitTest for cloud models.
+    // Only update token usage and execution time here to avoid double-counting.
+    await ctx.db.patch(args.userId, {
+      lastTestAt: Date.now(),
+      totalTokensUsed: (user.totalTokensUsed || 0) + (args.usage?.totalTokens || 0),
+      totalExecutionTime: (user.totalExecutionTime || 0) + (args.executionTime || 0),
     });
 
-    return {
-      success: result.success,
-      response: result.content || null,
-      error: result.error,
-    };
+    // LOG ONLY WHEN USED (no background processes)
+    await ctx.runMutation(internal.auditLogs.logEvent, {
+      eventType: "test_execution",
+      userId: args.userId,
+      action: "test_completed",
+      resource: "test_execution",
+      resourceId: args.testId,
+      success: true,
+      details: {
+        tier: user.tier,
+        executionsThisMonth: user.executionsThisMonth || 0,
+        tokenUsage: args.usage,
+        executionTime: args.executionTime,
+        executionMethod: args.executionMethod,
+        estimatedCost: args.usage ? calculateBedrockCost(args.usage, args.modelId || "anthropic.claude-3-5-sonnet-20241022-v2:0") : 0,
+      },
+    });
   },
 });

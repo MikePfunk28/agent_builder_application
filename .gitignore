@@ -116,3 +116,21 @@ current_logs.txt
 agent_builder_full_architecture_with_api_gateway
 agent_builder_complete_infrastructure
 
+.amazonq/agents/default.json
+evaluators/diagram_test.py
+evaluators/dynamic_mcp.py
+
+evaluators/dynamic_model_selection.py
+evaluators/evaluator_workflow.py
+evaluators/llm-judge.py
+evaluators/structured_eval.py
+evaluators/tool_context.py
+evaluators/tool_eval.py
+langchain_chain.py
+mydiagram.py
+diagrams/Web Application Architecture..png
+evaluators/db_tool.py
+ARCHITECTURE_DIAGRAM.txt
+OLLAMA_QUICK_SUMMARY.txt
+mcp.json
+tmp_write_check.txt

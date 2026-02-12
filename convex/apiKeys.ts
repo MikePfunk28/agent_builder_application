@@ -7,6 +7,7 @@ import { mutation, query, action, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { api, internal } from "./_generated/api";
+import { getTierConfig } from "./lib/tierConfig";
 
 /**
  * Generate API key for user
@@ -241,35 +242,15 @@ export const incrementUsage = mutation({
 });
 
 /**
- * Get tier limits
+ * Get tier limits - delegates to centralized tierConfig.
  */
 function getTierLimits(tier: string) {
-  switch (tier) {
-    case "freemium":
-      return {
-        testsPerMonth: 10,
-        maxConcurrentTests: 1,
-        maxAgents: 5,
-      };
-    case "personal":
-      return {
-        testsPerMonth: 1000,
-        maxConcurrentTests: 5,
-        maxAgents: 50,
-      };
-    case "enterprise":
-      return {
-        testsPerMonth: 10000,
-        maxConcurrentTests: 20,
-        maxAgents: 500,
-      };
-    default:
-      return {
-        testsPerMonth: 10,
-        maxConcurrentTests: 1,
-        maxAgents: 5,
-      };
-  }
+  const config = getTierConfig(tier);
+  return {
+    testsPerMonth: config.monthlyExecutions === -1 ? Infinity : config.monthlyExecutions,
+    maxConcurrentTests: config.maxConcurrentTests,
+    maxAgents: config.maxAgents,
+  };
 }
 
 /**

@@ -1,7 +1,7 @@
 /**
  * Model Benchmark Database
  * Comprehensive scoring based on real benchmarks
- * 
+ *
  * Benchmarks included:
  * - MMLU (Massive Multitask Language Understanding)
  * - HumanEval (Code generation)
@@ -12,6 +12,9 @@
  * - TruthfulQA (Factual accuracy)
  * - MT-Bench (Multi-turn conversation)
  */
+
+import { query } from "./_generated/server";
+import { v } from "convex/values";
 
 export interface ModelBenchmarks {
   model: string;
@@ -272,10 +275,10 @@ export const MODEL_BENCHMARKS: ModelBenchmarks[] = [
     recencyScore: 92,
     
     totalScore: 159.4,
-    valueScore: Infinity, // Free model, but compute costs
-    efficiencyScore: Infinity,
+    valueScore: -1, // Free model — sentinel for "not applicable"
+    efficiencyScore: -1,
   },
-  
+
   {
     model: "llama3:8b",
     provider: "ollama",
@@ -306,10 +309,10 @@ export const MODEL_BENCHMARKS: ModelBenchmarks[] = [
     recencyScore: 88,
     
     totalScore: 87.2,
-    valueScore: Infinity,
-    efficiencyScore: Infinity,
+    valueScore: -1,
+    efficiencyScore: -1,
   },
-  
+
   {
     model: "gemma2:27b",
     provider: "ollama",
@@ -340,10 +343,10 @@ export const MODEL_BENCHMARKS: ModelBenchmarks[] = [
     recencyScore: 90,
     
     totalScore: 109.1,
-    valueScore: Infinity,
-    efficiencyScore: Infinity,
+    valueScore: -1,
+    efficiencyScore: -1,
   },
-  
+
   {
     model: "gemma2:2b",
     provider: "ollama",
@@ -374,8 +377,8 @@ export const MODEL_BENCHMARKS: ModelBenchmarks[] = [
     recencyScore: 90,
     
     totalScore: 47.5,
-    valueScore: Infinity,
-    efficiencyScore: Infinity,
+    valueScore: -1,
+    efficiencyScore: -1,
   },
 ];
 
@@ -421,7 +424,7 @@ export function getBestValueModels(
   limit: number = 5
 ): ModelBenchmarks[] {
   return [...MODEL_BENCHMARKS]
-    .filter(m => m.valueScore !== Infinity && m.overallAbility >= minAbility)
+    .filter(m => m.valueScore > 0 && m.overallAbility >= minAbility)
     .sort((a, b) => b.valueScore - a.valueScore)
     .slice(0, limit);
 }
@@ -480,17 +483,39 @@ export function recommendModelForComplexity(
 ): ModelBenchmarks {
   // Map complexity to required ability
   const requiredAbility = complexity * 0.8; // 80% of complexity score
-  
+
   // Map complexity to max cost
   const maxCost = complexity < 30 ? 0.5 :
                   complexity < 50 ? 2.0 :
                   complexity < 70 ? 5.0 :
                   15.0;
-  
+
   const optimal = findOptimalModel(taskType, maxCost, requiredAbility);
-  
+
   if (optimal) return optimal;
-  
+
   // Fallback: return best available
   return MODEL_BENCHMARKS[0];
 }
+
+/**
+ * Convex Query: Get all model benchmarks
+ * Safe for browser consumption
+ */
+export const getAllBenchmarks = query({
+  args: {},
+  handler: async () => {
+    return MODEL_BENCHMARKS;
+  },
+});
+
+/**
+ * Convex Query: Get benchmark for specific model
+ * Safe for browser consumption
+ */
+export const getBenchmarkForModel = query({
+  args: { modelId: v.string() },
+  handler: async (_, { modelId }) => {
+    return MODEL_BENCHMARKS.find(m => m.model === modelId);
+  },
+});

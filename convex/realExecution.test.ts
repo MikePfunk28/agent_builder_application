@@ -28,11 +28,10 @@ describe("REAL Agent Execution (Integration Tests)", () => {
     // Create test user
     testUserId = await t.run(async (ctx: any) => {
       return await ctx.db.insert("users", {
-        userId: "test-user-real-execution",
         email: "real@test.com",
         name: "Real Test User",
         tier: "personal",
-        testsThisMonth: 0,
+        executionsThisMonth: 0,
         createdAt: Date.now(),
         isAnonymous: false,
       });

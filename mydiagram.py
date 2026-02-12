@@ -1,1 +1,0 @@
-I asked you about the mcp implementation, please let the fucking other bot handle that fucked file.

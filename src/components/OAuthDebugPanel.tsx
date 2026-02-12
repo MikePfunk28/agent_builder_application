@@ -84,7 +84,6 @@ export function OAuthDebugPanel() {
           <li>Ensure all environment variables are set in Convex dashboard</li>
           <li>Add the callback URLs above to each OAuth provider's configuration</li>
           <li>For GitHub: Settings → Developer settings → OAuth Apps</li>
-          <li>For Google: Cloud Console → APIs & Services → Credentials</li>
           <li>For Cognito: AWS Console → Cognito → User Pools → App clients</li>
         </ol>
       </div>

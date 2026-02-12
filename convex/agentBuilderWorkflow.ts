@@ -2,28 +2,28 @@
 
 /**
  * Agent Builder Workflow System
- * 
+ *
  * Multi-stage prompt chaining workflow that guides Claude through
  * intelligent agent design and implementation.
  */
 
 import { v } from "convex/values";
 import { action } from "./_generated/server";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
 
 const WORKFLOW_MODEL_ID =
   process.env.BEDROCK_WORKFLOW_MODEL_ID ||
   process.env.DEFAULT_BEDROCK_MODEL_ID ||
-  "us.anthropic.claude-3-5-haiku-20241022-v1:0";
+  "anthropic.claude-haiku-4-5-20251001-v1:0";
 const WORKFLOW_REGION =
   process.env.BEDROCK_REGION ||
   process.env.AWS_REGION ||
   "us-east-1";
 
-const bedrockClient = new BedrockRuntimeClient({
+const bedrockClient = new BedrockRuntimeClient( {
   region: WORKFLOW_REGION,
-});
+} );
 
 type WorkflowModelPayload = {
   stageName: string;
@@ -177,38 +177,58 @@ Output:
 /**
  * Execute a single workflow stage
  */
-export const executeWorkflowStage = action({
+export const executeWorkflowStage = action( {
   args: {
     stage: v.string(),
     userInput: v.string(),
-    previousContext: v.optional(v.array(v.object({
+    previousContext: v.optional( v.array( v.object( {
       stage: v.string(),
       output: v.string()
-    }))),
-    conversationId: v.optional(v.string())
+    } ) ) ),
+    conversationId: v.optional( v.string() )
   },
-  handler: async (ctx, args) => {
+  handler: async ( ctx, args ) => {
+    // Gate: enforce tier-based Bedrock access
+    const { requireBedrockAccess } = await import( "./lib/bedrockGate" );
+    const gateResult = await requireBedrockAccess(
+      ctx, WORKFLOW_MODEL_ID,
+      async ( lookupArgs ) => ctx.runQuery( internal.users.getInternal, lookupArgs ),
+    );
+    if ( !gateResult.allowed ) {
+      throw new Error( gateResult.reason );
+    }
+
     const stage = WORKFLOW_STAGES[args.stage as keyof typeof WORKFLOW_STAGES];
-    if (!stage) {
-      throw new Error(`Invalid workflow stage: ${args.stage}`);
+    if ( !stage ) {
+      throw new Error( `Invalid workflow stage: ${args.stage}` );
     }
 
     // Build context from previous stages
     let contextPrompt = "";
-    if (args.previousContext && args.previousContext.length > 0) {
+    if ( args.previousContext && args.previousContext.length > 0 ) {
       contextPrompt = "\n\nPREVIOUS WORKFLOW OUTPUTS:\n\n";
-      for (const ctx of args.previousContext) {
-        contextPrompt += `=== ${ctx.stage.toUpperCase()} ===\n${ctx.output}\n\n`;
+      for ( const prevCtx of args.previousContext ) {
+        contextPrompt += `=== ${prevCtx.stage.toUpperCase()} ===\n${prevCtx.output}\n\n`;
       }
     }
 
     const fullPrompt = `${contextPrompt}USER REQUEST:\n${args.userInput}\n\nYour task: ${stage.systemPrompt}`;
 
-    const result = await invokeWorkflowModel({
+    const result = await invokeWorkflowModel( {
       stageName: stage.name,
       systemPrompt: stage.systemPrompt,
       userPrompt: fullPrompt,
-    });
+    } );
+
+    // Meter: token-based billing for this workflow stage
+    if ( result.inputTokens > 0 || result.outputTokens > 0 ) {
+      await ctx.runMutation( internal.stripeMutations.incrementUsageAndReportOverage, {
+        userId: gateResult.userId as any,
+        modelId: WORKFLOW_MODEL_ID,
+        inputTokens: result.inputTokens,
+        outputTokens: result.outputTokens,
+      } );
+    }
 
     return {
       stage: stage.name,
@@ -219,9 +239,9 @@ export const executeWorkflowStage = action({
       }
     };
   }
-});
+} );
 
-async function invokeWorkflowModel(payload: WorkflowModelPayload): Promise<WorkflowModelResult> {
+async function invokeWorkflowModel( payload: WorkflowModelPayload ): Promise<WorkflowModelResult> {
   const { stageName, systemPrompt, userPrompt } = payload;
 
   const requestBody = {
@@ -242,26 +262,26 @@ async function invokeWorkflowModel(payload: WorkflowModelPayload): Promise<Workf
     ],
   };
 
-  const command = new InvokeModelCommand({
+  const command = new InvokeModelCommand( {
     modelId: WORKFLOW_MODEL_ID,
     contentType: "application/json",
     accept: "application/json",
-    body: JSON.stringify(requestBody),
-  });
+    body: JSON.stringify( requestBody ),
+  } );
 
   try {
-    const response = await bedrockClient.send(command);
-    const decoded = new TextDecoder().decode(response.body);
-    const json = JSON.parse(decoded);
-    const contentBlocks = Array.isArray(json.content) ? json.content : [];
+    const response = await bedrockClient.send( command );
+    const decoded = new TextDecoder().decode( response.body );
+    const json = JSON.parse( decoded );
+    const contentBlocks = Array.isArray( json.content ) ? json.content : [];
     const outputText = contentBlocks
-      .filter((block: any) => block?.type === "text" && typeof block.text === "string")
-      .map((block: any) => block.text as string)
-      .join("\n\n")
+      .filter( ( block: any ) => block?.type === "text" && typeof block.text === "string" )
+      .map( ( block: any ) => block.text as string )
+      .join( "\n\n" )
       .trim();
 
-    if (!outputText) {
-      throw new Error("Bedrock response did not include text content");
+    if ( !outputText ) {
+      throw new Error( "Bedrock response did not include text content" );
     }
 
     const usage = json.usage ?? {};
@@ -273,13 +293,13 @@ async function invokeWorkflowModel(payload: WorkflowModelPayload): Promise<Workf
       inputTokens,
       outputTokens,
     };
-  } catch (error: any) {
-    console.error("Bedrock workflow invocation failed", {
+  } catch ( error: any ) {
+    console.error( "Bedrock workflow invocation failed", {
       stageName,
       modelId: WORKFLOW_MODEL_ID,
       region: WORKFLOW_REGION,
       error: error?.message,
-    });
+    } );
     throw new Error(
       `Bedrock workflow stage "${stageName}" failed: ${error?.message || "Unknown error"}`
     );
@@ -289,12 +309,22 @@ async function invokeWorkflowModel(payload: WorkflowModelPayload): Promise<Workf
 /**
  * Execute the complete agent building workflow
  */
-export const executeCompleteWorkflow = action({
+export const executeCompleteWorkflow = action( {
   args: {
     userRequest: v.string(),
-    conversationId: v.optional(v.string())
+    conversationId: v.optional( v.string() )
   },
-  handler: async (ctx, args) => {
+  handler: async ( ctx, args ) => {
+    // Gate: enforce tier-based Bedrock access
+    const { requireBedrockAccess } = await import( "./lib/bedrockGate" );
+    const gateResult = await requireBedrockAccess(
+      ctx, WORKFLOW_MODEL_ID,
+      async ( lookupArgs ) => ctx.runQuery( internal.users.getInternal, lookupArgs ),
+    );
+    if ( !gateResult.allowed ) {
+      throw new Error( gateResult.reason );
+    }
+
     const workflowResults: Array<{
       stage: string;
       output: string;
@@ -303,7 +333,7 @@ export const executeCompleteWorkflow = action({
 
     const stages = [
       "REQUIREMENTS",
-      "ARCHITECTURE", 
+      "ARCHITECTURE",
       "TOOL_DESIGN",
       "IMPLEMENTATION",
       "CODE_GENERATION",
@@ -311,26 +341,26 @@ export const executeCompleteWorkflow = action({
     ];
 
     // Execute each stage sequentially, passing context forward
-    for (const stageName of stages) {
-      const result = await ctx.runAction(api.agentBuilderWorkflow.executeWorkflowStage, {
+    for ( const stageName of stages ) {
+      const result = await ctx.runAction( api.agentBuilderWorkflow.executeWorkflowStage, {
         stage: stageName,
         userInput: args.userRequest,
-        previousContext: workflowResults.map(r => ({
+        previousContext: workflowResults.map( r => ( {
           stage: r.stage,
           output: r.output
-        })),
+        } ) ),
         conversationId: args.conversationId
-      });
+      } );
 
-      workflowResults.push(result);
+      workflowResults.push( result );
     }
 
     // Calculate total usage
     const totalUsage = workflowResults.reduce(
-      (acc, r) => ({
+      ( acc, r ) => ( {
         inputTokens: acc.inputTokens + r.usage.inputTokens,
         outputTokens: acc.outputTokens + r.usage.outputTokens
-      }),
+      } ),
       { inputTokens: 0, outputTokens: 0 }
     );
 
@@ -341,26 +371,36 @@ export const executeCompleteWorkflow = action({
       finalOutput: workflowResults[workflowResults.length - 1].output
     };
   }
-});
+} );
 
 /**
  * Stream workflow execution with real-time updates
  */
-export const streamWorkflowExecution = action({
+export const streamWorkflowExecution = action( {
   args: {
     userRequest: v.string(),
-    conversationId: v.optional(v.string())
+    conversationId: v.optional( v.string() )
   },
-  handler: async (ctx, args) => {
-    const Anthropic = (await import("@anthropic-ai/sdk")).default;
-    const anthropic = new Anthropic({
+  handler: async ( ctx, args ) => {
+    // Gate: enforce tier-based Bedrock access
+    const { requireBedrockAccess } = await import( "./lib/bedrockGate" );
+    const gateResult = await requireBedrockAccess(
+      ctx, WORKFLOW_MODEL_ID,
+      async ( lookupArgs ) => ctx.runQuery( internal.users.getInternal, lookupArgs ),
+    );
+    if ( !gateResult.allowed ) {
+      throw new Error( gateResult.reason );
+    }
+
+    const Anthropic = ( await import( "@anthropic-ai/sdk" ) ).default;
+    const anthropic = new Anthropic( {
       apiKey: process.env.ANTHROPIC_API_KEY,
-    });
+    } );
 
     const stages = [
       "REQUIREMENTS",
       "ARCHITECTURE",
-      "TOOL_DESIGN", 
+      "TOOL_DESIGN",
       "IMPLEMENTATION",
       "CODE_GENERATION",
       "VALIDATION"
@@ -368,22 +408,22 @@ export const streamWorkflowExecution = action({
 
     const workflowContext: Array<{ stage: string; output: string }> = [];
 
-    for (const stageName of stages) {
+    for ( const stageName of stages ) {
       const stage = WORKFLOW_STAGES[stageName as keyof typeof WORKFLOW_STAGES];
-      
+
       // Build context
       let contextPrompt = "";
-      if (workflowContext.length > 0) {
+      if ( workflowContext.length > 0 ) {
         contextPrompt = "\n\nPREVIOUS WORKFLOW OUTPUTS:\n\n";
-        for (const ctx of workflowContext) {
-          contextPrompt += `=== ${ctx.stage.toUpperCase()} ===\n${ctx.output}\n\n`;
+        for ( const prevCtx of workflowContext ) {
+          contextPrompt += `=== ${prevCtx.stage.toUpperCase()} ===\n${prevCtx.output}\n\n`;
         }
       }
 
       const fullPrompt = `${contextPrompt}USER REQUEST:\n${args.userRequest}\n\nYour task: ${stage.systemPrompt}`;
 
       // Stream this stage
-      const stream = await anthropic.messages.create({
+      const stream = await anthropic.messages.create( {
         model: "claude-3-7-sonnet-20250219",
         max_tokens: 8000,
         temperature: 0.7,
@@ -393,21 +433,21 @@ export const streamWorkflowExecution = action({
           content: fullPrompt
         }],
         stream: true
-      });
+      } );
 
       let stageOutput = "";
-      
-      for await (const event of stream) {
-        if (event.type === "content_block_delta" && 
-            event.delta.type === "text_delta") {
+
+      for await ( const event of stream ) {
+        if ( event.type === "content_block_delta" &&
+          event.delta.type === "text_delta" ) {
           stageOutput += event.delta.text;
         }
       }
 
-      workflowContext.push({
+      workflowContext.push( {
         stage: stage.name,
         output: stageOutput
-      });
+      } );
     }
 
     return {
@@ -415,4 +455,4 @@ export const streamWorkflowExecution = action({
       workflow: workflowContext
     };
   }
-});
+} );

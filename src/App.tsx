@@ -10,12 +10,14 @@ import { ErrorLogsPanel } from "./components/ErrorLogsPanel";
 import { AuditLogsPanel } from "./components/AuditLogsPanel";
 import { AIAgentBuilder } from "./components/AIAgentBuilder";
 import { InterleavedChat } from "./components/InterleavedChat";
+import { VisualScriptingBuilder } from "./components/VisualScriptingBuilder";
+import { PricingPanel } from "./components/PricingPanel";
 import { useState } from "react";
-import { Bot, Home, Server, AlertCircle, FileText, Sparkles, MessageSquare } from "lucide-react";
+import { Bot, Home, Server, AlertCircle, FileText, Sparkles, MessageSquare, GitBranch, CreditCard } from "lucide-react";
 import { BuilderAutomationProvider } from "./context/BuilderAutomationContext";
 
 export default function App() {
-  const [currentView, setCurrentView] = useState<"dashboard" | "builder" | "aiBuilder" | "chat" | "mcp" | "errors" | "audit" | "settings">("dashboard");
+  const [currentView, setCurrentView] = useState<"dashboard" | "builder" | "aiBuilder" | "chat" | "mcp" | "errors" | "audit" | "settings" | "visualScripting">("dashboard");
 
   return (
     <BuilderAutomationProvider>
@@ -28,14 +30,14 @@ export default function App() {
               Agent Builder
             </h1>
           </div>
-          
+
           <Authenticated>
             <nav className="flex items-center gap-6">
               <button
                 onClick={() => setCurrentView("dashboard")}
                 className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
-                  currentView === "dashboard" 
-                    ? "bg-green-900/30 text-green-400" 
+                  currentView === "dashboard"
+                    ? "bg-green-900/30 text-green-400"
                     : "text-green-600 hover:text-green-400"
                 }`}
               >
@@ -45,8 +47,8 @@ export default function App() {
               <button
                 onClick={() => setCurrentView("builder")}
                 className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
-                  currentView === "builder" 
-                    ? "bg-green-900/30 text-green-400" 
+                  currentView === "builder"
+                    ? "bg-green-900/30 text-green-400"
                     : "text-green-600 hover:text-green-400"
                 }`}
               >
@@ -56,8 +58,8 @@ export default function App() {
               <button
                 onClick={() => setCurrentView("aiBuilder")}
                 className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
-                  currentView === "aiBuilder" 
-                    ? "bg-green-900/30 text-green-400" 
+                  currentView === "aiBuilder"
+                    ? "bg-green-900/30 text-green-400"
                     : "text-green-600 hover:text-green-400"
                 }`}
               >
@@ -65,10 +67,21 @@ export default function App() {
                 AI Builder
               </button>
               <button
+                onClick={() => setCurrentView("visualScripting")}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
+                  currentView === "visualScripting"
+                    ? "bg-green-900/30 text-green-400"
+                    : "text-green-600 hover:text-green-400"
+                }`}
+              >
+                <GitBranch className="w-4 h-4" />
+                Visual Scripting
+              </button>
+              <button
                 onClick={() => setCurrentView("chat")}
                 className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
-                  currentView === "chat" 
-                    ? "bg-green-900/30 text-green-400" 
+                  currentView === "chat"
+                    ? "bg-green-900/30 text-green-400"
                     : "text-green-600 hover:text-green-400"
                 }`}
               >
@@ -78,8 +91,8 @@ export default function App() {
               <button
                 onClick={() => setCurrentView("mcp")}
                 className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
-                  currentView === "mcp" 
-                    ? "bg-green-900/30 text-green-400" 
+                  currentView === "mcp"
+                    ? "bg-green-900/30 text-green-400"
                     : "text-green-600 hover:text-green-400"
                 }`}
               >
@@ -89,8 +102,8 @@ export default function App() {
               <button
                 onClick={() => setCurrentView("errors")}
                 className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
-                  currentView === "errors" 
-                    ? "bg-green-900/30 text-green-400" 
+                  currentView === "errors"
+                    ? "bg-green-900/30 text-green-400"
                     : "text-green-600 hover:text-green-400"
                 }`}
               >
@@ -100,13 +113,24 @@ export default function App() {
               <button
                 onClick={() => setCurrentView("audit")}
                 className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
-                  currentView === "audit" 
-                    ? "bg-green-900/30 text-green-400" 
+                  currentView === "audit"
+                    ? "bg-green-900/30 text-green-400"
                     : "text-green-600 hover:text-green-400"
                 }`}
               >
                 <FileText className="w-4 h-4" />
                 Audit
+              </button>
+              <button
+                onClick={() => setCurrentView("settings")}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
+                  currentView === "settings"
+                    ? "bg-green-900/30 text-green-400"
+                    : "text-green-600 hover:text-green-400"
+                }`}
+              >
+                <CreditCard className="w-4 h-4" />
+                Billing
               </button>
               <SignOutButton />
             </nav>
@@ -155,14 +179,14 @@ export default function App() {
           <Content currentView={currentView} onNavigate={setCurrentView} />
         </Authenticated>
       </main>
-      
+
       <Toaster theme="dark" />
     </div>
     </BuilderAutomationProvider>
   );
 }
 
-function Content({ currentView, onNavigate }: { currentView: string; onNavigate: (view: "dashboard" | "builder" | "aiBuilder" | "chat" | "mcp" | "errors" | "audit" | "settings") => void }) {
+function Content({ currentView, onNavigate }: { currentView: string; onNavigate: (view: "dashboard" | "builder" | "aiBuilder" | "chat" | "mcp" | "errors" | "audit" | "settings" | "visualScripting") => void }) {
   const loggedInUser = useQuery(api.auth.loggedInUser);
 
   if (loggedInUser === undefined) {
@@ -189,6 +213,10 @@ function Content({ currentView, onNavigate }: { currentView: string; onNavigate:
       return <ErrorLogsPanel />;
     case "audit":
       return <AuditLogsPanel />;
+    case "visualScripting":
+      return <VisualScriptingBuilder />;
+    case "settings":
+      return <PricingPanel />;
     case "dashboard":
     default:
       return <AgentDashboard />;

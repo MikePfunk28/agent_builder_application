@@ -1,6 +1,6 @@
 /**
  * Centralized Error Logging and Audit System
- * 
+ *
  * This module provides comprehensive error logging and audit trail functionality
  * for OAuth authentication, MCP operations, and agent invocations.
  */
@@ -27,7 +27,7 @@ export const logError = mutation({
       requestId: v.optional(v.string()),
     })),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx: any, args: any): Promise<string> => {
     const errorId = await ctx.db.insert("errorLogs", {
       category: args.category,
       severity: args.severity,

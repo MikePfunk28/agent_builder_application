@@ -12,6 +12,35 @@ if ( !convexUrl ) {
 }
 const convex = new ConvexReactClient( convexUrl );
 
+if (typeof window !== "undefined") {
+  const shouldSuppressExtensionNoise = (source?: string) =>
+    Boolean(source && source.includes("content_script"));
+
+  window.addEventListener(
+    "error",
+    (event) => {
+      if (shouldSuppressExtensionNoise(event.filename)) {
+        event.preventDefault();
+      }
+    },
+    true
+  );
+
+  window.addEventListener(
+    "unhandledrejection",
+    (event) => {
+      const reason =
+        typeof event.reason === "string"
+          ? event.reason
+          : event.reason?.message || event.reason?.stack;
+      if (shouldSuppressExtensionNoise(reason)) {
+        event.preventDefault();
+      }
+    },
+    true
+  );
+}
+
 createRoot( document.getElementById( "root" )! ).render(
   <ConvexAuthProvider client={convex}>
     <App />

@@ -110,6 +110,7 @@ export function CognitoLogin({ onSuccess, onCancel, showCancel = true }: Cognito
                 placeholder="agentbuilder"
                 required
                 disabled={isSubmitting}
+                autoComplete="username"
               />
             </div>
 
@@ -128,6 +129,7 @@ export function CognitoLogin({ onSuccess, onCancel, showCancel = true }: Cognito
                 placeholder="Enter your password"
                 required
                 disabled={isSubmitting}
+                autoComplete="current-password"
               />
             </div>
 

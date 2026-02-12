@@ -7,7 +7,13 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { action } from "./_generated/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
+
+// Stripe mutations live in stripeMutations.ts. Cast bridges codegen gap.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const internalStripeMutations = ( internal as any ).stripeMutations;
+// Direct import for mutation handlers (mutations cannot call ctx.runMutation)
+import { incrementUsageAndReportOverageImpl } from "./stripeMutations";
 
 // Main deployment entry point - routes to correct tier
 export const deployAgent = action({
@@ -64,14 +70,17 @@ async function deployTier1(ctx: any, args: any, userId: any): Promise<any> {
 
   if (!user) throw new Error("User not found");
 
-  const testsThisMonth: number = user.testsThisMonth || 0;
-  const limit = 10; // Free tier limit
+  const executionsThisMonth: number = user.executionsThisMonth || 0;
+  // Use centralized tier config for limit
+  const { getTierConfig } = await import("./lib/tierConfig");
+  const freeTierConfig = getTierConfig("freemium");
+  const limit = freeTierConfig.monthlyExecutions;
 
-  if (testsThisMonth >= limit) {
+  if (executionsThisMonth >= limit) {
     return {
       success: false,
       error: "Free tier limit reached",
-      message: `You've used ${testsThisMonth}/${limit} free tests this month. Upgrade to deploy to your own AWS account!`,
+      message: `You've used ${executionsThisMonth}/${limit} free tests this month. Upgrade to Personal ($5/month) to deploy to your own AWS account!`,
       upgradeUrl: "/settings/aws",
     };
   }
@@ -82,6 +91,16 @@ async function deployTier1(ctx: any, args: any, userId: any): Promise<any> {
     const agent = await ctx.runQuery(api.agents.get, { id: args.agentId });
     if (!agent) {
       throw new Error("Agent not found");
+    }
+
+    // Validate model for AgentCore (Bedrock only)
+    if (!agent.model?.includes(".")) {
+      return {
+        success: false,
+        error: "Invalid model format",
+        message: "AgentCore requires AWS Bedrock models (e.g., anthropic.claude-sonnet-4-5). Upgrade to Personal tier for Ollama support.",
+        upgradeUrl: "/settings/aws",
+      };
     }
 
     // Extract dependencies from agent tools
@@ -110,17 +129,18 @@ async function deployTier1(ctx: any, args: any, userId: any): Promise<any> {
       throw new Error(result.error || "AgentCore deployment failed");
     }
 
-    // Increment usage counter
-    await ctx.runMutation(api.deploymentRouter.incrementUsage, {
+    // Increment usage counter (centralized in stripeMutations.ts)
+    await ctx.runMutation( internalStripeMutations.incrementUsageAndReportOverage, {
       userId,
-    });
+      modelId: agent.model,
+    } );
 
     return {
       success: true,
       tier: "freemium",
       result,
       message: "Agent deployed to AgentCore sandbox",
-      upgradePrompt: `You have ${limit - testsThisMonth - 1} free tests remaining. Upgrade to deploy to your own AWS account!`,
+      upgradePrompt: `You have ${limit - executionsThisMonth - 1} free tests remaining. Upgrade to deploy to your own AWS account!`,
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -182,20 +202,21 @@ async function deployTier3(_ctx: any, _args: any, _userId: string): Promise<any>
   }
 }
 
-// Increment usage counter for freemium users
+// Increment usage counter and report overage — delegates to shared helper
+// in stripeMutations.ts (single source of truth for usage + overage logic).
 export const incrementUsage = mutation({
   args: {
     userId: v.id("users"),
+    modelId: v.optional( v.string() ),
   },
   handler: async (ctx, args) => {
-    // userId is already the Convex document ID
-    const user = await ctx.db.get(args.userId);
-
-    if (!user) return;
-
-    await ctx.db.patch(args.userId, {
-      testsThisMonth: (user.testsThisMonth || 0) + 1,
-    });
+    const identity = await ctx.auth.getUserIdentity();
+    if ( !identity ) {
+      throw new Error( "Not authenticated" );
+    }
+    await incrementUsageAndReportOverageImpl( ctx, args.userId, {
+      modelId: args.modelId,
+    } );
   },
 });
 
@@ -210,7 +231,7 @@ export const resetMonthlyUsage = mutation({
 
     for (const user of users) {
       await ctx.db.patch(user._id, {
-        testsThisMonth: 0,
+        executionsThisMonth: 0,
       });
     }
 

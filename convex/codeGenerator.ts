@@ -127,7 +127,7 @@ function generateImports(tools: any[], deploymentType: string, modelId?: string)
   
   imports.push("");
   imports.push("# Tool imports");
-  imports.push("from strandsagents.tools import (");
+  imports.push("from strands_tools import (");
   
   // Add tool imports from strands-agents-tools
   const toolImports = new Set<string>();
@@ -312,17 +312,34 @@ function generateImports(tools: any[], deploymentType: string, modelId?: string)
   return imports.join("\n");
 }
 
-function generateToolConfigs(tools: any[]): string {
+function generateToolConfigs(tools: any[], linkedAgents?: Array<{agentId: string, agentName: string, description: string}>): string {
+  const toolCode: string[] = [];
+  
+  // Generate agent-as-tool wrappers for linked agents
+  if (linkedAgents && linkedAgents.length > 0) {
+    toolCode.push("# Agent-as-Tool Wrappers");
+    toolCode.push("# These agents can be invoked as tools for hierarchical coordination\n");
+    linkedAgents.forEach(agent => {
+      toolCode.push(generateAgentToolWrapper(agent.agentId, agent.agentName, agent.description));
+    });
+    toolCode.push("");
+  }
+  
   // Generate custom tool functions with @tool decorator
   const customTools = tools
     .filter(tool => !isBuiltInTool(tool.type))
     .map(tool => generateCustomToolFunction(tool));
   
-  if (customTools.length === 0) {
+  if (customTools.length > 0) {
+    toolCode.push("# Custom Tools");
+    toolCode.push(...customTools);
+  }
+  
+  if (toolCode.length === 0) {
     return "# All tools are built-in from strands-agents-tools";
   }
   
-  return customTools.join("\n\n");
+  return toolCode.join("\n\n");
 }
 
 /**
@@ -351,6 +368,44 @@ function isBuiltInTool(toolType: string): boolean {
   ];
   
   return builtInTools.includes(toolType);
+}
+
+/**
+ * Generate agent-as-tool wrapper
+ */
+function generateAgentToolWrapper(agentId: string, agentName: string, description: string): string {
+  const toolName = agentName.replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
+  
+  return `@tool(
+    name="${toolName}",
+    description="${description || `Invoke ${agentName} agent`}",
+    parameters={
+        "task": {
+            "type": "string",
+            "description": "Task or question for ${agentName}",
+            "required": True
+        }
+    }
+)
+async def ${toolName}(task: str) -> str:
+    """
+    Invoke ${agentName} agent as a tool.
+    Enables hierarchical agent coordination.
+    """
+    import os
+    import requests
+    
+    api_url = os.getenv("PLATFORM_API_URL", "https://api.mikepfunk.com")
+    
+    response = requests.post(
+        f"{api_url}/execute-agent",
+        json={"agentId": "${agentId}", "message": task},
+        headers={"Authorization": f"Bearer {os.getenv('PLATFORM_API_KEY')}"},
+        timeout=300
+    )
+    
+    result = response.json()
+    return result.get("content", "") if result.get("success") else f"Error: {result.get('error')}"`;
 }
 
 /**

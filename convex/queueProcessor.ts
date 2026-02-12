@@ -14,7 +14,7 @@ const MAX_CONCURRENT_TESTS = parseInt(process.env.MAX_CONCURRENT_TESTS || "10");
 /**
  * Main queue processor - triggered on-demand when tests are submitted
  * Also runs periodically as a backup (if enabled in crons.ts)
- * 
+ *
  * Cost optimization: Exits silently when queue is empty (no logs, minimal operations)
  */
 export const processQueue = internalAction({
@@ -79,42 +79,30 @@ export const processQueue = internalAction({
             continue;
           }
 
-          // Update test status to BUILDING
-          await ctx.runMutation(internal.testExecution.updateStatus, {
-            testId: test._id,
-            status: "BUILDING",
-          });
-
-          await ctx.runMutation(internal.testExecution.appendLogs, {
-            testId: test._id,
-            logs: [
-              "📦 Test claimed from queue",
-              "🔨 Starting container build...",
-            ],
-            timestamp: Date.now(),
-          });
-
-          // SMART ROUTING: Bedrock → AgentCore, Ollama → Lambda
+          // SMART ROUTING: Bedrock → AgentCore (simplified), Ollama → Fargate
           const agent = await ctx.runQuery(internal.agents.getInternal, { id: test.agentId });
           const modelId = agent?.model || test.modelConfig?.modelId || '';
-          
+
           // Check if Bedrock model (starts with provider prefix)
-          const isBedrockModel = modelId.startsWith('anthropic.') || 
-                                modelId.startsWith('amazon.') || 
+          const isBedrockModel = modelId.startsWith('anthropic.') ||
+                                modelId.startsWith('amazon.') ||
                                 modelId.startsWith('ai21.') ||
                                 modelId.startsWith('cohere.') ||
                                 modelId.startsWith('meta.') ||
                                 modelId.startsWith('mistral.');
-          
+
           let result;
           if (isBedrockModel) {
-            // Route to AgentCore Sandbox (fast, serverless, Bedrock only)
+            // Route to AgentCore (simplified: Direct Bedrock → Lambda backup)
             await ctx.runMutation(internal.testExecution.appendLogs, {
               testId: test._id,
-              logs: ['🚀 Routing to AgentCore Sandbox (Bedrock model)'],
+              logs: [
+                "📦 Test claimed from queue",
+                "🚀 Routing to AgentCore (Bedrock model - cost optimized)",
+              ],
               timestamp: Date.now(),
             });
-            
+
             result = await ctx.runAction(internal.agentcoreTestExecution.executeAgentCoreTest, {
               testId: test._id,
               agentId: test.agentId,
@@ -125,7 +113,10 @@ export const processQueue = internalAction({
             // Route to ECS Fargate (Docker support for Ollama)
             await ctx.runMutation(internal.testExecution.appendLogs, {
               testId: test._id,
-              logs: ['🚀 Routing to ECS Fargate (Ollama model)'],
+              logs: [
+                "📦 Test claimed from queue",
+                "🚀 Routing to ECS Fargate (Ollama model)",
+              ],
               timestamp: Date.now(),
             });
 
@@ -146,20 +137,20 @@ export const processQueue = internalAction({
           }
 
           if ("error" in result) {
-            // Failed to start container
-            console.error(`❌ Failed to start container for test ${test._id}:`, result.error);
+            // Failed to execute test
+            console.error(`❌ Failed to execute test ${test._id}:`, result.error);
 
             await ctx.runMutation(internal.testExecution.updateStatus, {
               testId: test._id,
               status: "FAILED",
               success: false,
               error: result.error,
-              errorStage: "build",
+              errorStage: "execution",
             });
 
             await ctx.runMutation(internal.testExecution.appendLogs, {
               testId: test._id,
-              logs: [`❌ Container start failed: ${result.error}`],
+              logs: [`❌ Test execution failed: ${result.error}`],
               timestamp: Date.now(),
             });
 
@@ -179,15 +170,14 @@ export const processQueue = internalAction({
               });
             }
           } else {
-            // Successfully completed (Lambda returns immediately)
-            console.log(`✅ Lambda test completed for ${test._id}`);
+            // Successfully completed - execution methods handle their own status updates and usage tracking
+            const executionMethod = (result as any).executionMethod || 'unknown';
+            console.log(`✅ Test ${test._id} completed successfully via ${executionMethod}`);
 
-            // Remove from queue
+            // Remove from queue (execution methods handle their own status updates and usage tracking)
             await ctx.runMutation(internal.queueProcessor.removeFromQueue, {
               queueId: queueEntry._id,
             });
-
-            // Test status already updated by Lambda execution
           }
         } catch (error: any) {
           console.error(`❌ Error processing test ${queueEntry.testId}:`, error);
@@ -334,7 +324,7 @@ export const updateTestWithTaskInfo = internalMutation({
 
 /**
  * Cleanup abandoned tests (scheduled to run every hour)
- * 
+ *
  * Cost optimization: Exits early if no tests in queue
  */
 export const cleanupAbandonedTests = internalAction({
