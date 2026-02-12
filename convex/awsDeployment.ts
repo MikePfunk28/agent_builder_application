@@ -9,7 +9,7 @@ import { v } from "convex/values";
 import { internal, api } from "./_generated/api";
 
 // Stripe mutations live in stripeMutations.ts. Cast bridges codegen gap.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 const internalStripeMutations = ( internal as any ).stripeMutations;
 // Direct import for mutation handlers (mutations cannot call ctx.runMutation)
 import { incrementUsageAndReportOverageImpl } from "./stripeMutations";
@@ -21,51 +21,51 @@ import { sanitizeAgentName } from "./constants";
  * Deploy agent - Routes to correct tier (Tier 1/2/3)
  * This is the main entry point that replaces the old deployToAWS
  */
-export const deployToAWS = action({
+export const deployToAWS = action( {
   args: {
-    agentId: v.id("agents"),
-    deploymentConfig: v.object({
+    agentId: v.id( "agents" ),
+    deploymentConfig: v.object( {
       region: v.string(),
       agentName: v.string(),
-      description: v.optional(v.string()),
-      enableMonitoring: v.optional(v.boolean()),
-      enableAutoScaling: v.optional(v.boolean()),
-    }),
+      description: v.optional( v.string() ),
+      enableMonitoring: v.optional( v.boolean() ),
+      enableAutoScaling: v.optional( v.boolean() ),
+    } ),
     // Optional: Provide AWS credentials directly (for anonymous users)
-    awsCredentials: v.optional(v.object({
+    awsCredentials: v.optional( v.object( {
       accessKeyId: v.string(),
       secretAccessKey: v.string(),
-      roleArn: v.optional(v.string()),
-    })),
+      roleArn: v.optional( v.string() ),
+    } ) ),
   },
-  handler: async (ctx, args): Promise<any> => {
+  handler: async ( ctx, args ): Promise<any> => {
     // Get user ID (can be anonymous)
-    const userId = await getAuthUserId(ctx);
+    const userId = await getAuthUserId( ctx );
 
     // Get agent
-    const agent: any = await ctx.runQuery(internal.agents.getInternal, {
+    const agent: any = await ctx.runQuery( internal.agents.getInternal, {
       id: args.agentId
-    });
+    } );
 
-    if (!agent) {
-      throw new Error("Agent not found");
+    if ( !agent ) {
+      throw new Error( "Agent not found" );
     }
 
     // Verify ownership (allow anonymous users to deploy their own agents)
-    if (userId && agent.createdBy !== userId) {
-      throw new Error("Not authorized to deploy this agent");
+    if ( userId && agent.createdBy !== userId ) {
+      throw new Error( "Not authorized to deploy this agent" );
     }
 
     // Get user tier (default to freemium for anonymous users)
-    const user = userId ? await ctx.runQuery(internal.awsDeployment.getUserTierInternal, {
+    const user = userId ? await ctx.runQuery( internal.awsDeployment.getUserTierInternal, {
       userId: userId,
-    }) : null;
+    } ) : null;
 
     const tier = user?.tier || "freemium";
 
     // PROVIDER GATING: Freemium users cannot deploy to Bedrock (all AWS deployments use Bedrock)
-    const { isProviderAllowedForTier } = await import("./lib/tierConfig");
-    if (!isProviderAllowedForTier(tier, "bedrock")) {
+    const { isProviderAllowedForTier } = await import( "./lib/tierConfig" );
+    if ( !isProviderAllowedForTier( tier, "bedrock" ) ) {
       throw new Error(
         "Free tier cannot deploy to AWS Bedrock. " +
         "Upgrade to Personal ($5/month) for Bedrock access, " +
@@ -74,68 +74,68 @@ export const deployToAWS = action({
     }
 
     // Check if user provided AWS credentials directly (for anonymous/one-time deployment)
-    if (args.awsCredentials) {
+    if ( args.awsCredentials ) {
       // TODO: Implement direct credential deployment
-      throw new Error("Direct AWS credential deployment not yet implemented. Please save your AWS credentials in settings first.");
+      throw new Error( "Direct AWS credential deployment not yet implemented. Please save your AWS credentials in settings first." );
     }
 
     // Check if user has AWS credentials configured (saved)
-    const hasAWSCreds = userId ? await ctx.runQuery(api.awsAuth.hasValidAWSCredentials) : false;
+    const hasAWSCreds = userId ? await ctx.runQuery( api.awsAuth.hasValidAWSCredentials ) : false;
 
     // If user has saved AWS credentials, deploy to THEIR account (Tier 2)
-    if (hasAWSCreds && userId) {
-      return await deployTier2(ctx, args, userId);
+    if ( hasAWSCreds && userId ) {
+      return await deployTier2( ctx, args, userId );
     }
 
     // Otherwise, use platform deployment (Tier 1)
-    if (tier === "freemium") {
+    if ( tier === "freemium" ) {
       // Anonymous users must provide AWS credentials
-      if (!userId) {
-        throw new Error("Anonymous users must provide AWS credentials or sign in to use the platform.");
+      if ( !userId ) {
+        throw new Error( "Anonymous users must provide AWS credentials or sign in to use the platform." );
       }
 
       // Tier 1: Check usage limits using centralized tier config
       const executionsThisMonth = user?.executionsThisMonth || 0;
-      const { getTierConfig: getFreeTierCfg } = await import("./lib/tierConfig");
-      const freeLimits = getFreeTierCfg("freemium");
-      if (executionsThisMonth >= freeLimits.monthlyExecutions) {
-        throw new Error(`Free tier limit reached (${freeLimits.monthlyExecutions} executions/month). Configure AWS credentials to deploy to your own account!`);
+      const { getTierConfig: getFreeTierCfg } = await import( "./lib/tierConfig" );
+      const freeLimits = getFreeTierCfg( "freemium" );
+      if ( executionsThisMonth >= freeLimits.monthlyExecutions ) {
+        throw new Error( `Free tier limit reached (${freeLimits.monthlyExecutions} executions/month). Configure AWS credentials to deploy to your own account!` );
       }
 
       // Deploy to platform Fargate
-      return await deployTier1(ctx, args, userId);
-    } else if (tier === "enterprise") {
+      return await deployTier1( ctx, args, userId );
+    } else if ( tier === "enterprise" ) {
       // Tier 3: Enterprise SSO (not implemented yet)
-      throw new Error("Enterprise tier not yet implemented");
+      throw new Error( "Enterprise tier not yet implemented" );
     }
 
     // Fallback to Tier 1 - requires authentication
-    if (!userId) {
-      throw new Error("Authentication required for deployment.");
+    if ( !userId ) {
+      throw new Error( "Authentication required for deployment." );
     }
-    return await deployTier1(ctx, args, userId);
+    return await deployTier1( ctx, args, userId );
   },
-});
+} );
 
 /**
  * Execute the actual deployment
  */
-export const executeDeployment = internalAction({
+export const executeDeployment = internalAction( {
   args: {
-    deploymentId: v.id("deployments"),
-    agentId: v.id("agents"),
-    config: v.object({
+    deploymentId: v.id( "deployments" ),
+    agentId: v.id( "agents" ),
+    config: v.object( {
       region: v.string(),
       agentName: v.string(),
-      description: v.optional(v.string()),
-      enableMonitoring: v.optional(v.boolean()),
-      enableAutoScaling: v.optional(v.boolean()),
-    }),
+      description: v.optional( v.string() ),
+      enableMonitoring: v.optional( v.boolean() ),
+      enableAutoScaling: v.optional( v.boolean() ),
+    } ),
   },
-  handler: async (ctx, args) => {
+  handler: async ( ctx, args ) => {
     try {
       // Update status to building with progress tracking
-      await ctx.runMutation(internal.awsDeployment.updateDeploymentStatusInternal, {
+      await ctx.runMutation( internal.awsDeployment.updateDeploymentStatusInternal, {
         deploymentId: args.deploymentId,
         status: "BUILDING",
         progress: {
@@ -145,22 +145,22 @@ export const executeDeployment = internalAction({
           currentStep: "Building container",
           totalSteps: 5,
         },
-      });
+      } );
 
       // Get agent details
-      const agent = await ctx.runQuery(internal.agents.getInternal, {
+      const agent = await ctx.runQuery( internal.agents.getInternal, {
         id: args.agentId
-      });
+      } );
 
-      if (!agent) {
-        throw new Error("Agent not found");
+      if ( !agent ) {
+        throw new Error( "Agent not found" );
       }
 
       // Generate deployment artifacts
-      const artifacts = await generateDeploymentArtifacts(agent, args.config);
+      const artifacts = await generateDeploymentArtifacts( agent, args.config );
 
       // Update status to deploying with progress
-      await ctx.runMutation(internal.awsDeployment.updateDeploymentStatusInternal, {
+      await ctx.runMutation( internal.awsDeployment.updateDeploymentStatusInternal, {
         deploymentId: args.deploymentId,
         status: "DEPLOYING",
         progress: {
@@ -170,13 +170,13 @@ export const executeDeployment = internalAction({
           currentStep: "Deploying to AWS",
           totalSteps: 5,
         },
-      });
+      } );
 
       // Deploy to AWS using AgentCore CLI
-      const deploymentResult = await deployToAgentCore(artifacts, args.config);
+      const deploymentResult = await deployToAgentCore( artifacts, args.config );
 
       // Update status to completed with final progress
-      await ctx.runMutation(internal.awsDeployment.updateDeploymentStatusInternal, {
+      await ctx.runMutation( internal.awsDeployment.updateDeploymentStatusInternal, {
         deploymentId: args.deploymentId,
         status: "COMPLETED",
         progress: {
@@ -186,13 +186,13 @@ export const executeDeployment = internalAction({
           currentStep: "Completed",
           totalSteps: 5,
         },
-      });
+      } );
 
       return deploymentResult;
 
-    } catch (error: any) {
+    } catch ( error: any ) {
       // Update status to failed with error details
-      await ctx.runMutation(internal.awsDeployment.updateDeploymentStatusInternal, {
+      await ctx.runMutation( internal.awsDeployment.updateDeploymentStatusInternal, {
         deploymentId: args.deploymentId,
         status: "FAILED",
         progress: {
@@ -201,41 +201,41 @@ export const executeDeployment = internalAction({
           message: `Deployment failed: ${error.message}`,
         },
         error: error.message,
-      });
+      } );
 
       throw error;
     }
   },
-});
+} );
 
 // Removed: Use createDeploymentInternal instead
 
 /**
  * Update deployment status with enhanced progress tracking
  */
-export const updateDeploymentStatus = mutation({
+export const updateDeploymentStatus = mutation( {
   args: {
-    deploymentId: v.id("deployments"),
+    deploymentId: v.id( "deployments" ),
     status: v.string(),
-    message: v.optional(v.string()),
-    result: v.optional(v.any()),
-    error: v.optional(v.string()),
-    progress: v.optional(v.number()), // 0-100
-    currentStep: v.optional(v.string()),
-    totalSteps: v.optional(v.number()),
-    stepDetails: v.optional(v.object({
+    message: v.optional( v.string() ),
+    result: v.optional( v.any() ),
+    error: v.optional( v.string() ),
+    progress: v.optional( v.number() ), // 0-100
+    currentStep: v.optional( v.string() ),
+    totalSteps: v.optional( v.number() ),
+    stepDetails: v.optional( v.object( {
       stepName: v.string(),
       stepIndex: v.number(),
       totalSteps: v.number(),
       stepStatus: v.string(), // "running", "completed", "failed"
-      stepMessage: v.optional(v.string()),
-      estimatedTimeRemaining: v.optional(v.number()), // seconds
-    })),
+      stepMessage: v.optional( v.string() ),
+      estimatedTimeRemaining: v.optional( v.number() ), // seconds
+    } ) ),
   },
-  handler: async (ctx, args) => {
-    const deployment = await ctx.db.get(args.deploymentId);
-    if (!deployment) {
-      throw new Error("Deployment not found");
+  handler: async ( ctx, args ) => {
+    const deployment = await ctx.db.get( args.deploymentId );
+    if ( !deployment ) {
+      throw new Error( "Deployment not found" );
     }
 
     const updates: any = {
@@ -245,32 +245,32 @@ export const updateDeploymentStatus = mutation({
 
     // Note: message is not in schema, stored in logs instead
 
-    if (args.result) {
+    if ( args.result ) {
       updates.result = args.result;
     }
 
-    if (args.error) {
+    if ( args.error ) {
       updates.error = args.error;
     }
 
-    if (args.progress !== undefined) {
-      updates.progress = Math.max(0, Math.min(100, args.progress));
+    if ( args.progress !== undefined ) {
+      updates.progress = Math.max( 0, Math.min( 100, args.progress ) );
     }
 
-    if (args.currentStep) {
+    if ( args.currentStep ) {
       updates.currentStep = args.currentStep;
     }
 
-    if (args.totalSteps) {
-      (updates as any).totalSteps = args.totalSteps;
+    if ( args.totalSteps ) {
+      ( updates ).totalSteps = args.totalSteps;
     }
 
-    if (args.stepDetails) {
-      (updates as any).stepDetails = args.stepDetails;
+    if ( args.stepDetails ) {
+      ( updates ).stepDetails = args.stepDetails;
     }
 
     // Add log entry for status changes
-    const existingLogs: any[] = Array.isArray(deployment.logs) ? deployment.logs : [];
+    const existingLogs: any[] = Array.isArray( deployment.logs ) ? deployment.logs : [];
     const newLogEntry = {
       timestamp: Date.now(),
       level: args.status === "FAILED" ? "error" : "info",
@@ -281,40 +281,40 @@ export const updateDeploymentStatus = mutation({
     updates.logs = [...existingLogs, newLogEntry] as any;
 
     // Set completion timestamp
-    if (args.status === "COMPLETED" || args.status === "FAILED") {
+    if ( args.status === "COMPLETED" || args.status === "FAILED" ) {
       updates.completedAt = Date.now();
       updates.progress = args.status === "COMPLETED" ? 100 : updates.progress;
     }
 
     // Calculate deployment duration
-    if (deployment.createdAt) {
-      (updates as any).duration = Date.now() - deployment.createdAt;
+    if ( deployment.createdAt ) {
+      ( updates ).duration = Date.now() - deployment.createdAt;
     }
 
-    await ctx.db.patch(args.deploymentId, updates);
+    await ctx.db.patch( args.deploymentId, updates );
 
     // Return updated deployment for real-time updates
-    return await ctx.db.get(args.deploymentId);
+    return await ctx.db.get( args.deploymentId );
   },
-});
+} );
 
 /**
  * Add deployment log entry
  */
-export const addDeploymentLog = mutation({
+export const addDeploymentLog = mutation( {
   args: {
-    deploymentId: v.id("deployments"),
+    deploymentId: v.id( "deployments" ),
     level: v.string(), // "info", "warn", "error", "debug"
     message: v.string(),
-    details: v.optional(v.any()),
+    details: v.optional( v.any() ),
   },
-  handler: async (ctx, args) => {
-    const deployment = await ctx.db.get(args.deploymentId);
-    if (!deployment) {
-      throw new Error("Deployment not found");
+  handler: async ( ctx, args ) => {
+    const deployment = await ctx.db.get( args.deploymentId );
+    if ( !deployment ) {
+      throw new Error( "Deployment not found" );
     }
 
-    const existingLogs: any[] = Array.isArray(deployment.logs) ? deployment.logs : [];
+    const existingLogs: any[] = Array.isArray( deployment.logs ) ? deployment.logs : [];
     const newLogEntry = {
       timestamp: Date.now(),
       level: args.level,
@@ -322,37 +322,37 @@ export const addDeploymentLog = mutation({
       source: "manual",
     };
 
-    await ctx.db.patch(args.deploymentId, {
+    await ctx.db.patch( args.deploymentId, {
       logs: [...existingLogs, newLogEntry] as any,
       updatedAt: Date.now(),
-    });
+    } );
   },
-});
+} );
 
 /**
  * Get deployment with real-time status
  */
-export const getDeploymentWithLogs = query({
-  args: { deploymentId: v.id("deployments") },
-  handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
+export const getDeploymentWithLogs = query( {
+  args: { deploymentId: v.id( "deployments" ) },
+  handler: async ( ctx, args ) => {
+    const userId = await getAuthUserId( ctx );
+    if ( !userId ) {
       return null;
     }
 
-    const deployment = await ctx.db.get(args.deploymentId);
-    if (!deployment || deployment.userId !== userId) {
+    const deployment = await ctx.db.get( args.deploymentId );
+    if ( !deployment || deployment.userId !== userId ) {
       return null;
     }
 
     // Calculate additional metrics
     const now = Date.now();
     const elapsed = deployment.createdAt ? now - deployment.createdAt : 0;
-    const isActive = !["COMPLETED", "FAILED", "CANCELLED"].includes(deployment.status);
+    const isActive = !["COMPLETED", "FAILED", "CANCELLED"].includes( deployment.status );
 
     // Estimate remaining time based on current progress
     let estimatedTimeRemaining = null;
-    if (isActive && deployment.progress && deployment.progress.percentage > 0) {
+    if ( isActive && deployment.progress && deployment.progress.percentage > 0 ) {
       const progressRate = deployment.progress.percentage / elapsed;
       const remainingProgress = 100 - deployment.progress.percentage;
       estimatedTimeRemaining = remainingProgress / progressRate;
@@ -363,85 +363,85 @@ export const getDeploymentWithLogs = query({
       elapsed,
       isActive,
       estimatedTimeRemaining,
-      formattedDuration: formatDuration(elapsed),
+      formattedDuration: formatDuration( elapsed ),
       progressPercentage: deployment.progress?.percentage || 0,
     };
   },
-});
+} );
 
 /**
  * List user deployments with pagination and filtering
  */
-export const listUserDeployments = query({
+export const listUserDeployments = query( {
   args: {
-    limit: v.optional(v.number()),
-    status: v.optional(v.string()),
-    agentId: v.optional(v.id("agents")),
+    limit: v.optional( v.number() ),
+    status: v.optional( v.string() ),
+    agentId: v.optional( v.id( "agents" ) ),
   },
-  handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
+  handler: async ( ctx, args ) => {
+    const userId = await getAuthUserId( ctx );
+    if ( !userId ) {
       return [];
     }
 
     const baseQuery = ctx.db
-      .query("deployments")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .order("desc");
+      .query( "deployments" )
+      .withIndex( "by_user", ( q ) => q.eq( "userId", userId ) )
+      .order( "desc" );
 
     const deployments = args.limit
-      ? await baseQuery.take(args.limit)
+      ? await baseQuery.take( args.limit )
       : await baseQuery.collect();
 
     // Filter by status if specified
     let filteredDeployments = deployments;
-    if (args.status) {
-      filteredDeployments = deployments.filter(d => d.status === args.status);
+    if ( args.status ) {
+      filteredDeployments = deployments.filter( d => d.status === args.status );
     }
 
     // Filter by agent if specified
-    if (args.agentId) {
-      filteredDeployments = filteredDeployments.filter(d => d.agentId === args.agentId);
+    if ( args.agentId ) {
+      filteredDeployments = filteredDeployments.filter( d => d.agentId === args.agentId );
     }
 
     // Add computed fields
-    return filteredDeployments.map(deployment => {
+    return filteredDeployments.map( deployment => {
       const elapsed = deployment.createdAt ? Date.now() - deployment.createdAt : 0;
-      const isActive = !["COMPLETED", "FAILED", "CANCELLED"].includes(deployment.status);
+      const isActive = !["COMPLETED", "FAILED", "CANCELLED"].includes( deployment.status );
 
       return {
         ...deployment,
         elapsed,
         isActive,
-        formattedDuration: formatDuration(elapsed),
+        formattedDuration: formatDuration( elapsed ),
         progressPercentage: deployment.progress?.percentage || 0,
       };
-    });
+    } );
   },
-});
+} );
 
 /**
  * Cancel active deployment
  */
-export const cancelDeployment = mutation({
-  args: { deploymentId: v.id("deployments") },
-  handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
-      throw new Error("Not authenticated");
+export const cancelDeployment = mutation( {
+  args: { deploymentId: v.id( "deployments" ) },
+  handler: async ( ctx, args ) => {
+    const userId = await getAuthUserId( ctx );
+    if ( !userId ) {
+      throw new Error( "Not authenticated" );
     }
 
-    const deployment = await ctx.db.get(args.deploymentId);
-    if (!deployment || deployment.userId !== userId) {
-      throw new Error("Deployment not found or not authorized");
+    const deployment = await ctx.db.get( args.deploymentId );
+    if ( !deployment || deployment.userId !== userId ) {
+      throw new Error( "Deployment not found or not authorized" );
     }
 
-    if (["COMPLETED", "FAILED", "CANCELLED"].includes(deployment.status)) {
-      throw new Error("Cannot cancel completed deployment");
+    if ( ["COMPLETED", "FAILED", "CANCELLED"].includes( deployment.status ) ) {
+      throw new Error( "Cannot cancel completed deployment" );
     }
 
-    const existingLogs = Array.isArray(deployment.logs) ? deployment.logs : [];
-    await ctx.db.patch(args.deploymentId, {
+    const existingLogs = Array.isArray( deployment.logs ) ? deployment.logs : [];
+    await ctx.db.patch( args.deploymentId, {
       status: "CANCELLED",
       completedAt: Date.now(),
       updatedAt: Date.now(),
@@ -451,21 +451,21 @@ export const cancelDeployment = mutation({
         message: "Deployment cancelled by user",
         source: "user",
       }],
-    });
+    } );
 
     return { success: true };
   },
-});
+} );
 
 // Helper function to format duration
-function formatDuration(milliseconds: number): string {
-  const seconds = Math.floor(milliseconds / 1000);
-  const minutes = Math.floor(seconds / 60);
-  const hours = Math.floor(minutes / 60);
+function formatDuration( milliseconds: number ): string {
+  const seconds = Math.floor( milliseconds / 1000 );
+  const minutes = Math.floor( seconds / 60 );
+  const hours = Math.floor( minutes / 60 );
 
-  if (hours > 0) {
+  if ( hours > 0 ) {
     return `${hours}h ${minutes % 60}m ${seconds % 60}s`;
-  } else if (minutes > 0) {
+  } else if ( minutes > 0 ) {
     return `${minutes}m ${seconds % 60}s`;
   } else {
     return `${seconds}s`;
@@ -475,58 +475,58 @@ function formatDuration(milliseconds: number): string {
 /**
  * Get deployment status
  */
-export const getDeployment = query({
-  args: { deploymentId: v.id("deployments") },
-  handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
+export const getDeployment = query( {
+  args: { deploymentId: v.id( "deployments" ) },
+  handler: async ( ctx, args ) => {
+    const userId = await getAuthUserId( ctx );
+    if ( !userId ) {
       return null;
     }
 
-    const deployment = await ctx.db.get(args.deploymentId);
-    if (!deployment || deployment.userId !== userId) {
+    const deployment = await ctx.db.get( args.deploymentId );
+    if ( !deployment || deployment.userId !== userId ) {
       return null;
     }
 
     return deployment;
   },
-});
+} );
 
 /**
  * Get user's deployments
  */
-export const getUserDeployments = query({
-  args: { limit: v.optional(v.number()) },
-  handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
+export const getUserDeployments = query( {
+  args: { limit: v.optional( v.number() ) },
+  handler: async ( ctx, args ) => {
+    const userId = await getAuthUserId( ctx );
+    if ( !userId ) {
       return [];
     }
 
-    const limit = Math.min(args.limit || 20, 100);
+    const limit = Math.min( args.limit || 20, 100 );
 
     return await ctx.db
-      .query("deployments")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .order("desc")
-      .take(limit);
+      .query( "deployments" )
+      .withIndex( "by_user", ( q ) => q.eq( "userId", userId ) )
+      .order( "desc" )
+      .take( limit );
   },
-});
+} );
 
 // Helper Functions
 
-async function generateDeploymentArtifacts(agent: any, config: any) {
+async function generateDeploymentArtifacts( agent: any, config: any ) {
   // Generate AgentCore-compatible agent code
-  const agentCode = generateAgentCoreCode(agent);
+  const agentCode = generateAgentCoreCode( agent );
 
   // Generate requirements.txt
-  const requirements = generateAgentCoreRequirements(agent.tools);
+  const requirements = generateAgentCoreRequirements( agent.tools );
 
   // Generate Dockerfile
-  const dockerfile = generateAgentCoreDockerfile(agent);
+  const dockerfile = generateAgentCoreDockerfile( agent );
 
   // Generate AgentCore configuration
-  const agentCoreConfig = generateAgentCoreConfig(agent, config);
+  const agentCoreConfig = generateAgentCoreConfig( agent, config );
 
   return {
     agentCode,
@@ -538,14 +538,14 @@ async function generateDeploymentArtifacts(agent: any, config: any) {
   };
 }
 
-function generateAgentCoreCode(agent: any): string {
+function generateAgentCoreCode( agent: any ): string {
   // Generate tool imports based on agent tools
   const toolImports = agent.tools && agent.tools.length > 0
-    ? agent.tools.map((tool: any) => `from strands_tools import ${tool.name}`).join('\n')
+    ? agent.tools.map( ( tool: any ) => `from strands_tools import ${tool.name}` ).join( '\n' )
     : '# No tools configured';
-  
+
   const toolsList = agent.tools && agent.tools.length > 0
-    ? agent.tools.map((tool: any) => tool.name).join(', ')
+    ? agent.tools.map( ( tool: any ) => tool.name ).join( ', ' )
     : '';
 
   return `"""
@@ -574,22 +574,22 @@ app = BedrockAgentCoreApp()
 async def agent_invocation(payload, context):
     """
     Handler for agent invocation with streaming support
-    
+
     Args:
         payload: Input payload with 'prompt' key
         context: AgentCore runtime context
-        
+
     Yields:
         Streaming events from agent execution
     """
     user_message = payload.get("prompt", "No prompt provided")
-    
+
     print(f"[${agent.name}] Processing: {user_message}")
     print(f"Context: {context}")
-    
+
     # Stream agent responses
     agent_stream = agent.stream_async(user_message)
-    
+
     async for event in agent_stream:
         yield event
 
@@ -598,32 +598,32 @@ if __name__ == "__main__":
 `;
 }
 
-function generateAgentCoreRequirements(tools: any[]): string {
-  const packages = new Set([
+function generateAgentCoreRequirements( tools: any[] ): string {
+  const packages = new Set( [
     "strands-agents>=1.0.0",
     "bedrock-agentcore>=0.1.6",
     "bedrock-agentcore-starter-toolkit>=0.1.25",
     "boto3>=1.28.0",
     "pyjwt>=2.8.0",
-  ]);
+  ] );
 
   // Add tool-specific packages
-  tools.forEach(tool => {
-    if (tool.requiresPip && tool.pipPackages) {
-      tool.pipPackages.forEach((pkg: string) => packages.add(pkg));
+  tools.forEach( tool => {
+    if ( tool.requiresPip && tool.pipPackages ) {
+      tool.pipPackages.forEach( ( pkg: string ) => packages.add( pkg ) );
     }
-  });
+  } );
 
-  return Array.from(packages).join("\\n");
+  return Array.from( packages ).join( String.raw`\n` );
 }
 
-function generateAgentCoreDockerfile(agent: any): string {
-  const isOllamaModel = typeof agent.model === "string" && !agent.model.includes(".");
+function generateAgentCoreDockerfile( agent: any ): string {
+  const isOllamaModel = typeof agent.model === "string" && !agent.model.includes( "." );
 
-  if (isOllamaModel) {
+  if ( isOllamaModel ) {
     // Validate model name to prevent shell injection in entrypoint.sh
     const safeModelPattern = /^[A-Za-z0-9._:/-]+$/;
-    const modelName = safeModelPattern.test(agent.model) ? agent.model : "llama3:latest";
+    const modelName = safeModelPattern.test( agent.model ) ? agent.model : "llama3:latest";
 
     return `FROM ollama/ollama:latest
 
@@ -656,7 +656,7 @@ CMD ["python", "agent.py"]
 `;
 }
 
-function generateAgentCoreConfig(agent: any, config: any) {
+function generateAgentCoreConfig( agent: any, config: any ) {
   return {
     name: config.agentName,
     description: config.description || agent.description,
@@ -681,7 +681,7 @@ function generateAgentCoreConfig(agent: any, config: any) {
   };
 }
 
-async function deployToAgentCore(artifacts: any, config: any) {
+async function deployToAgentCore( artifacts: any, config: any ) {
   // This would use the AgentCore CLI or SDK to deploy
   // For now, return a mock successful deployment
   return {
@@ -700,26 +700,26 @@ async function deployToAgentCore(artifacts: any, config: any) {
 /**
  * Create deployment record (internal)
  */
-export const createDeploymentInternal = internalMutation({
+export const createDeploymentInternal = internalMutation( {
   args: {
-    agentId: v.id("agents"),
-    userId: v.union(v.id("users"), v.string()),
-    tier: v.optional(v.string()),
-    deploymentConfig: v.object({
+    agentId: v.id( "agents" ),
+    userId: v.union( v.id( "users" ), v.string() ),
+    tier: v.optional( v.string() ),
+    deploymentConfig: v.object( {
       region: v.string(),
       agentName: v.string(),
-      description: v.optional(v.string()),
-      enableMonitoring: v.optional(v.boolean()),
-      enableAutoScaling: v.optional(v.boolean()),
-    }),
+      description: v.optional( v.string() ),
+      enableMonitoring: v.optional( v.boolean() ),
+      enableAutoScaling: v.optional( v.boolean() ),
+    } ),
   },
-  handler: async (ctx, args) => {
+  handler: async ( ctx, args ) => {
     // Ensure userId is a proper Id<"users">
-    const userId = typeof args.userId === 'string' && args.userId.startsWith('j')
+    const userId = typeof args.userId === 'string' && args.userId.startsWith( 'j' )
       ? args.userId as any
       : args.userId;
 
-    return await ctx.db.insert("deployments", {
+    return await ctx.db.insert( "deployments", {
       agentId: args.agentId,
       userId: userId,
       tier: args.tier || "freemium",
@@ -740,148 +740,148 @@ export const createDeploymentInternal = internalMutation({
       updatedAt: Date.now(),
       startedAt: Date.now(),
       isActive: true,
-    });
+    } );
   },
-});
+} );
 
 /**
  * Update deployment status (internal)
  */
-export const updateDeploymentStatusInternal = internalMutation({
+export const updateDeploymentStatusInternal = internalMutation( {
   args: {
-    deploymentId: v.id("deployments"),
+    deploymentId: v.id( "deployments" ),
     status: v.string(),
-    progress: v.optional(v.object({
+    progress: v.optional( v.object( {
       stage: v.string(),
       percentage: v.number(),
       message: v.string(),
-      currentStep: v.optional(v.string()),
-      totalSteps: v.optional(v.number()),
-    })),
-    agentCoreRuntimeId: v.optional(v.string()),
-    agentCoreEndpoint: v.optional(v.string()),
-    cloudFormationStackId: v.optional(v.string()),
-    ecrRepositoryUri: v.optional(v.string()),
-    s3BucketName: v.optional(v.string()),
-    deploymentPackageKey: v.optional(v.string()),
-    awsAccountId: v.optional(v.string()),
-    awsCallerArn: v.optional(v.string()),
-    logs: v.optional(v.union(
+      currentStep: v.optional( v.string() ),
+      totalSteps: v.optional( v.number() ),
+    } ) ),
+    agentCoreRuntimeId: v.optional( v.string() ),
+    agentCoreEndpoint: v.optional( v.string() ),
+    cloudFormationStackId: v.optional( v.string() ),
+    ecrRepositoryUri: v.optional( v.string() ),
+    s3BucketName: v.optional( v.string() ),
+    deploymentPackageKey: v.optional( v.string() ),
+    awsAccountId: v.optional( v.string() ),
+    awsCallerArn: v.optional( v.string() ),
+    logs: v.optional( v.union(
       v.string(),
-      v.array(v.object({
+      v.array( v.object( {
         timestamp: v.number(),
         level: v.string(),
         message: v.string(),
-        source: v.optional(v.string()),
-      }))
-    )),
-    error: v.optional(v.string()),
+        source: v.optional( v.string() ),
+      } ) )
+    ) ),
+    error: v.optional( v.string() ),
   },
-  handler: async (ctx, args) => {
+  handler: async ( ctx, args ) => {
     const updates: any = {
       status: args.status,
       updatedAt: Date.now(),
     };
 
-    if (args.progress) {
+    if ( args.progress ) {
       updates.progress = args.progress;
     }
 
-    if (args.agentCoreRuntimeId) {
+    if ( args.agentCoreRuntimeId ) {
       updates.agentCoreRuntimeId = args.agentCoreRuntimeId;
     }
 
-    if (args.agentCoreEndpoint) {
+    if ( args.agentCoreEndpoint ) {
       updates.agentCoreEndpoint = args.agentCoreEndpoint;
     }
 
-    if (args.cloudFormationStackId) {
+    if ( args.cloudFormationStackId ) {
       updates.cloudFormationStackId = args.cloudFormationStackId;
     }
 
-    if (args.ecrRepositoryUri) {
+    if ( args.ecrRepositoryUri ) {
       updates.ecrRepositoryUri = args.ecrRepositoryUri;
     }
 
-    if (args.s3BucketName) {
+    if ( args.s3BucketName ) {
       updates.s3BucketName = args.s3BucketName;
     }
 
-    if (args.deploymentPackageKey) {
+    if ( args.deploymentPackageKey ) {
       updates.deploymentPackageKey = args.deploymentPackageKey;
     }
 
-    if (args.awsAccountId) {
+    if ( args.awsAccountId ) {
       updates.awsAccountId = args.awsAccountId;
     }
 
-    if (args.awsCallerArn) {
+    if ( args.awsCallerArn ) {
       updates.awsCallerArn = args.awsCallerArn;
     }
 
-    if (args.status === "ACTIVE") {
+    if ( args.status === "ACTIVE" ) {
       updates.deployedAt = Date.now();
       updates.isActive = true;
     }
 
-    if (args.status === "FAILED" || args.status === "DELETED") {
+    if ( args.status === "FAILED" || args.status === "DELETED" ) {
       updates.isActive = false;
     }
 
-    if (args.status === "DELETED") {
+    if ( args.status === "DELETED" ) {
       updates.deletedAt = Date.now();
     }
 
-    if (args.logs || args.progress?.message) {
-      const deployment = await ctx.db.get(args.deploymentId);
-      const existingLogs = Array.isArray(deployment?.logs) ? deployment.logs : [];
+    if ( args.logs || args.progress?.message ) {
+      const deployment = await ctx.db.get( args.deploymentId );
+      const existingLogs = Array.isArray( deployment?.logs ) ? deployment.logs : [];
       const combinedLogs = [...existingLogs];
 
-      if (args.logs) {
-        if (Array.isArray(args.logs)) {
-          combinedLogs.push(...args.logs);
+      if ( args.logs ) {
+        if ( Array.isArray( args.logs ) ) {
+          combinedLogs.push( ...args.logs );
         }
       }
 
-      if (args.progress?.message) {
-        combinedLogs.push({
+      if ( args.progress?.message ) {
+        combinedLogs.push( {
           timestamp: Date.now(),
           level: args.status === "FAILED" ? "error" : "info",
           message: args.progress.message,
           source: "deployment",
-        });
+        } );
       }
 
       updates.logs = combinedLogs;
     }
 
-    await ctx.db.patch(args.deploymentId, updates);
+    await ctx.db.patch( args.deploymentId, updates );
   },
-});
+} );
 
 /**
  * Get deployment (internal)
  */
-export const getDeploymentInternal = internalQuery({
-  args: { deploymentId: v.id("deployments") },
-  handler: async (ctx, args) => {
-    return await ctx.db.get(args.deploymentId);
+export const getDeploymentInternal = internalQuery( {
+  args: { deploymentId: v.id( "deployments" ) },
+  handler: async ( ctx, args ) => {
+    return await ctx.db.get( args.deploymentId );
   },
-});
+} );
 
 /**
  * Execute deployment (internal action)
  */
-export const executeDeploymentInternal = internalAction({
+export const executeDeploymentInternal = internalAction( {
   args: {
-    deploymentId: v.id("deployments"),
-    agentId: v.id("agents"),
-    userId: v.id("users"),
+    deploymentId: v.id( "deployments" ),
+    agentId: v.id( "agents" ),
+    userId: v.id( "users" ),
   },
-  handler: async (ctx, args) => {
+  handler: async ( ctx, args ) => {
     try {
       // Update status to building with progress tracking
-      await ctx.runMutation(internal.awsDeployment.updateDeploymentStatusInternal, {
+      await ctx.runMutation( internal.awsDeployment.updateDeploymentStatusInternal, {
         deploymentId: args.deploymentId,
         status: "BUILDING",
         progress: {
@@ -891,13 +891,13 @@ export const executeDeploymentInternal = internalAction({
           currentStep: "docker-build",
           totalSteps: 5,
         },
-      });
+      } );
 
       // Simulate building process
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise( resolve => setTimeout( resolve, 2000 ) );
 
       // Update status to deploying with progress
-      await ctx.runMutation(internal.awsDeployment.updateDeploymentStatusInternal, {
+      await ctx.runMutation( internal.awsDeployment.updateDeploymentStatusInternal, {
         deploymentId: args.deploymentId,
         status: "DEPLOYING",
         progress: {
@@ -909,13 +909,13 @@ export const executeDeploymentInternal = internalAction({
         },
         ecrRepositoryUri: "123456789012.dkr.ecr.us-east-1.amazonaws.com/agent-repo",
         cloudFormationStackId: "arn:aws:cloudformation:us-east-1:123456789012:stack/agent-stack/12345",
-      });
+      } );
 
       // Simulate deployment process
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      await new Promise( resolve => setTimeout( resolve, 3000 ) );
 
       // Update status to completed with final progress
-      await ctx.runMutation(internal.awsDeployment.updateDeploymentStatusInternal, {
+      await ctx.runMutation( internal.awsDeployment.updateDeploymentStatusInternal, {
         deploymentId: args.deploymentId,
         status: "ACTIVE",
         progress: {
@@ -928,11 +928,11 @@ export const executeDeploymentInternal = internalAction({
         agentCoreRuntimeId: "agent-runtime-12345",
         agentCoreEndpoint: "https://agent-12345.execute-api.us-east-1.amazonaws.com/prod",
         s3BucketName: "agent-deployments-12345",
-      });
+      } );
 
-    } catch (error: any) {
+    } catch ( error: any ) {
       // Update status to failed with error details
-      await ctx.runMutation(internal.awsDeployment.updateDeploymentStatusInternal, {
+      await ctx.runMutation( internal.awsDeployment.updateDeploymentStatusInternal, {
         deploymentId: args.deploymentId,
         status: "FAILED",
         progress: {
@@ -941,10 +941,10 @@ export const executeDeploymentInternal = internalAction({
           message: `Deployment failed: ${error.message}`,
         },
         error: error.message,
-      });
+      } );
     }
   },
-});
+} );
 
 // ============================================================================
 // TIER DEPLOYMENT FUNCTIONS
@@ -953,24 +953,24 @@ export const executeDeploymentInternal = internalAction({
 /**
  * Tier 1: Deploy to YOUR Fargate (Freemium)
  */
-async function deployTier1(ctx: any, args: any, userId: string): Promise<any> {
+async function deployTier1( ctx: any, args: any, userId: string ): Promise<any> {
   // Create deployment record
-  const deploymentId: any = await ctx.runMutation(internal.awsDeployment.createDeploymentInternal, {
+  const deploymentId: any = await ctx.runMutation( internal.awsDeployment.createDeploymentInternal, {
     agentId: args.agentId,
     userId,
     tier: "freemium",
     deploymentConfig: args.deploymentConfig,
-  });
+  } );
 
   // Increment usage counter (centralized in stripeMutations.ts)
   await ctx.runMutation( internalStripeMutations.incrementUsageAndReportOverage, { userId } );
 
   // Start deployment
-  await ctx.scheduler.runAfter(0, internal.awsDeployment.executeDeploymentInternal, {
+  await ctx.scheduler.runAfter( 0, internal.awsDeployment.executeDeploymentInternal, {
     deploymentId,
     agentId: args.agentId,
     userId,
-  });
+  } );
 
   return {
     deploymentId,
@@ -983,30 +983,30 @@ async function deployTier1(ctx: any, args: any, userId: string): Promise<any> {
 /**
  * Tier 2: Deploy to USER's Fargate (Personal AWS Account) using Web Identity Federation
  */
-async function deployTier2(ctx: any, args: any, userId: string): Promise<any> {
+async function deployTier2( ctx: any, args: any, userId: string ): Promise<any> {
   // Get user's stored Role ARN
-  const user = await ctx.runQuery(internal.awsDeployment.getUserTierInternal, { userId });
+  const user = await ctx.runQuery( internal.awsDeployment.getUserTierInternal, { userId } );
 
-  if (!user || !user.awsRoleArn) {
-    throw new Error("No AWS Role ARN configured. Please configure your IAM role in settings.");
+  if ( !user || !user.awsRoleArn ) {
+    throw new Error( "No AWS Role ARN configured. Please configure your IAM role in settings." );
   }
 
   // Create deployment record
-  const deploymentId: any = await ctx.runMutation(internal.awsDeployment.createDeploymentInternal, {
+  const deploymentId: any = await ctx.runMutation( internal.awsDeployment.createDeploymentInternal, {
     agentId: args.agentId,
     userId,
     tier: "personal",
     deploymentConfig: args.deploymentConfig,
-  });
+  } );
 
   // Start deployment with web identity federation
-  await ctx.scheduler.runAfter(0, internal.awsDeployment.executeWebIdentityDeploymentInternal, {
+  await ctx.scheduler.runAfter( 0, internal.awsDeployment.executeWebIdentityDeploymentInternal, {
     deploymentId,
     agentId: args.agentId,
     userId,
     roleArn: user.awsRoleArn,
     region: args.deploymentConfig.region,
-  });
+  } );
 
   return {
     deploymentId,
@@ -1019,53 +1019,53 @@ async function deployTier2(ctx: any, args: any, userId: string): Promise<any> {
 /**
  * Get user tier (internal)
  */
-export const getUserTierInternal = internalQuery({
-  args: { userId: v.id("users") },
-  handler: async (ctx, args) => {
-    return await ctx.db.get(args.userId);
+export const getUserTierInternal = internalQuery( {
+  args: { userId: v.id( "users" ) },
+  handler: async ( ctx, args ) => {
+    return await ctx.db.get( args.userId );
   },
-});
+} );
 
 /**
  * Get user AWS account (internal)
  */
-export const getUserAWSAccountInternal = internalQuery({
-  args: { userId: v.id("users") },
-  handler: async (ctx, args) => {
+export const getUserAWSAccountInternal = internalQuery( {
+  args: { userId: v.id( "users" ) },
+  handler: async ( ctx, args ) => {
     return await ctx.db
-      .query("userAWSAccounts")
-      .withIndex("by_user_id", (q) => q.eq("userId", args.userId))
+      .query( "userAWSAccounts" )
+      .withIndex( "by_user_id", ( q ) => q.eq( "userId", args.userId ) )
       .first();
   },
-});
+} );
 
 /**
  * Increment usage counter — delegates to shared helper in stripeMutations.ts
  * (single source of truth for usage + overage logic).
  */
-export const incrementUsageInternal = internalMutation({
-  args: { userId: v.id("users") },
-  handler: async (ctx, args) => {
+export const incrementUsageInternal = internalMutation( {
+  args: { userId: v.id( "users" ) },
+  handler: async ( ctx, args ) => {
     await incrementUsageAndReportOverageImpl( ctx, args.userId );
   },
-});
+} );
 
 /**
  * Execute cross-account deployment (internal)
  */
-export const executeCrossAccountDeploymentInternal = internalAction({
+export const executeCrossAccountDeploymentInternal = internalAction( {
   args: {
-    deploymentId: v.id("deployments"),
-    agentId: v.id("agents"),
+    deploymentId: v.id( "deployments" ),
+    agentId: v.id( "agents" ),
     userId: v.string(),
     roleArn: v.string(),
     externalId: v.string(),
     region: v.string(),
   },
-  handler: async (ctx, args) => {
+  handler: async ( ctx, args ) => {
     try {
       // Update status
-      await ctx.runMutation(internal.awsDeployment.updateDeploymentStatusInternal, {
+      await ctx.runMutation( internal.awsDeployment.updateDeploymentStatusInternal, {
         deploymentId: args.deploymentId,
         status: "BUILDING",
         progress: {
@@ -1075,13 +1075,13 @@ export const executeCrossAccountDeploymentInternal = internalAction({
           currentStep: "assume-role",
           totalSteps: 5,
         },
-      });
+      } );
 
       // Assume role in user's account
-      await assumeUserRole(args.roleArn, args.externalId);
+      await assumeUserRole( args.roleArn, args.externalId );
 
       // Deploy to their Fargate
-      await ctx.runMutation(internal.awsDeployment.updateDeploymentStatusInternal, {
+      await ctx.runMutation( internal.awsDeployment.updateDeploymentStatusInternal, {
         deploymentId: args.deploymentId,
         status: "DEPLOYING",
         progress: {
@@ -1091,13 +1091,13 @@ export const executeCrossAccountDeploymentInternal = internalAction({
           currentStep: "deploy-fargate",
           totalSteps: 5,
         },
-      });
+      } );
 
       // Simulate deployment
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      await new Promise( resolve => setTimeout( resolve, 3000 ) );
 
       // Complete
-      await ctx.runMutation(internal.awsDeployment.updateDeploymentStatusInternal, {
+      await ctx.runMutation( internal.awsDeployment.updateDeploymentStatusInternal, {
         deploymentId: args.deploymentId,
         status: "ACTIVE",
         progress: {
@@ -1107,10 +1107,10 @@ export const executeCrossAccountDeploymentInternal = internalAction({
           currentStep: "completed",
           totalSteps: 5,
         },
-      });
+      } );
 
-    } catch (error: any) {
-      await ctx.runMutation(internal.awsDeployment.updateDeploymentStatusInternal, {
+    } catch ( error: any ) {
+      await ctx.runMutation( internal.awsDeployment.updateDeploymentStatusInternal, {
         deploymentId: args.deploymentId,
         status: "FAILED",
         progress: {
@@ -1119,26 +1119,26 @@ export const executeCrossAccountDeploymentInternal = internalAction({
           message: `Deployment failed: ${error.message}`,
         },
         error: error.message,
-      });
+      } );
     }
   },
-});
+} );
 
 /**
  * Execute deployment using Web Identity Federation
  * Gets temporary credentials via AssumeRoleWithWebIdentity and deploys to user's AWS
  */
-export const executeWebIdentityDeploymentInternal = internalAction({
+export const executeWebIdentityDeploymentInternal = internalAction( {
   args: {
-    deploymentId: v.id("deployments"),
-    agentId: v.id("agents"),
+    deploymentId: v.id( "deployments" ),
+    agentId: v.id( "agents" ),
     userId: v.string(),
     roleArn: v.string(),
     region: v.string(),
   },
-  handler: async (ctx, args) => {
+  handler: async ( ctx, args ) => {
     try {
-      await ctx.runMutation(internal.awsDeployment.updateDeploymentStatusInternal, {
+      await ctx.runMutation( internal.awsDeployment.updateDeploymentStatusInternal, {
         deploymentId: args.deploymentId,
         status: "BUILDING",
         progress: {
@@ -1148,14 +1148,14 @@ export const executeWebIdentityDeploymentInternal = internalAction({
           currentStep: "authenticate",
           totalSteps: 5,
         },
-      });
+      } );
 
-      const assumeRoleResult = await ctx.runAction(api.awsAuth.assumeRoleWithWebIdentity, {
+      const assumeRoleResult = await ctx.runAction( api.awsAuth.assumeRoleWithWebIdentity, {
         roleArn: args.roleArn,
-      });
+      } );
 
-      if (!assumeRoleResult.success || !assumeRoleResult.credentials) {
-        throw new Error(assumeRoleResult.error || "Failed to assume role with web identity");
+      if ( !assumeRoleResult.success || !assumeRoleResult.credentials ) {
+        throw new Error( assumeRoleResult.error || "Failed to assume role with web identity" );
       }
 
       const region = args.region;
@@ -1166,13 +1166,13 @@ export const executeWebIdentityDeploymentInternal = internalAction({
         sessionToken: tempCredentials.sessionToken,
       };
 
-      const { STSClient, GetCallerIdentityCommand } = await import("@aws-sdk/client-sts");
-      const stsClient = new STSClient({ region, credentials: awsCredentials });
-      const identity = await stsClient.send(new GetCallerIdentityCommand({}));
+      const { STSClient, GetCallerIdentityCommand } = await import( "@aws-sdk/client-sts" );
+      const stsClient = new STSClient( { region, credentials: awsCredentials } );
+      const identity = await stsClient.send( new GetCallerIdentityCommand( {} ) );
       const awsAccountId = identity.Account || "unknown";
       const callerArn = identity.Arn || "";
 
-      await ctx.runMutation(internal.awsDeployment.updateDeploymentStatusInternal, {
+      await ctx.runMutation( internal.awsDeployment.updateDeploymentStatusInternal, {
         deploymentId: args.deploymentId,
         status: "BUILDING",
         progress: {
@@ -1182,28 +1182,28 @@ export const executeWebIdentityDeploymentInternal = internalAction({
           currentStep: "package-artifacts",
           totalSteps: 5,
         },
-      });
+      } );
 
-      const agent = await ctx.runQuery(internal.agents.getInternal, { id: args.agentId });
-      if (!agent) {
-        throw new Error("Agent not found");
+      const agent = await ctx.runQuery( internal.agents.getInternal, { id: args.agentId } );
+      if ( !agent ) {
+        throw new Error( "Agent not found" );
       }
 
-      const { files } = assembleDeploymentPackageFiles(agent, {
+      const { files } = assembleDeploymentPackageFiles( agent, {
         deploymentTarget: agent.deploymentType === "aws" ? "agentcore" : agent.deploymentType,
         includeCloudFormation: true,
         includeCLIScript: true,
         includeLambdaConfig: agent.deploymentType === "lambda",
-      });
+      } );
 
-      const JSZipModule = await import("jszip");
+      const JSZipModule = await import( "jszip" );
       const zip = new JSZipModule.default();
-      for (const [filename, content] of Object.entries(files)) {
-        zip.file(filename, content);
+      for ( const [filename, content] of Object.entries( files ) ) {
+        zip.file( filename, content );
       }
-      const zipBuffer: Buffer = await zip.generateAsync({ type: "nodebuffer" });
+      const zipBuffer: Buffer = await zip.generateAsync( { type: "nodebuffer" } );
 
-      await ctx.runMutation(internal.awsDeployment.updateDeploymentStatusInternal, {
+      await ctx.runMutation( internal.awsDeployment.updateDeploymentStatusInternal, {
         deploymentId: args.deploymentId,
         status: "BUILDING",
         progress: {
@@ -1213,50 +1213,50 @@ export const executeWebIdentityDeploymentInternal = internalAction({
           currentStep: "package-artifacts",
           totalSteps: 5,
         },
-      });
+      } );
 
-      const sanitizedName = sanitizeAgentName(agent.name || `agent-${args.agentId}`);
+      const sanitizedName = sanitizeAgentName( agent.name || `agent-${args.agentId}` );
       const packageKey = `agentcore/${sanitizedName}/${args.deploymentId}-${Date.now()}.zip`;
       const baseBucketName = `agent-builder-${awsAccountId}-deployments`;
       let bucketName = baseBucketName;
 
-      const { S3Client, CreateBucketCommand, HeadBucketCommand, PutObjectCommand, GetObjectCommand } = await import("@aws-sdk/client-s3");
-      const { getSignedUrl } = await import("@aws-sdk/s3-request-presigner");
-      const s3Client = new S3Client({ region, credentials: awsCredentials });
+      const { S3Client, CreateBucketCommand, HeadBucketCommand, PutObjectCommand, GetObjectCommand } = await import( "@aws-sdk/client-s3" );
+      const { getSignedUrl } = await import( "@aws-sdk/s3-request-presigner" );
+      const s3Client = new S3Client( { region, credentials: awsCredentials } );
 
       try {
-        await s3Client.send(new HeadBucketCommand({ Bucket: bucketName }));
-      } catch (headError: any) {
+        await s3Client.send( new HeadBucketCommand( { Bucket: bucketName } ) );
+      } catch ( headError: any ) {
         try {
           const createParams: any = { Bucket: bucketName };
-          if (region !== "us-east-1") {
+          if ( region !== "us-east-1" ) {
             createParams.CreateBucketConfiguration = { LocationConstraint: region };
           }
-          await s3Client.send(new CreateBucketCommand(createParams));
-        } catch (createError: any) {
-          if (createError.name === "BucketAlreadyOwnedByYou") {
+          await s3Client.send( new CreateBucketCommand( createParams ) );
+        } catch ( createError: any ) {
+          if ( createError.name === "BucketAlreadyOwnedByYou" ) {
             // bucket already accessible
-          } else if (createError.name === "BucketAlreadyExists") {
+          } else if ( createError.name === "BucketAlreadyExists" ) {
             bucketName = `${baseBucketName}-${Date.now()}`;
             const createParams: any = { Bucket: bucketName };
-            if (region !== "us-east-1") {
+            if ( region !== "us-east-1" ) {
               createParams.CreateBucketConfiguration = { LocationConstraint: region };
             }
-            await s3Client.send(new CreateBucketCommand(createParams));
+            await s3Client.send( new CreateBucketCommand( createParams ) );
           } else {
             throw createError;
           }
         }
       }
 
-      await s3Client.send(new PutObjectCommand({
+      await s3Client.send( new PutObjectCommand( {
         Bucket: bucketName,
         Key: packageKey,
         Body: zipBuffer,
         ContentType: "application/zip",
-      }));
+      } ) );
 
-      await ctx.runMutation(internal.awsDeployment.updateDeploymentStatusInternal, {
+      await ctx.runMutation( internal.awsDeployment.updateDeploymentStatusInternal, {
         deploymentId: args.deploymentId,
         status: "BUILDING",
         progress: {
@@ -1270,26 +1270,26 @@ export const executeWebIdentityDeploymentInternal = internalAction({
         deploymentPackageKey: packageKey,
         awsAccountId,
         awsCallerArn: callerArn,
-      });
+      } );
 
-      const { ECRClient, DescribeRepositoriesCommand, CreateRepositoryCommand } = await import("@aws-sdk/client-ecr");
-      const ecrClient = new ECRClient({ region, credentials: awsCredentials });
+      const { ECRClient, DescribeRepositoriesCommand, CreateRepositoryCommand } = await import( "@aws-sdk/client-ecr" );
+      const ecrClient = new ECRClient( { region, credentials: awsCredentials } );
       const repositoryName = `agent-builder/${sanitizedName}`;
       let repositoryUri: string | undefined;
 
       try {
-        const describe = await ecrClient.send(new DescribeRepositoriesCommand({ repositoryNames: [repositoryName] }));
+        const describe = await ecrClient.send( new DescribeRepositoriesCommand( { repositoryNames: [repositoryName] } ) );
         repositoryUri = describe.repositories?.[0]?.repositoryUri;
-      } catch (repoError: any) {
-        if (repoError.name === "RepositoryNotFoundException") {
-          const created = await ecrClient.send(new CreateRepositoryCommand({ repositoryName }));
+      } catch ( repoError: any ) {
+        if ( repoError.name === "RepositoryNotFoundException" ) {
+          const created = await ecrClient.send( new CreateRepositoryCommand( { repositoryName } ) );
           repositoryUri = created.repository?.repositoryUri;
         } else {
           throw repoError;
         }
       }
 
-      await ctx.runMutation(internal.awsDeployment.updateDeploymentStatusInternal, {
+      await ctx.runMutation( internal.awsDeployment.updateDeploymentStatusInternal, {
         deploymentId: args.deploymentId,
         status: "DEPLOYING",
         progress: {
@@ -1302,17 +1302,17 @@ export const executeWebIdentityDeploymentInternal = internalAction({
           totalSteps: 5,
         },
         ecrRepositoryUri: repositoryUri,
-      });
+      } );
 
       let downloadUrl: string | null = null;
       try {
         downloadUrl = await getSignedUrl(
           s3Client,
-          new GetObjectCommand({ Bucket: bucketName, Key: packageKey }),
+          new GetObjectCommand( { Bucket: bucketName, Key: packageKey } ),
           { expiresIn: 3600 }
         );
-      } catch (presignError) {
-        console.warn("Unable to create presigned URL for deployment package", presignError);
+      } catch ( presignError ) {
+        console.warn( "Unable to create presigned URL for deployment package", presignError );
       }
 
       const instructionsLines = [
@@ -1324,13 +1324,13 @@ export const executeWebIdentityDeploymentInternal = internalAction({
         "3. Deploy the AgentCore stack using the CloudFormation template inside agent_package.zip or run deploy_agentcore.sh.",
       ];
 
-      if (downloadUrl) {
-        instructionsLines.push(`Temporary download URL (valid 1 hour): ${downloadUrl}`);
+      if ( downloadUrl ) {
+        instructionsLines.push( `Temporary download URL (valid 1 hour): ${downloadUrl}` );
       }
 
-      const instructions = instructionsLines.join("\n\n");
+      const instructions = instructionsLines.join( "\n\n" );
 
-      await ctx.runMutation(internal.awsDeployment.updateDeploymentStatusInternal, {
+      await ctx.runMutation( internal.awsDeployment.updateDeploymentStatusInternal, {
         deploymentId: args.deploymentId,
         status: "ACTIVE",
         progress: {
@@ -1353,11 +1353,11 @@ export const executeWebIdentityDeploymentInternal = internalAction({
             source: "deployment",
           },
         ],
-      });
+      } );
 
-    } catch (error: any) {
-      console.error("Web identity deployment error:", error);
-      await ctx.runMutation(internal.awsDeployment.updateDeploymentStatusInternal, {
+    } catch ( error: any ) {
+      console.error( "Web identity deployment error:", error );
+      await ctx.runMutation( internal.awsDeployment.updateDeploymentStatusInternal, {
         deploymentId: args.deploymentId,
         status: "FAILED",
         progress: {
@@ -1366,15 +1366,15 @@ export const executeWebIdentityDeploymentInternal = internalAction({
           message: `Deployment failed: ${error.message}`,
         },
         error: error.message,
-      });
+      } );
     }
   },
-});
+} );
 
 /**
  * Assume role in user's AWS account (DEPRECATED - use web identity instead)
  */
-async function assumeUserRole(roleArn: string, externalId: string) {
+async function assumeUserRole( roleArn: string, externalId: string ) {
   const response = await fetch(
     `${process.env.CONVEX_SITE_URL}/aws/assumeRole`,
     {
@@ -1383,17 +1383,17 @@ async function assumeUserRole(roleArn: string, externalId: string) {
         "Content-Type": "application/json",
         Authorization: `Bearer ${process.env.AWS_API_SECRET}`,
       },
-      body: JSON.stringify({
+      body: JSON.stringify( {
         roleArn,
         externalId,
         sessionName: `agent-deployment-${Date.now()}`,
         durationSeconds: 3600,
-      }),
+      } ),
     }
   );
 
-  if (!response.ok) {
-    throw new Error(`Failed to assume role: ${response.statusText}`);
+  if ( !response.ok ) {
+    throw new Error( `Failed to assume role: ${response.statusText}` );
   }
 
   return await response.json();
@@ -1414,20 +1414,20 @@ async function deployToUserAWS(
     ECRClient,
     CreateRepositoryCommand,
     GetAuthorizationTokenCommand
-  } = await import("@aws-sdk/client-ecr");
+  } = await import( "@aws-sdk/client-ecr" );
 
   const {
     ECSClient,
     CreateClusterCommand,
     RegisterTaskDefinitionCommand,
     CreateServiceCommand
-  } = await import("@aws-sdk/client-ecs");
+  } = await import( "@aws-sdk/client-ecs" );
 
   const {
     S3Client,
     CreateBucketCommand,
     PutObjectCommand
-  } = await import("@aws-sdk/client-s3");
+  } = await import( "@aws-sdk/client-s3" );
 
   const {
     EC2Client,
@@ -1436,7 +1436,7 @@ async function deployToUserAWS(
     CreateSecurityGroupCommand,
     AuthorizeSecurityGroupIngressCommand,
     DescribeSecurityGroupsCommand
-  } = await import("@aws-sdk/client-ec2");
+  } = await import( "@aws-sdk/client-ec2" );
 
   // Configure AWS clients with temporary credentials
   const credentials = {
@@ -1445,88 +1445,88 @@ async function deployToUserAWS(
     sessionToken
   };
 
-  const ecrClient = new ECRClient({ region, credentials });
-  const ecsClient = new ECSClient({ region, credentials });
-  const s3Client = new S3Client({ region, credentials });
-  const ec2Client = new EC2Client({ region, credentials });
+  const ecrClient = new ECRClient( { region, credentials } );
+  const ecsClient = new ECSClient( { region, credentials } );
+  const s3Client = new S3Client( { region, credentials } );
+  const ec2Client = new EC2Client( { region, credentials } );
 
   // 1. Create ECR repository for agent image
   const repoName = `agent-${agent._id.toLowerCase()}`;
   try {
-    await ecrClient.send(new CreateRepositoryCommand({
+    await ecrClient.send( new CreateRepositoryCommand( {
       repositoryName: repoName,
       imageScanningConfiguration: {
         scanOnPush: true
       }
-    }));
-    console.log(`Created ECR repository: ${repoName}`);
-  } catch (error: any) {
-    if (error.name !== "RepositoryAlreadyExistsException") {
+    } ) );
+    console.log( `Created ECR repository: ${repoName}` );
+  } catch ( error: any ) {
+    if ( error.name !== "RepositoryAlreadyExistsException" ) {
       throw error;
     }
-    console.log(`ECR repository already exists: ${repoName}`);
+    console.log( `ECR repository already exists: ${repoName}` );
   }
 
   // 2. Get ECR auth token for Docker push
-  const authResponse = await ecrClient.send(new GetAuthorizationTokenCommand({}));
+  const authResponse = await ecrClient.send( new GetAuthorizationTokenCommand( {} ) );
   const authToken = authResponse.authorizationData?.[0];
 
-  if (!authToken) {
-    throw new Error("Failed to get ECR authorization token");
+  if ( !authToken ) {
+    throw new Error( "Failed to get ECR authorization token" );
   }
 
   // 3. Create S3 bucket for agent artifacts
   const bucketName = `agent-artifacts-${Date.now()}`;
   try {
-    await s3Client.send(new CreateBucketCommand({
+    await s3Client.send( new CreateBucketCommand( {
       Bucket: bucketName,
       CreateBucketConfiguration: {
-        LocationConstraint: (region !== "us-east-1" ? region : undefined) as any
+        LocationConstraint: ( region !== "us-east-1" ? region : undefined ) as any
       }
-    }));
-    console.log(`Created S3 bucket: ${bucketName}`);
-  } catch (error: any) {
-    if (error.name !== "BucketAlreadyOwnedByYou") {
+    } ) );
+    console.log( `Created S3 bucket: ${bucketName}` );
+  } catch ( error: any ) {
+    if ( error.name !== "BucketAlreadyOwnedByYou" ) {
       throw error;
     }
   }
 
   // 4. Upload agent code to S3
-  const agentCode = generateAgentCoreCode(agent);
-  await s3Client.send(new PutObjectCommand({
+  const agentCode = generateAgentCoreCode( agent );
+  await s3Client.send( new PutObjectCommand( {
     Bucket: bucketName,
     Key: "agent.py",
     Body: agentCode,
     ContentType: "text/x-python"
-  }));
+  } ) );
 
   // 5. Create ECS cluster
   const clusterName = `agent-cluster-${agent._id}`;
   try {
-    await ecsClient.send(new CreateClusterCommand({
+    await ecsClient.send( new CreateClusterCommand( {
       clusterName,
       capacityProviders: ["FARGATE"],
       defaultCapacityProviderStrategy: [{
         capacityProvider: "FARGATE",
         weight: 1
       }]
-    }));
-    console.log(`Created ECS cluster: ${clusterName}`);
-  } catch (error: any) {
-    if (error.name !== "ClusterAlreadyExistsException") {
+    } ) );
+    console.log( `Created ECS cluster: ${clusterName}` );
+  } catch ( error: any ) {
+    if ( error.name !== "ClusterAlreadyExistsException" ) {
       throw error;
     }
   }
 
   // 6. Register task definition
   const taskFamily = `agent-task-${agent._id}`;
-  const taskDefResponse = await ecsClient.send(new RegisterTaskDefinitionCommand({
+  const taskDefResponse = await ecsClient.send( new RegisterTaskDefinitionCommand( {
     family: taskFamily,
     networkMode: "awsvpc",
     requiresCompatibilities: ["FARGATE"],
     cpu: "256",
     memory: "512",
-    executionRoleArn: `arn:aws:iam::${authToken.proxyEndpoint?.split('.')[0].split('//')[1]}:role/ecsTaskExecutionRole`,
+    executionRoleArn: `arn:aws:iam::${authToken.proxyEndpoint?.split( '.' )[0].split( '//' )[1]}:role/ecsTaskExecutionRole`,
     containerDefinitions: [{
       name: "agent-container",
       image: `${authToken.proxyEndpoint}/${repoName}:latest`,
@@ -1548,14 +1548,14 @@ async function deployToUserAWS(
         }
       }
     }]
-  }));
+  } ) );
 
-  console.log(`Registered task definition: ${taskDefResponse.taskDefinition?.taskDefinitionArn}`);
+  console.log( `Registered task definition: ${taskDefResponse.taskDefinition?.taskDefinitionArn}` );
 
   // 7. Create ECS service
   const serviceName = `agent-service-${agent._id}`;
   try {
-    await ecsClient.send(new CreateServiceCommand({
+    await ecsClient.send( new CreateServiceCommand( {
       cluster: clusterName,
       serviceName,
       taskDefinition: taskDefResponse.taskDefinition?.taskDefinitionArn,
@@ -1568,10 +1568,10 @@ async function deployToUserAWS(
           securityGroups: [] // TODO: Create security group
         }
       }
-    }));
-    console.log(`Created ECS service: ${serviceName}`);
-  } catch (error: any) {
-    if (error.name !== "ServiceAlreadyExistsException") {
+    } ) );
+    console.log( `Created ECS service: ${serviceName}` );
+  } catch ( error: any ) {
+    if ( error.name !== "ServiceAlreadyExistsException" ) {
       throw error;
     }
   }
@@ -1584,4 +1584,3 @@ async function deployToUserAWS(
     taskDefinition: taskDefResponse.taskDefinition?.taskDefinitionArn
   };
 }
-

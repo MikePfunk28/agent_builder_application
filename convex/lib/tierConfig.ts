@@ -79,9 +79,12 @@ export const TIER_CONFIGS: Record<TierName, TierConfig> = {
     allowedBedrockFamilies: [
       "claude-haiku",
       "claude-sonnet",
+      "claude-opus",
       "amazon-nova",
       "cohere",
       "mistral",
+      "deepseek",
+      "moonshot",
     ],
     features: {
       bedrockAccess: true,

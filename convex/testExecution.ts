@@ -28,19 +28,20 @@ import { checkRateLimitInMutation, buildTierRateLimitConfig } from "./rateLimite
 // Usage increment + overage reporting — single source of truth in stripeMutations.ts.
 import { incrementUsageAndReportOverageImpl } from "./stripeMutations";
 
-// Cost calculation helper
+// Model registry — authoritative source for cost data
+import { BEDROCK_MODELS } from "./modelRegistry";
+
+// Cost calculation helper — reads pricing from the authoritative model registry.
+// Falls back to Haiku 4.5 pricing ($1/$5 per 1M tokens) for unknown models.
 function calculateBedrockCost(usage: any, modelId: string): number {
-  const pricing: Record<string, { input: number; output: number }> = {
-    "anthropic.claude-3-5-sonnet-20241022-v2:0": { input: 0.003, output: 0.015 },
-    "anthropic.claude-3-haiku-20240307-v1:0": { input: 0.00025, output: 0.00125 },
-    "amazon.titan-text-premier-v1:0": { input: 0.0005, output: 0.0015 },
-  };
+  const model = BEDROCK_MODELS[modelId];
+  const cost = model?.costPer1MTokens ?? { input: 1.0, output: 5.0 };
 
-  const modelPricing = pricing[modelId] || pricing["anthropic.claude-3-5-sonnet-20241022-v2:0"];
-  const inputCost = (usage.inputTokens || 0) / 1000 * modelPricing.input;
-  const outputCost = (usage.outputTokens || 0) / 1000 * modelPricing.output;
+  // costPer1MTokens is per 1,000,000 tokens; convert to per-token then multiply
+  const inputCost = ( usage.inputTokens || 0 ) * ( cost.input / 1_000_000 );
+  const outputCost = ( usage.outputTokens || 0 ) * ( cost.output / 1_000_000 );
 
-  return Math.round((inputCost + outputCost) * 100); // Return cents
+  return Math.round( ( inputCost + outputCost ) * 100 ); // Return cents
 }
 
 /**
@@ -216,9 +217,9 @@ export const submitTest = mutation({
     // Update test status to QUEUED
     await ctx.db.patch(testId, { status: "QUEUED" });
 
-    // BILLING: Increment user's execution count ONLY for cloud models (not Ollama)
+    // BILLING: Increment user's weighted execution units ONLY for cloud models (not Ollama)
     if (!isOllamaModel) {
-      await incrementUsageAndReportOverageImpl( ctx, userId, { updateLastTestAt: true } );
+      await incrementUsageAndReportOverageImpl( ctx, userId, { updateLastTestAt: true, modelId: agent.model } );
     }
 
     // Trigger queue processor immediately (on-demand processing to save costs)
@@ -469,9 +470,10 @@ export const retryTest = mutation({
 
     await ctx.db.patch(newTestId, { status: "QUEUED" });
 
-    // BILLING: Increment user's execution count ONLY for cloud models (not Ollama)
+    // BILLING: Increment user's weighted execution units ONLY for cloud models (not Ollama)
     if (!isOllamaModel) {
-      await incrementUsageAndReportOverageImpl( ctx, userId, { updateLastTestAt: true } );
+      const retryModelId = originalTest.modelConfig?.modelId || originalTest.modelProvider || "anthropic.claude-haiku-4-5-20251001-v1:0";
+      await incrementUsageAndReportOverageImpl( ctx, userId, { updateLastTestAt: true, modelId: retryModelId } );
     }
 
     // Trigger queue processor immediately (on-demand processing)

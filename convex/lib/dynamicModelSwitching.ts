@@ -62,17 +62,6 @@ export const MODEL_TIERS: Record<string, ModelTier> = {
     speedRating: 2,
     capabilityRating: 3,
   },
-
-  // Ollama models (free, but require local hosting)
-  ollamaLlama: {
-    name: "Llama 3.2",
-    modelId: "llama3.2:latest",
-    costPer1KInput: 0, // Free
-    costPer1KOutput: 0,
-    maxTokens: 8000,
-    speedRating: 2,
-    capabilityRating: 1,
-  },
 };
 
 /**
@@ -194,7 +183,7 @@ export function calculateComplexityScore( signals: ComplexitySignals ): number {
  */
 export function selectModel(
   complexityScore: number,
-  agent: AgentDoc,
+  _agent: AgentDoc,
   options: {
     preferCost?: boolean; // Prefer cheaper models
     preferSpeed?: boolean; // Prefer faster models
@@ -204,18 +193,13 @@ export function selectModel(
 ): ModelTier {
   const { preferCost = false, preferSpeed = false, preferCapability = false, userTier = "freemium" } = options;
 
-  // Get available models based on agent configuration
-  const bedrockPrefixes = ["anthropic.", "amazon.", "meta.", "mistral.", "cohere.", "ai21.", "stability.", "us.", "eu.", "apac.", "global."];
-  const isOllamaAgent = agent.model.includes( ":" ) && !bedrockPrefixes.some( prefix => agent.model.startsWith( prefix ) );
-  const availableModels = isOllamaAgent
-    ? [MODEL_TIERS.ollamaLlama]
-    : [MODEL_TIERS.haiku, MODEL_TIERS.sonnet, MODEL_TIERS.sonnet45];
+  // All tiers are Bedrock models — Ollama agents use their own execution path
+  // and should not go through dynamic model switching.
+  const availableModels = [MODEL_TIERS.haiku, MODEL_TIERS.sonnet, MODEL_TIERS.sonnet45];
 
-  // Freemium users: only local models allowed (no Bedrock access)
+  // Freemium users: execution layer blocks Bedrock, return cheapest as safety net
   if ( userTier === "freemium" ) {
-    // If the agent uses Ollama, return Ollama model; otherwise return cheapest available
-    // Bedrock gating is enforced at the execution layer, but we also constrain selection here
-    return isOllamaAgent ? availableModels[0] : MODEL_TIERS.ollamaLlama;
+    return MODEL_TIERS.haiku;
   }
 
   // Complexity-based routing with preference adjustments

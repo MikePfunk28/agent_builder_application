@@ -68,6 +68,16 @@ type BedrockContentBlock =
 
 type BedrockInvokeResponse = {
   content?: BedrockContentBlock[];
+  // Meta/Llama
+  generation?: string;
+  // Mistral
+  outputs?: Array<{ text?: string }>;
+  // Cohere
+  generations?: Array<{ text?: string }>;
+  // AI21
+  completions?: Array<{ data?: { text?: string } }>;
+  // Amazon Titan
+  results?: Array<{ outputText?: string }>;
 };
 
 export const executeAgentWithStrandsAgents = action( {
@@ -184,17 +194,52 @@ async function executeDirectBedrock(
 
   const modelId = resolveBedrockModelId( agent.model );
 
-  const payload = {
-    anthropic_version: "bedrock-2023-05-31",
-    max_tokens: 4096,
-    system: agent.systemPrompt,
-    messages: messages,
-    temperature: 1,
-    thinking: {
-      type: "enabled",
-      budget_tokens: 3000,
-    },
-  };
+  // Branch payload format by provider: Anthropic Messages API vs generic Bedrock
+  const isAnthropicModel = modelId.includes( "anthropic" ) || modelId.includes( "claude" );
+  let payload: Record<string, unknown>;
+
+  if ( isAnthropicModel ) {
+    payload = {
+      anthropic_version: "bedrock-2023-05-31",
+      max_tokens: 4096,
+      system: agent.systemPrompt,
+      messages: messages,
+      temperature: 1,
+      thinking: {
+        type: "enabled",
+        budget_tokens: 3000,
+      },
+    };
+  } else {
+    // Non-Anthropic Bedrock models (Llama, Mistral, etc.) use a plain
+    // prompt-based payload compatible with InvokeModelCommand.
+    const promptText = messages.map(
+      ( m: { role: string; content: Array<{ text: string }> } ) =>
+        `${m.role}: ${m.content.map( ( c ) => c.text ).join( "" )}`
+    ).join( "\n" );
+    const systemPrefix = agent.systemPrompt ? `system: ${agent.systemPrompt}\n` : "";
+
+    if ( modelId.includes( "meta" ) || modelId.includes( "llama" ) ) {
+      payload = {
+        prompt: `${systemPrefix}${promptText}\nassistant:`,
+        max_gen_len: 4096,
+        temperature: 0.7,
+      };
+    } else if ( modelId.includes( "mistral" ) ) {
+      payload = {
+        prompt: `<s>[INST] ${systemPrefix}${promptText} [/INST]`,
+        max_tokens: 4096,
+        temperature: 0.7,
+      };
+    } else {
+      // Generic Bedrock model fallback (Cohere, AI21, Titan, etc.)
+      payload = {
+        prompt: `${systemPrefix}${promptText}\nassistant:`,
+        max_tokens: 4096,
+        temperature: 0.7,
+      };
+    }
+  }
 
   const command = new InvokeModelCommand( {
     modelId: modelId,
@@ -212,19 +257,47 @@ async function executeDirectBedrock(
   let reasoning = "";
   const toolCalls: ToolCall[] = [];
 
-  for ( const block of responseBody.content || [] ) {
-    if ( block.type === "text" ) {
-      content += block.text;
-    } else if ( block.type === "thinking" ) {
-      reasoning += block.thinking;
-    } else if ( block.type === "tool_use" ) {
-      const id = typeof block.id === "string" ? block.id : undefined;
-      const name = typeof block.name === "string" ? block.name : undefined;
-      toolCalls.push( {
-        id,
-        name,
-        input: block.input,
-      } );
+  if ( responseBody.content && Array.isArray( responseBody.content ) ) {
+    // Anthropic models: content is an array of typed blocks
+    for ( const block of responseBody.content ) {
+      if ( block.type === "text" ) {
+        content += block.text;
+      } else if ( block.type === "thinking" ) {
+        reasoning += block.thinking;
+      } else if ( block.type === "tool_use" ) {
+        const id = typeof block.id === "string" ? block.id : undefined;
+        const name = typeof block.name === "string" ? block.name : undefined;
+        toolCalls.push( {
+          id,
+          name,
+          input: block.input,
+        } );
+      }
+    }
+  } else if ( typeof responseBody.generation === "string" ) {
+    // Meta/Llama models: single generation string
+    content = responseBody.generation;
+  } else if ( responseBody.outputs && Array.isArray( responseBody.outputs ) ) {
+    // Mistral models: outputs array with text fields
+    content = responseBody.outputs.map( ( o ) => o.text || "" ).join( "" );
+  } else if ( responseBody.generations && Array.isArray( responseBody.generations ) ) {
+    // Cohere models: generations array
+    content = responseBody.generations.map( ( g ) => g.text || "" ).join( "" );
+  } else if ( responseBody.completions && Array.isArray( responseBody.completions ) ) {
+    // AI21 models: completions array
+    content = responseBody.completions.map( ( c ) => c.data?.text || "" ).join( "" );
+  } else if ( responseBody.results && Array.isArray( responseBody.results ) ) {
+    // Amazon Titan models: results array
+    content = responseBody.results.map( ( r ) => r.outputText || "" ).join( "" );
+  } else {
+    // Fallback: try to extract text from any field in the response
+    const raw = new TextDecoder().decode( response.body );
+    console.warn( `Unrecognized Bedrock response format for model ${modelId}. Raw preview: ${raw.slice( 0, 200 )}` );
+    try {
+      const parsed = JSON.parse( raw );
+      content = typeof parsed === "string" ? parsed : JSON.stringify( parsed );
+    } catch {
+      content = raw;
     }
   }
 

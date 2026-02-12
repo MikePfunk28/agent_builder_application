@@ -152,7 +152,8 @@ const applicationTables = {
     stripeSubscriptionId: v.optional( v.string() ),
     subscriptionStatus: v.optional( v.string() ), // "active", "past_due", "canceled"
     currentPeriodEnd: v.optional( v.number() ), // Unix timestamp
-    executionsThisMonth: v.optional( v.number() ), // Cloud executions in current billing period
+    executionsThisMonth: v.optional( v.number() ), // Weighted units consumed in current billing period (1 Haiku = 1 unit, 1 Sonnet = 3, 1 Opus = 5)
+    rawCallsThisMonth: v.optional( v.number() ), // Unweighted call count for analytics
     billingPeriodStart: v.optional( v.number() ), // Start of current billing period
   } )
     .index( "by_tier", ["tier"] )

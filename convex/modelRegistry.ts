@@ -47,6 +47,8 @@ export interface ModelMetadata {
     input: number;
     output: number;
   };
+  /** Weighted billing units consumed per call. 1 unit = 1 Haiku-equivalent call ($0.05 Stripe unit). */
+  unitsPerCall?: number;
   description?: string;
   type?: "text" | "image" | "video" | "embedding";
 }
@@ -70,6 +72,7 @@ export const BEDROCK_MODELS: Record<string, ModelMetadata> = {
     recommended: true,
     category: "flagship",
     costPer1MTokens: { input: 3.0, output: 15.0 },
+    unitsPerCall: 3,
     description: "Latest Claude model with interleaved reasoning, best for complex tasks",
   },
 
@@ -84,7 +87,25 @@ export const BEDROCK_MODELS: Record<string, ModelMetadata> = {
     recommended: true,
     category: "fast",
     costPer1MTokens: { input: 1.0, output: 5.0 },
+    unitsPerCall: 1,
     description: "Latest fast Claude model with reasoning, perfect for thinking agents and tool creation",
+  },
+
+  // ============================================================================
+  // CLAUDE 4.6 (PREMIUM)
+  // ============================================================================
+  "anthropic.claude-opus-4-6-v1": {
+    id: "anthropic.claude-opus-4-6-v1",
+    name: "Claude 4.6 Opus",
+    provider: "bedrock",
+    providerDisplay: "Anthropic (Bedrock)",
+    capabilities: ["text", "vision", "reasoning"],
+    contextWindow: 200000,
+    maxOutput: 16384,
+    category: "premium",
+    costPer1MTokens: { input: 5.0, output: 25.0 },
+    unitsPerCall: 5,
+    description: "Most capable Claude model — 5x Haiku cost per call",
   },
 
   // ============================================================================
@@ -92,7 +113,7 @@ export const BEDROCK_MODELS: Record<string, ModelMetadata> = {
   // ============================================================================
   "anthropic.claude-opus-4-1-20250805-v1:0": {
     id: "anthropic.claude-opus-4-1-20250805-v1:0",
-    name: "Claude 4.5 Opus",
+    name: "Claude 4.1 Opus",
     provider: "bedrock",
     providerDisplay: "Anthropic (Bedrock)",
     capabilities: ["text", "vision", "reasoning"],
@@ -100,6 +121,7 @@ export const BEDROCK_MODELS: Record<string, ModelMetadata> = {
     maxOutput: 16384,
     category: "premium",
     costPer1MTokens: { input: 15.0, output: 75.0 },
+    unitsPerCall: 15,
     description: "Most capable Claude model for complex reasoning tasks",
   },
 
@@ -116,6 +138,7 @@ export const BEDROCK_MODELS: Record<string, ModelMetadata> = {
     maxOutput: 16384,
     category: "premium",
     costPer1MTokens: { input: 15.0, output: 75.0 },
+    unitsPerCall: 15,
     description: "High-performance Claude model for demanding tasks",
   },
 
@@ -129,69 +152,8 @@ export const BEDROCK_MODELS: Record<string, ModelMetadata> = {
     maxOutput: 8192,
     category: "balanced",
     costPer1MTokens: { input: 3.0, output: 15.0 },
+    unitsPerCall: 3,
     description: "Balanced Claude model for general use",
-  },
-
-  // ============================================================================
-  // CLAUDE 3.7 SERIES
-  // ============================================================================
-  "anthropic.claude-3-7-sonnet-20250219-v1:0": {
-    id: "anthropic.claude-3-7-sonnet-20250219-v1:0",
-    name: "Claude 3.7 Sonnet",
-    provider: "bedrock",
-    providerDisplay: "Anthropic (Bedrock)",
-    capabilities: ["text", "vision"],
-    contextWindow: 200000,
-    maxOutput: 8192,
-    category: "balanced",
-    costPer1MTokens: { input: 3.0, output: 15.0 },
-    description: "Previous generation Claude Sonnet",
-  },
-
-  // ============================================================================
-  // CLAUDE 3.5 SERIES
-  // ============================================================================
-  "anthropic.claude-3-5-haiku-20241022-v1:0": {
-    id: "anthropic.claude-3-5-haiku-20241022-v1:0",
-    name: "Claude 3.5 Haiku",
-    provider: "bedrock",
-    providerDisplay: "Anthropic (Bedrock)",
-    capabilities: ["text", "vision"],
-    contextWindow: 200000,
-    maxOutput: 8192,
-    recommended: true,
-    category: "fast",
-    costPer1MTokens: { input: 1.0, output: 5.0 },
-    description: "Fast and cost-effective Claude model",
-  },
-
-  "anthropic.claude-3-5-sonnet-20240620-v1:0": {
-    id: "anthropic.claude-3-5-sonnet-20240620-v1:0",
-    name: "Claude 3.5 Sonnet",
-    provider: "bedrock",
-    providerDisplay: "Anthropic (Bedrock)",
-    capabilities: ["text", "vision"],
-    contextWindow: 200000,
-    maxOutput: 8192,
-    category: "balanced",
-    costPer1MTokens: { input: 3.0, output: 15.0 },
-    description: "Previous Claude 3.5 generation",
-  },
-
-  // ============================================================================
-  // CLAUDE 3 SERIES
-  // ============================================================================
-  "anthropic.claude-3-haiku-20240307-v1:0": {
-    id: "anthropic.claude-3-haiku-20240307-v1:0",
-    name: "Claude 3 Haiku",
-    provider: "bedrock",
-    providerDisplay: "Anthropic (Bedrock)",
-    capabilities: ["text"],
-    contextWindow: 200000,
-    maxOutput: 4096,
-    category: "fast",
-    costPer1MTokens: { input: 0.25, output: 1.25 },
-    description: "Fastest Claude 3 model",
   },
 
   // ============================================================================
@@ -207,6 +169,8 @@ export const BEDROCK_MODELS: Record<string, ModelMetadata> = {
     maxOutput: 5000,
     recommended: true,
     category: "balanced",
+    costPer1MTokens: { input: 0.80, output: 3.20 },
+    unitsPerCall: 1,
     description: "Amazon's flagship multimodal model",
   },
 
@@ -219,6 +183,8 @@ export const BEDROCK_MODELS: Record<string, ModelMetadata> = {
     contextWindow: 300000,
     maxOutput: 5000,
     category: "fast",
+    costPer1MTokens: { input: 0.06, output: 0.24 },
+    unitsPerCall: 1,
     description: "Lightweight Nova model for speed",
   },
 
@@ -231,6 +197,8 @@ export const BEDROCK_MODELS: Record<string, ModelMetadata> = {
     contextWindow: 128000,
     maxOutput: 5000,
     category: "fast",
+    costPer1MTokens: { input: 0.035, output: 0.14 },
+    unitsPerCall: 1,
     description: "Ultra-fast text-only Nova model",
   },
 
@@ -243,6 +211,8 @@ export const BEDROCK_MODELS: Record<string, ModelMetadata> = {
     contextWindow: 300000,
     maxOutput: 5000,
     category: "premium",
+    costPer1MTokens: { input: 2.50, output: 10.0 },
+    unitsPerCall: 3,
     description: "Most capable Nova model",
   },
 
@@ -297,6 +267,8 @@ export const BEDROCK_MODELS: Record<string, ModelMetadata> = {
     contextWindow: 32000,
     maxOutput: 3000,
     category: "balanced",
+    costPer1MTokens: { input: 0.50, output: 1.50 },
+    unitsPerCall: 1,
     description: "Amazon Titan text model for general use",
   },
 
@@ -326,6 +298,7 @@ export const BEDROCK_MODELS: Record<string, ModelMetadata> = {
     recommended: true,
     category: "flagship",
     costPer1MTokens: { input: 0.65, output: 0.65 },
+    unitsPerCall: 1,
     description: "Latest Llama 3.3 model with extended context on Bedrock",
   },
 
@@ -339,6 +312,7 @@ export const BEDROCK_MODELS: Record<string, ModelMetadata> = {
     maxOutput: 2048,
     category: "multimodal",
     costPer1MTokens: { input: 1.2, output: 1.2 },
+    unitsPerCall: 1,
     description: "Llama 3.2 with vision capabilities on Bedrock",
   },
 
@@ -352,6 +326,7 @@ export const BEDROCK_MODELS: Record<string, ModelMetadata> = {
     maxOutput: 2048,
     category: "multimodal",
     costPer1MTokens: { input: 0.35, output: 0.35 },
+    unitsPerCall: 1,
     description: "Compact Llama 3.2 with vision on Bedrock",
   },
 
@@ -365,6 +340,7 @@ export const BEDROCK_MODELS: Record<string, ModelMetadata> = {
     maxOutput: 2048,
     category: "lightweight",
     costPer1MTokens: { input: 0.15, output: 0.15 },
+    unitsPerCall: 1,
     description: "Lightweight Llama 3.2 on Bedrock",
   },
 
@@ -378,72 +354,8 @@ export const BEDROCK_MODELS: Record<string, ModelMetadata> = {
     maxOutput: 2048,
     category: "lightweight",
     costPer1MTokens: { input: 0.1, output: 0.1 },
+    unitsPerCall: 1,
     description: "Ultra-compact Llama 3.2 on Bedrock",
-  },
-
-  "meta.llama3-1-405b-instruct-v1:0": {
-    id: "meta.llama3-1-405b-instruct-v1:0",
-    name: "Llama 3.1 405B Instruct",
-    provider: "bedrock",
-    providerDisplay: "Meta (Bedrock)",
-    capabilities: ["text"],
-    contextWindow: 128000,
-    maxOutput: 4096,
-    category: "flagship",
-    costPer1MTokens: { input: 5.32, output: 16.0 },
-    description: "Largest Llama 3.1 model on Bedrock",
-  },
-
-  "meta.llama3-1-70b-instruct-v1:0": {
-    id: "meta.llama3-1-70b-instruct-v1:0",
-    name: "Llama 3.1 70B Instruct",
-    provider: "bedrock",
-    providerDisplay: "Meta (Bedrock)",
-    capabilities: ["text"],
-    contextWindow: 128000,
-    maxOutput: 2048,
-    category: "balanced",
-    costPer1MTokens: { input: 0.99, output: 0.99 },
-    description: "Balanced Llama 3.1 on Bedrock",
-  },
-
-  "meta.llama3-1-8b-instruct-v1:0": {
-    id: "meta.llama3-1-8b-instruct-v1:0",
-    name: "Llama 3.1 8B Instruct",
-    provider: "bedrock",
-    providerDisplay: "Meta (Bedrock)",
-    capabilities: ["text"],
-    contextWindow: 128000,
-    maxOutput: 2048,
-    category: "lightweight",
-    costPer1MTokens: { input: 0.22, output: 0.22 },
-    description: "Compact Llama 3.1 on Bedrock",
-  },
-
-  "meta.llama3-70b-instruct-v1:0": {
-    id: "meta.llama3-70b-instruct-v1:0",
-    name: "Llama 3 70B Instruct",
-    provider: "bedrock",
-    providerDisplay: "Meta (Bedrock)",
-    capabilities: ["text"],
-    contextWindow: 8192,
-    maxOutput: 2048,
-    category: "balanced",
-    costPer1MTokens: { input: 0.99, output: 0.99 },
-    description: "Llama 3 70B on Bedrock",
-  },
-
-  "meta.llama3-8b-instruct-v1:0": {
-    id: "meta.llama3-8b-instruct-v1:0",
-    name: "Llama 3 8B Instruct",
-    provider: "bedrock",
-    providerDisplay: "Meta (Bedrock)",
-    capabilities: ["text"],
-    contextWindow: 8192,
-    maxOutput: 2048,
-    category: "lightweight",
-    costPer1MTokens: { input: 0.22, output: 0.22 },
-    description: "Llama 3 8B on Bedrock",
   },
 
   // ============================================================================
@@ -460,6 +372,7 @@ export const BEDROCK_MODELS: Record<string, ModelMetadata> = {
     recommended: true,
     category: "flagship",
     costPer1MTokens: { input: 3.0, output: 9.0 },
+    unitsPerCall: 2,
     description: "Mistral's most capable model on Bedrock",
   },
 
@@ -473,6 +386,7 @@ export const BEDROCK_MODELS: Record<string, ModelMetadata> = {
     maxOutput: 8192,
     category: "lightweight",
     costPer1MTokens: { input: 1.0, output: 3.0 },
+    unitsPerCall: 1,
     description: "Compact Mistral model on Bedrock",
   },
 
@@ -489,6 +403,7 @@ export const BEDROCK_MODELS: Record<string, ModelMetadata> = {
     maxOutput: 4096,
     category: "flagship",
     costPer1MTokens: { input: 2.0, output: 8.0 },
+    unitsPerCall: 2,
     description: "AI21's flagship model with massive context window",
   },
 
@@ -502,6 +417,7 @@ export const BEDROCK_MODELS: Record<string, ModelMetadata> = {
     maxOutput: 4096,
     category: "lightweight",
     costPer1MTokens: { input: 0.2, output: 0.4 },
+    unitsPerCall: 1,
     description: "Compact Jamba model with large context",
   },
 
@@ -518,6 +434,7 @@ export const BEDROCK_MODELS: Record<string, ModelMetadata> = {
     maxOutput: 4096,
     category: "flagship",
     costPer1MTokens: { input: 3.0, output: 15.0 },
+    unitsPerCall: 3,
     description: "Cohere's most capable model on Bedrock",
   },
 
@@ -531,6 +448,7 @@ export const BEDROCK_MODELS: Record<string, ModelMetadata> = {
     maxOutput: 4096,
     category: "balanced",
     costPer1MTokens: { input: 0.5, output: 1.5 },
+    unitsPerCall: 1,
     description: "Balanced Cohere model on Bedrock",
   },
 
@@ -556,6 +474,56 @@ export const BEDROCK_MODELS: Record<string, ModelMetadata> = {
     type: "embedding",
     category: "embeddings",
     description: "Multilingual text embeddings from Cohere",
+  },
+
+  // ============================================================================
+  // DEEPSEEK (BEDROCK)
+  // ============================================================================
+  "deepseek.r1-v1:0": {
+    id: "deepseek.r1-v1:0",
+    name: "DeepSeek R1",
+    provider: "bedrock",
+    providerDisplay: "DeepSeek (Bedrock)",
+    capabilities: ["text", "reasoning"],
+    contextWindow: 64000,
+    maxOutput: 8192,
+    recommended: true,
+    category: "reasoning",
+    costPer1MTokens: { input: 1.35, output: 5.40 },
+    unitsPerCall: 2,
+    description: "DeepSeek reasoning model with chain-of-thought on Bedrock — heavier output tokens",
+  },
+
+  "deepseek.v3-v1:0": {
+    id: "deepseek.v3-v1:0",
+    name: "DeepSeek V3.1",
+    provider: "bedrock",
+    providerDisplay: "DeepSeek (Bedrock)",
+    capabilities: ["text", "reasoning", "coding"],
+    contextWindow: 64000,
+    maxOutput: 8192,
+    recommended: true,
+    category: "flagship",
+    costPer1MTokens: { input: 0.58, output: 1.68 },
+    unitsPerCall: 1,
+    description: "DeepSeek V3.1 hybrid model — best value reasoning model on Bedrock",
+  },
+
+  // ============================================================================
+  // MOONSHOT KIMI (BEDROCK)
+  // ============================================================================
+  "moonshot.kimi-k2-thinking": {
+    id: "moonshot.kimi-k2-thinking",
+    name: "Kimi K2 Thinking",
+    provider: "bedrock",
+    providerDisplay: "Moonshot AI (Bedrock)",
+    capabilities: ["text", "reasoning"],
+    contextWindow: 128000,
+    maxOutput: 8192,
+    category: "reasoning",
+    costPer1MTokens: { input: 1.00, output: 4.00 },
+    unitsPerCall: 1,
+    description: "Moonshot Kimi K2 with chain-of-thought reasoning on Bedrock",
   },
 };
 
@@ -908,40 +876,17 @@ export const ALL_MODELS = {
 export const SHORT_NAME_TO_BEDROCK_ID: Record<string, string> = {
   // Claude 4.6
   "claude-opus-4.6": "anthropic.claude-opus-4-6-v1",
-  "claude-4.6-opus": "anthropic.claude-opus-4-6-v1",
 
-  // Claude 4.5 (Latest - Sep/Oct 2025)
+  // Claude 4.5
   "claude-sonnet-4.5": "anthropic.claude-sonnet-4-5-20250929-v1:0",
-  "claude-4.5-sonnet": "anthropic.claude-sonnet-4-5-20250929-v1:0",
   "claude-haiku-4.5": "anthropic.claude-haiku-4-5-20251001-v1:0",
-  "claude-4.5-haiku": "anthropic.claude-haiku-4-5-20251001-v1:0",
 
   // Claude 4.1
   "claude-opus-4.1": "anthropic.claude-opus-4-1-20250805-v1:0",
-  "claude-4.1-opus": "anthropic.claude-opus-4-1-20250805-v1:0",
 
-  // Claude 4
+  // Claude 4.0
   "claude-opus-4": "anthropic.claude-opus-4-20250514-v1:0",
-  "claude-4-opus": "anthropic.claude-opus-4-20250514-v1:0",
   "claude-sonnet-4": "anthropic.claude-sonnet-4-20250514-v1:0",
-  "claude-4-sonnet": "anthropic.claude-sonnet-4-20250514-v1:0",
-
-  // Claude 3.7
-  "claude-sonnet-3.7": "anthropic.claude-sonnet-3-7-20250215-v1:0",
-  "claude-3.7-sonnet": "anthropic.claude-sonnet-3-7-20250215-v1:0",
-
-  // Claude 3.5
-  "claude-3-5-sonnet-v2": "anthropic.claude-3-5-sonnet-20241022-v2:0",
-  "claude-3-5-sonnet": "anthropic.claude-3-5-sonnet-20241022-v2:0",
-  "claude-3-5-sonnet-20241022": "anthropic.claude-3-5-sonnet-20241022-v2:0",
-  "claude-3-5-haiku": "anthropic.claude-3-5-haiku-20241022-v1:0",
-  "claude-3-5-haiku-20241022": "anthropic.claude-3-5-haiku-20241022-v1:0",
-
-  // Claude 3
-  "claude-3-opus": "anthropic.claude-3-opus-20240229-v1:0",
-  "claude-3-opus-20240229": "anthropic.claude-3-opus-20240229-v1:0",
-  "claude-3-sonnet": "anthropic.claude-3-sonnet-20240229-v1:0",
-  "claude-3-haiku": "anthropic.claude-3-haiku-20240307-v1:0",
 
   // Amazon Nova
   "nova-pro": "us.amazon.nova-pro-v1:0",
@@ -962,11 +907,6 @@ export const SHORT_NAME_TO_BEDROCK_ID: Record<string, string> = {
   "llama-3.2-3b": "us.meta.llama3-2-3b-instruct-v1:0",
   "llama-3.2-1b": "us.meta.llama3-2-1b-instruct-v1:0",
 
-  // Meta Llama 3.1
-  "llama-3.1-405b": "meta.llama3-1-405b-instruct-v1:0",
-  "llama-3.1-70b": "meta.llama3-1-70b-instruct-v1:0",
-  "llama-3.1-8b": "meta.llama3-1-8b-instruct-v1:0",
-
   // Mistral
   "mistral-large-2": "mistral.mistral-large-2407-v1:0",
   "mistral-small": "mistral.mistral-small-2402-v1:0",
@@ -979,10 +919,18 @@ export const SHORT_NAME_TO_BEDROCK_ID: Record<string, string> = {
   // Cohere Command
   "command-r-plus": "cohere.command-r-plus-v1:0",
   "command-r": "cohere.command-r-v1:0",
+
+  // DeepSeek
+  "deepseek-r1": "deepseek.r1-v1:0",
+  "deepseek-v3": "deepseek.v3-v1:0",
+  "deepseek-v3.1": "deepseek.v3-v1:0",
+
+  // Moonshot Kimi
+  "kimi-k2": "moonshot.kimi-k2-thinking",
 };
 
 /** Bedrock provider prefixes used to identify already-qualified model IDs */
-const BEDROCK_PREFIXES = ["anthropic.", "amazon.", "meta.", "mistral.", "cohere.", "ai21.", "stability.", "us.", "eu.", "apac.", "global."];
+const BEDROCK_PREFIXES = ["anthropic.", "amazon.", "meta.", "mistral.", "cohere.", "ai21.", "stability.", "deepseek.", "moonshot.", "qwen.", "us.", "eu.", "apac.", "global."];
 
 /**
  * Resolve a model name (short or full) to a valid Bedrock model ID.
@@ -1005,8 +953,18 @@ export function resolveBedrockModelId( modelName: string ): string {
   if ( SHORT_NAME_TO_BEDROCK_ID[modelName] ) {
     return SHORT_NAME_TO_BEDROCK_ID[modelName];
   }
-  // Fall back to env var or Haiku default
-  return process.env.AGENT_BUILDER_MODEL_ID || "anthropic.claude-haiku-4-5-20251001-v1:0";
+  // Fall back to env var or DeepSeek V3.1 default (cheapest capable model on Bedrock)
+  return process.env.AGENT_BUILDER_MODEL_ID || "deepseek.v3-v1:0";
+}
+
+/**
+ * Look up the weighted billing units for a model.
+ * Returns unitsPerCall from the registry, defaulting to 1 for unknown models.
+ * Used by stripeMutations to report weighted usage to Stripe.
+ */
+export function getUnitsForModel( modelId: string ): number {
+  const model = BEDROCK_MODELS[modelId] ?? ALL_MODELS[modelId];
+  return model?.unitsPerCall ?? 1;
 }
 
 /**

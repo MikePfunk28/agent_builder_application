@@ -156,7 +156,7 @@ export function PricingPanel() {
           priceNote="/month"
           features={[
             "Local models (Ollama, LMStudio)",
-            "50 executions / month",
+            "50 local executions / month",
             "5 agents",
             "Community support",
           ]}
@@ -172,9 +172,10 @@ export function PricingPanel() {
           priceNote="/month"
           features={[
             "All Free features",
-            "AWS Bedrock models (Claude, Nova, Mistral)",
-            "100 included executions",
-            "$0.05 per additional execution",
+            "AWS Bedrock models (Haiku, Sonnet, Opus, Nova, more)",
+            "100 included units / month",
+            "$0.05 per additional unit",
+            "Models cost 1–5 units per call",
             "50 agents, 5 concurrent tests",
           ]}
           isCurrent={tier === "personal"}
@@ -202,8 +203,8 @@ export function PricingPanel() {
           price="Custom"
           features={[
             "All Personal features",
-            "Claude Opus models",
-            "Unlimited executions",
+            "All Bedrock models",
+            "Unlimited units",
             "500 agents, 20 concurrent tests",
             "Dedicated support",
           ]}
@@ -241,8 +242,13 @@ export function PricingPanel() {
               <p className="font-medium text-gray-200 capitalize">{tier}</p>
             </div>
             <div>
-              <p className="text-gray-500">Executions This Period</p>
-              <p className="font-medium text-gray-200">{subscription.executionsThisMonth}</p>
+              <p className="text-gray-500">Units This Period</p>
+              <p className="font-medium text-gray-200">
+                {subscription.executionsThisMonth}
+                {subscription.rawCallsThisMonth != null && subscription.rawCallsThisMonth !== subscription.executionsThisMonth && (
+                  <span className="ml-1 text-gray-500 text-xs">({subscription.rawCallsThisMonth} calls)</span>
+                )}
+              </p>
             </div>
             <div>
               <p className="text-gray-500">Period Ends</p>

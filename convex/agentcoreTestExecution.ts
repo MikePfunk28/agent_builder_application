@@ -30,8 +30,15 @@ export const executeAgentCoreTest = internalAction( {
     const startTime = Date.now();
 
     try {
-      // Get agent
-      const agent = await ctx.runQuery( internal.agents.getInternal, { id: args.agentId } );
+      // Resolve test + agent first so all limits and usage tracking are keyed to the test submitter.
+      const [testDetails, agent] = await Promise.all( [
+        ctx.runQuery( internal.testExecution.getTestByIdInternal, { testId: args.testId } ),
+        ctx.runQuery( internal.agents.getInternal, { id: args.agentId } ),
+      ] );
+
+      if ( !testDetails ) {
+        return { success: false, error: "Test not found" };
+      }
 
       // Update status to running
       await ctx.runMutation( internal.testExecution.updateStatus, {
@@ -39,13 +46,19 @@ export const executeAgentCoreTest = internalAction( {
         status: "RUNNING",
       } );
 
-      // CHECK LIMITS: Only when actually executing
+      // CHECK LIMITS: keyed to test owner, not agent creator.
       if ( !agent ) {
-        throw new Error( "Agent not found" );
+        await ctx.runMutation( internal.testExecution.updateStatus, {
+          testId: args.testId,
+          status: "FAILED",
+          success: false,
+          error: "Agent not found",
+        } );
+        return { success: false, error: "Agent not found" };
       }
 
-      const user = await ctx.runQuery( internal.users.getInternal, { id: agent.createdBy } );
-      const executionsThisMonth = user?.executionsThisMonth || 0;
+      const executionUserId = testDetails.userId;
+      const user = await ctx.runQuery( internal.users.getInternal, { id: executionUserId } );
       const tier = user?.tier || "freemium";
 
       const { getTierConfig, isProviderAllowedForTier } = await import( "./lib/tierConfig" );
@@ -54,7 +67,7 @@ export const executeAgentCoreTest = internalAction( {
       // Burst rate limit: enforce tier-aware per-minute ceiling
       const { checkRateLimit, buildTierRateLimitConfig } = await import( "./rateLimiter" );
       const rlCfg = buildTierRateLimitConfig( tierCfg.maxConcurrentTests, "agentTesting" );
-      const rlResult = await checkRateLimit( ctx, String( agent.createdBy ), "agentTesting", rlCfg );
+      const rlResult = await checkRateLimit( ctx, String( executionUserId ), "agentTesting", rlCfg );
       if ( !rlResult.allowed ) {
         await ctx.runMutation( internal.testExecution.updateStatus, {
           testId: args.testId,
@@ -63,18 +76,6 @@ export const executeAgentCoreTest = internalAction( {
           error: rlResult.reason || "Rate limit exceeded. Please wait before submitting more tests.",
         } );
         return { success: false, error: "Burst rate limit exceeded" };
-      }
-
-      const limit = tierCfg.monthlyExecutions; // -1 = unlimited
-
-      if ( limit !== -1 && executionsThisMonth >= limit ) {
-        await ctx.runMutation( internal.testExecution.updateStatus, {
-          testId: args.testId,
-          status: "FAILED",
-          success: false,
-          error: `Monthly execution limit reached (${executionsThisMonth}/${limit}). Upgrade for more executions.`,
-        } );
-        return { success: false, error: "Usage limit exceeded" };
       }
 
       // PROVIDER TIER GATE: Enforce per-tier allowed provider rules
@@ -142,7 +143,7 @@ export const executeAgentCoreTest = internalAction( {
       if ( result.success ) {
         // TRACK USAGE: Only on successful completion
         await ctx.runMutation( internal.testExecution.incrementUserUsage, {
-          userId: agent.createdBy,
+          userId: executionUserId,
           testId: args.testId,
           usage: result.result?.usage,
           executionTime,
@@ -214,10 +215,12 @@ async function executeViaDirectBedrock( params: {
 
     const client = new BedrockRuntimeClient( {
       region: process.env.AWS_REGION || "us-east-1",
-      credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-      },
+      ...( process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY && {
+        credentials: {
+          accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+          secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+        },
+      } ),
     } );
 
     // Resolve model ID using authoritative shared registry
@@ -309,9 +312,9 @@ async function executeViaOllama( params: {
 
     // Add conversation history if provided (last 5 messages for context)
     if ( params.conversationHistory ) {
-      const validRoles = ["user", "assistant", "system", "tool"];
+      const validRoles = new Set( ["user", "assistant", "system", "tool"] );
       for ( const msg of params.conversationHistory.slice( -5 ) ) {
-        if ( validRoles.includes( msg.role ) ) {
+        if ( validRoles.has( msg.role ) ) {
           messages.push( {
             role: msg.role,
             content: msg.content,
@@ -430,8 +433,8 @@ async function executeViaLambda( params: {
     ] );
 
     if ( response.FunctionError ) {
-      const errorPayload = JSON.parse( new TextDecoder().decode( response.Payload ) );
-      return {
+      const rawPayload = response.Payload ? new TextDecoder().decode( response.Payload ) : "{}";
+      const errorPayload = JSON.parse( rawPayload ); return {
         success: false,
         error: `Agent execution failed: ${errorPayload.errorMessage || "unknown error"}`,
       };

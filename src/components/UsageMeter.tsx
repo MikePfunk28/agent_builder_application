@@ -2,9 +2,10 @@ import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 
 /**
- * UsageMeter - Shows execution usage for the current billing period.
- * Displays a progress bar: "42 / 100 executions used"
+ * UsageMeter - Shows weighted unit usage for the current billing period.
+ * Displays a progress bar: "42 / 100 units used"
  * Highlights overage when past the included amount.
+ * Units are weighted by model cost: Haiku=1, Sonnet=3, Opus=5.
  */
 export function UsageMeter() {
   const subscription = useQuery(api.stripeMutations.getSubscriptionStatus);
@@ -13,7 +14,7 @@ export function UsageMeter() {
 
   const { tier, executionsThisMonth } = subscription;
 
-  // Free tier shows simple count
+  // Free tier shows simple count (local only, flat 1:1 executions)
   if (tier === "freemium") {
     return (
       <div className="flex items-center gap-2 text-xs text-gray-400">
@@ -32,12 +33,12 @@ export function UsageMeter() {
   if (tier === "enterprise") {
     return (
       <div className="flex items-center gap-2 text-xs text-gray-400">
-        <span>{executionsThisMonth} executions (unlimited)</span>
+        <span>{executionsThisMonth} units (unlimited)</span>
       </div>
     );
   }
 
-  // Personal tier: 100 included, overage past that
+  // Personal tier: 100 included units, overage past that
   const included = 100;
   const used = executionsThisMonth;
   const overageCount = Math.max(0, used - included);
@@ -47,7 +48,7 @@ export function UsageMeter() {
   return (
     <div className="flex items-center gap-2 text-xs">
       <span className={isOverage ? "text-amber-400" : "text-gray-400"}>
-        {used} / {included} executions
+        {used} / {included} units
         {isOverage && (
           <span className="ml-1 text-amber-300">
             (+{overageCount} overage)

@@ -39,7 +39,7 @@ const internalStripe = ( internal as any ).stripe;
 export async function incrementUsageAndReportOverageImpl(
   ctx: { db: any; scheduler: any },
   userId: any,
-  options?: { updateLastTestAt?: boolean },
+  options?: { updateLastTestAt?: boolean; modelId?: string },
 ) {
   const user = await ctx.db.get( userId );
   if ( !user ) {
@@ -47,22 +47,34 @@ export async function incrementUsageAndReportOverageImpl(
     return;
   }
 
-  const newCount = ( user.executionsThisMonth || 0 ) + 1;
+  // Look up weighted units for this model (defaults to 1 for unknown/Haiku)
+  const { getUnitsForModel } = await import( "./modelRegistry" );
+  const units = options?.modelId ? getUnitsForModel( options.modelId ) : 1;
 
-  const patch: Record<string, unknown> = { executionsThisMonth: newCount };
+  const prevUnits = user.executionsThisMonth || 0;
+  const newCount = prevUnits + units;
+  const newRawCalls = ( user.rawCallsThisMonth || 0 ) + 1;
+
+  const patch: Record<string, unknown> = {
+    executionsThisMonth: newCount,
+    rawCallsThisMonth: newRawCalls,
+  };
   if ( options?.updateLastTestAt ) {
     patch.lastTestAt = Date.now();
   }
   await ctx.db.patch( userId, patch );
 
-  // Report overage to Stripe for personal tier users past included limit
+  // Report overage to Stripe for personal tier users past included limit.
+  // Only report the units that crossed the threshold (not units already reported).
   if ( user.tier === "personal" && user.stripeCustomerId ) {
     const { getTierConfig } = await import( "./lib/tierConfig" );
     const tierCfg = getTierConfig( "personal" );
     if ( newCount > tierCfg.monthlyExecutions ) {
+      // How many units of THIS call are overage?
+      const overageUnits = Math.min( units, newCount - tierCfg.monthlyExecutions );
       await ctx.scheduler.runAfter( 0, internalStripe.reportUsage, {
         stripeCustomerId: user.stripeCustomerId,
-        quantity: 1,
+        quantity: overageUnits,
       } );
     }
   }
@@ -76,10 +88,12 @@ export const incrementUsageAndReportOverage = internalMutation( {
   args: {
     userId: v.id( "users" ),
     updateLastTestAt: v.optional( v.boolean() ),
+    modelId: v.optional( v.string() ),
   },
   handler: async ( ctx, args ) => {
     await incrementUsageAndReportOverageImpl( ctx, args.userId, {
       updateLastTestAt: args.updateLastTestAt,
+      modelId: args.modelId,
     } );
   },
 } );
@@ -188,6 +202,7 @@ export const resetMonthlyUsage = internalMutation( {
 
     await ctx.db.patch( user._id, {
       executionsThisMonth: 0,
+      rawCallsThisMonth: 0,
       billingPeriodStart: args.periodStart,
     } );
   },
@@ -242,6 +257,7 @@ export const getSubscriptionStatus = query( {
       role: user.role ?? "user",
       subscriptionStatus: user.subscriptionStatus ?? null,
       executionsThisMonth: user.executionsThisMonth ?? 0,
+      rawCallsThisMonth: user.rawCallsThisMonth ?? 0,
       currentPeriodEnd: user.currentPeriodEnd ?? null,
       hasActiveSubscription: user.subscriptionStatus === "active",
     };

@@ -23,7 +23,7 @@ interface NodeSettingsDrawerProps {
   node: WorkflowNode | null;
   isOpen: boolean;
   onClose: () => void;
-  onSave: (nodeId: string, data: WorkflowNodeData) => void;
+  onSave: ( nodeId: string, data: WorkflowNodeData ) => void;
 }
 
 type DraftState = WorkflowNodeData | null;
@@ -85,51 +85,52 @@ const PROMPT_TEXT_PRESETS: PromptTextPreset[] = [
   },
 ];
 
-export function NodeSettingsDrawer({
+export function NodeSettingsDrawer( {
   node,
   isOpen,
   onClose,
   onSave,
-}: NodeSettingsDrawerProps) {
-  const [draft, setDraft] = useState<DraftState>(null);
+}: NodeSettingsDrawerProps ) {
+  const [draft, setDraft] = useState<DraftState>( null );
 
-  useEffect(() => {
-    if (node) {
-      setDraft(node.data);
+  useEffect( () => {
+    if ( node ) {
+      setDraft( node.data );
     } else {
-      setDraft(null);
+      setDraft( null );
     }
-  }, [node]);
+  }, [node] );
 
   const handleSave = () => {
-    if (!node || !draft) return;
+    if ( !node || !draft ) return;
     // For Model nodes, update the label to reflect the selected model name
-    if (draft.type === "Model") {
-      const cfg = draft.config as ModelConfig;
+    let savedData: WorkflowNodeData = draft;
+    if ( draft.type === "Model" ) {
+      const cfg = draft.config;
       const modelId = cfg.provider === "bedrock" ? cfg.modelId : cfg.model;
-      const metadata = modelId ? getModelMetadata(modelId) : undefined;
-      (draft as any).label = metadata?.label ?? "Model";
+      const metadata = modelId ? getModelMetadata( modelId ) : undefined;
+      savedData = { ...draft, label: metadata?.label ?? "Model" };
     }
-    onSave(node.id, draft);
+    onSave( node.id, savedData );
     onClose();
   };
 
-  const updateDraft = (update: Partial<WorkflowNodeData>) => {
-    setDraft((current) => {
-      if (!current) return current;
+  const updateDraft = ( update: Partial<WorkflowNodeData> ) => {
+    setDraft( ( current ) => {
+      if ( !current ) return current;
       return { ...current, ...update } as WorkflowNodeData;
-    });
+    } );
   };
 
-  const updateConfig = <T,>(mutator: (config: T) => T) => {
-    setDraft((prev) => {
-      if (!prev) return prev;
-      const nextConfig = mutator(prev.config as T);
+  const updateConfig = <T,>( mutator: ( config: T ) => T ) => {
+    setDraft( ( prev ) => {
+      if ( !prev ) return prev;
+      const nextConfig = mutator( prev.config as T );
       return { ...prev, config: nextConfig } as WorkflowNodeData;
-    });
+    } );
   };
 
-  if (!isOpen || !node || !draft) {
+  if ( !isOpen || !node || !draft ) {
     return null;
   }
 
@@ -160,7 +161,7 @@ export function NodeSettingsDrawer({
           <input
             className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
             value={draft.label ?? ""}
-            onChange={(event) => updateDraft({ label: event.target.value })}
+            onChange={( event ) => updateDraft( { label: event.target.value } )}
             placeholder="Readable label shown on the canvas"
           />
           <label className="block text-sm font-medium text-gray-700">
@@ -170,13 +171,13 @@ export function NodeSettingsDrawer({
             className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
             rows={2}
             value={draft.notes ?? ""}
-            onChange={(event) => updateDraft({ notes: event.target.value })}
+            onChange={( event ) => updateDraft( { notes: event.target.value } )}
             placeholder="Optional notes (not used at runtime)"
           />
         </section>
 
         <section className="space-y-4">
-          {renderConfigEditor(draft, updateConfig)}
+          {renderConfigEditor( draft, updateConfig )}
         </section>
       </div>
 
@@ -199,20 +200,20 @@ export function NodeSettingsDrawer({
   );
 }
 
-type ConfigUpdater<T> = (mutator: (config: T) => T) => void;
+type ConfigUpdater<T> = ( mutator: ( config: T ) => T ) => void;
 
 function renderConfigEditor(
   draft: WorkflowNodeData,
   updateConfig: ConfigUpdater<any>
 ) {
-  switch (draft.type) {
+  switch ( draft.type ) {
     case "Background":
     case "Context":
     case "OutputIndicator":
       return (
         <SimpleTextEditor
           value={draft.config.text}
-          onChange={(text) => updateConfig((config) => ({ ...config, text }))}
+          onChange={( text ) => updateConfig( ( config ) => ( { ...config, text } ) )}
           label="Text"
           placeholder="Write the content for this prompt section"
         />
@@ -222,7 +223,7 @@ function renderConfigEditor(
       // Legacy migration: treat old PromptText nodes as Prompt nodes
       return (
         <PromptEditor
-          config={draft.config as PromptConfig}
+          config={draft.config}
           updateConfig={updateConfig}
         />
       );
@@ -230,7 +231,7 @@ function renderConfigEditor(
     case "Prompt":
       return (
         <PromptEditor
-          config={draft.config as PromptConfig}
+          config={draft.config}
           updateConfig={updateConfig}
         />
       );
@@ -238,7 +239,7 @@ function renderConfigEditor(
     case "Model":
       return (
         <ModelEditor
-          config={draft.config as ModelConfig}
+          config={draft.config}
           updateConfig={updateConfig}
         />
       );
@@ -246,7 +247,7 @@ function renderConfigEditor(
     case "ModelSet":
       return (
         <ModelSetEditor
-          config={draft.config as ModelSetConfig}
+          config={draft.config}
           updateConfig={updateConfig}
         />
       );
@@ -254,7 +255,7 @@ function renderConfigEditor(
     case "Tool":
       return (
         <ToolEditor
-          config={draft.config as ToolConfig}
+          config={draft.config}
           updateConfig={updateConfig}
         />
       );
@@ -262,7 +263,7 @@ function renderConfigEditor(
     case "ToolSet":
       return (
         <ToolSetEditor
-          config={draft.config as ToolSetConfig}
+          config={draft.config}
           updateConfig={updateConfig}
         />
       );
@@ -270,7 +271,7 @@ function renderConfigEditor(
     case "Entrypoint":
       return (
         <EntrypointEditor
-          config={draft.config as EntrypointConfig}
+          config={draft.config}
           updateConfig={updateConfig}
         />
       );
@@ -278,7 +279,7 @@ function renderConfigEditor(
     case "Memory":
       return (
         <MemoryEditor
-          config={draft.config as MemoryConfig}
+          config={draft.config}
           updateConfig={updateConfig}
         />
       );
@@ -286,7 +287,7 @@ function renderConfigEditor(
     case "Router":
       return (
         <RouterEditor
-          config={draft.config as RouterConfig}
+          config={draft.config}
           updateConfig={updateConfig}
         />
       );
@@ -294,7 +295,7 @@ function renderConfigEditor(
     case "Agent":
       return (
         <AgentEditor
-          config={draft.config as AgentConfig}
+          config={draft.config}
           updateConfig={updateConfig}
         />
       );
@@ -302,7 +303,7 @@ function renderConfigEditor(
     case "SubAgent":
       return (
         <SubAgentEditor
-          config={draft.config as SubAgentConfig}
+          config={draft.config}
           updateConfig={updateConfig}
         />
       );
@@ -316,17 +317,17 @@ function renderConfigEditor(
   }
 }
 
-function SimpleTextEditor({
+function SimpleTextEditor( {
   value,
   onChange,
   label,
   placeholder,
 }: {
   value: string;
-  onChange: (value: string) => void;
+  onChange: ( value: string ) => void;
   label: string;
   placeholder?: string;
-}) {
+} ) {
   return (
     <>
       <label className="block text-sm font-medium text-gray-700">{label}</label>
@@ -334,7 +335,7 @@ function SimpleTextEditor({
         rows={6}
         className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
         value={value}
-        onChange={(event) => onChange(event.target.value)}
+        onChange={( event ) => onChange( event.target.value )}
         placeholder={placeholder}
       />
     </>
@@ -345,58 +346,58 @@ function SimpleTextEditor({
  * Merged PromptEditor — combines the old PromptTextEditor (role, template,
  * presets, inputs) with the old PromptValidatorEditor (output validation).
  */
-function PromptEditor({
+function PromptEditor( {
   config,
   updateConfig,
 }: {
   config: PromptConfig;
   updateConfig: ConfigUpdater<PromptConfig>;
-}) {
-  const [selectedPreset, setSelectedPreset] = useState<string>("");
-  const [showValidator, setShowValidator] = useState<boolean>(!!config.validator);
-  const entries = useMemo(() => Object.entries(config.inputs ?? {}), [config]);
+} ) {
+  const [selectedPreset, setSelectedPreset] = useState<string>( "" );
+  const [showValidator, setShowValidator] = useState<boolean>( !!config.validator );
+  const entries = useMemo( () => Object.entries( config.inputs ?? {} ), [config] );
 
-  const setEntry = (key: string, value: string) => {
-    updateConfig((cfg) => ({
+  const setEntry = ( key: string, value: string ) => {
+    updateConfig( ( cfg ) => ( {
       ...cfg,
-      inputs: { ...(cfg.inputs ?? {}), [key]: value },
-    }));
+      inputs: { ...( cfg.inputs ?? {} ), [key]: value },
+    } ) );
   };
 
-  const removeEntry = (key: string) => {
-    updateConfig((cfg) => {
-      if (!cfg.inputs) return cfg;
+  const removeEntry = ( key: string ) => {
+    updateConfig( ( cfg ) => {
+      if ( !cfg.inputs ) return cfg;
       const next = { ...cfg.inputs };
       delete next[key];
       return { ...cfg, inputs: next };
-    });
+    } );
   };
 
   const addEntry = () => {
     const base = "variable";
     let index = 1;
     const inputs = config.inputs ?? {};
-    while (inputs[`${base}${index}`]) {
+    while ( inputs[`${base}${index}`] ) {
       index += 1;
     }
-    setEntry(`${base}${index}`, "");
+    setEntry( `${base}${index}`, "" );
   };
 
-  const handlePresetChange = (presetId: string) => {
-    setSelectedPreset(presetId);
-    if (!presetId) return;
-    const preset = PROMPT_TEXT_PRESETS.find((item) => item.id === presetId);
-    if (!preset) return;
-    updateConfig((cfg) => ({
+  const handlePresetChange = ( presetId: string ) => {
+    setSelectedPreset( presetId );
+    if ( !presetId ) return;
+    const preset = PROMPT_TEXT_PRESETS.find( ( item ) => item.id === presetId );
+    if ( !preset ) return;
+    updateConfig( ( cfg ) => ( {
       ...cfg,
       role: preset.role,
       template: preset.template,
-      inputs: { ...(preset.inputs ?? {}) },
-    }));
+      inputs: { ...( preset.inputs ?? {} ) },
+    } ) );
   };
 
   const activePreset = PROMPT_TEXT_PRESETS.find(
-    (item) => item.id === selectedPreset
+    ( item ) => item.id === selectedPreset
   );
 
   const validator = config.validator;
@@ -412,14 +413,14 @@ function PromptEditor({
         <select
           className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
           value={selectedPreset}
-          onChange={(event) => handlePresetChange(event.target.value)}
+          onChange={( event ) => handlePresetChange( event.target.value )}
         >
           <option value="">Select a preset…</option>
-          {PROMPT_TEXT_PRESETS.map((preset) => (
+          {PROMPT_TEXT_PRESETS.map( ( preset ) => (
             <option key={preset.id} value={preset.id}>
               {preset.label}
             </option>
-          ))}
+          ) )}
         </select>
         {activePreset ? (
           <p className="text-xs text-gray-500">
@@ -436,8 +437,8 @@ function PromptEditor({
       <select
         className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
         value={config.role ?? "system"}
-        onChange={(event) =>
-          updateConfig((cfg) => ({ ...cfg, role: event.target.value as any }))
+        onChange={( event ) =>
+          updateConfig( ( cfg ) => ( { ...cfg, role: event.target.value as any } ) )
         }
       >
         <option value="system">system</option>
@@ -447,7 +448,7 @@ function PromptEditor({
 
       <SimpleTextEditor
         value={config.template ?? ""}
-        onChange={(template) => updateConfig((cfg) => ({ ...cfg, template }))}
+        onChange={( template ) => updateConfig( ( cfg ) => ( { ...cfg, template } ) )}
         label="Template"
         placeholder="You are a helpful assistant. Goal: {{goal}}"
       />
@@ -468,31 +469,35 @@ function PromptEditor({
         {entries.length === 0 && (
           <p className="text-xs text-gray-500">No inputs defined.</p>
         )}
-        {entries.map(([key, value]) => (
+        {entries.map( ( [key, value] ) => (
           <div key={key} className="flex gap-2">
             <input
               className="flex-1 rounded border border-gray-300 px-3 py-2 text-sm"
               value={key}
-              onChange={(event) => {
+              onChange={( event ) => {
                 const nextKey = event.target.value;
-                removeEntry(key);
-                setEntry(nextKey, value);
+                updateConfig( ( cfg: PromptConfig ) => {
+                  const inputs = { ...( cfg.inputs ?? {} ) };
+                  delete inputs[key];
+                  inputs[nextKey] = value;
+                  return { ...cfg, inputs };
+                } );
               }}
             />
             <input
               className="flex-1 rounded border border-gray-300 px-3 py-2 text-sm"
               value={value}
-              onChange={(event) => setEntry(key, event.target.value)}
+              onChange={( event ) => setEntry( key, event.target.value )}
             />
             <button
               type="button"
-              onClick={() => removeEntry(key)}
+              onClick={() => removeEntry( key )}
               className="px-2 text-sm text-red-500 hover:underline"
             >
               Remove
             </button>
           </div>
-        ))}
+        ) )}
       </div>
 
       {/* Output Validator (collapsible) */}
@@ -500,9 +505,9 @@ function PromptEditor({
         <button
           type="button"
           onClick={() => {
-            setShowValidator(!showValidator);
-            if (showValidator) {
-              updateConfig((cfg) => ({ ...cfg, validator: undefined }));
+            setShowValidator( !showValidator );
+            if ( showValidator ) {
+              updateConfig( ( cfg ) => ( { ...cfg, validator: undefined } ) );
             }
           }}
           className="flex items-center gap-1 text-sm font-medium text-gray-600 hover:text-gray-900"
@@ -518,15 +523,15 @@ function PromptEditor({
               className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
               title="Validator type"
               value={validator ? validator.type : ""}
-              onChange={(event) => {
+              onChange={( event ) => {
                 const value = event.target.value;
-                if (!value) {
-                  updateConfig((cfg) => ({ ...cfg, validator: undefined }));
+                if ( !value ) {
+                  updateConfig( ( cfg ) => ( { ...cfg, validator: undefined } ) );
                 } else {
-                  updateConfig((cfg) => ({
+                  updateConfig( ( cfg ) => ( {
                     ...cfg,
                     validator: { type: value as "regex" | "json-schema", spec: validatorSpec },
-                  }));
+                  } ) );
                 }
               }}
             >
@@ -538,11 +543,11 @@ function PromptEditor({
             {validator && (
               <SimpleTextEditor
                 value={validatorSpec}
-                onChange={(specValue) =>
-                  updateConfig((cfg) => ({
+                onChange={( specValue ) =>
+                  updateConfig( ( cfg ) => ( {
                     ...cfg,
                     validator: { type: validatorType, spec: specValue },
-                  }))
+                  } ) )
                 }
                 label="Validator Spec"
                 placeholder={
@@ -559,60 +564,60 @@ function PromptEditor({
   );
 }
 
-function ModelEditor({
+function ModelEditor( {
   config,
   updateConfig,
 }: {
   config: ModelConfig;
   updateConfig: ConfigUpdater<ModelConfig>;
-}) {
+} ) {
   const provider = config.provider;
 
   // Detect locally-running models from the browser
   const { ollamaModels, lmstudioModels } = useLocalModels();
 
-  const providerModels = useMemo(() => {
-    if (provider === "ollama") {
-      const detected = detectedToMetadata(ollamaModels);
-      return mergeLocalModels("ollama", detected);
+  const providerModels = useMemo( () => {
+    if ( provider === "ollama" ) {
+      const detected = detectedToMetadata( ollamaModels );
+      return mergeLocalModels( "ollama", detected );
     }
-    if (provider === "lmstudio") {
-      const detected = detectedToMetadata(lmstudioModels);
-      return mergeLocalModels("lmstudio", detected);
+    if ( provider === "lmstudio" ) {
+      const detected = detectedToMetadata( lmstudioModels );
+      return mergeLocalModels( "lmstudio", detected );
     }
-    return listModelsByProvider(provider);
-  }, [provider, ollamaModels, lmstudioModels]);
+    return listModelsByProvider( provider );
+  }, [provider, ollamaModels, lmstudioModels] );
 
   const selectedModelId =
     provider === "bedrock" ? config.modelId ?? "" : config.model ?? "";
 
-  const selectedMetadata = useMemo(() => {
-    if (!selectedModelId) return undefined;
-    return getModelFromCatalogOrDetected(selectedModelId, providerModels);
-  }, [selectedModelId, providerModels]);
+  const selectedMetadata = useMemo( () => {
+    if ( !selectedModelId ) return undefined;
+    return getModelFromCatalogOrDetected( selectedModelId, providerModels );
+  }, [selectedModelId, providerModels] );
 
   const defaultTemperature =
     selectedMetadata?.defaultConfig.temperature ??
-    (provider === "bedrock" ? 0.2 : 0.4);
+    ( provider === "bedrock" ? 0.2 : 0.4 );
   const defaultTopP =
-    selectedMetadata?.defaultConfig.topP ?? (provider === "bedrock" ? 0.9 : 0.9);
+    selectedMetadata?.defaultConfig.topP ?? ( provider === "bedrock" ? 0.9 : 0.9 );
 
-  const errorMessages = useMemo(() => {
+  const errorMessages = useMemo( () => {
     const errors: string[] = [];
-    if (provider === "bedrock") {
-      if (!config.modelId) {
-        errors.push("Select a Bedrock model ID.");
+    if ( provider === "bedrock" ) {
+      if ( !config.modelId ) {
+        errors.push( "Select a Bedrock model ID." );
       }
-    } else if (provider === "ollama") {
-      if (!config.model) {
-        errors.push("Select or enter an Ollama model name.");
+    } else if ( provider === "ollama" ) {
+      if ( !config.model ) {
+        errors.push( "Select or enter an Ollama model name." );
       }
-      if (!config.endpoint) {
-        errors.push("Provide the Ollama endpoint (e.g., http://localhost:11434).");
+      if ( !config.endpoint ) {
+        errors.push( "Provide the Ollama endpoint (e.g., http://localhost:11434)." );
       }
     }
     return errors;
-  }, [provider, config]);
+  }, [provider, config] );
 
   return (
     <div className="space-y-4">
@@ -622,37 +627,37 @@ function ModelEditor({
       <select
         className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
         value={provider}
-        onChange={(event) => {
+        onChange={( event ) => {
           const nextProvider = event.target.value as ModelConfig["provider"];
-          if (nextProvider === "bedrock") {
-            const [first] = listModelsByProvider("bedrock");
-            updateConfig(() => ({
+          if ( nextProvider === "bedrock" ) {
+            const [first] = listModelsByProvider( "bedrock" );
+            updateConfig( () => ( {
               provider: "bedrock",
               modelId: first?.id ?? "anthropic.claude-3-5-sonnet-20241022",
               temperature: first?.defaultConfig.temperature ?? 0.2,
               topP: first?.defaultConfig.topP ?? 0.9,
               maxTokens: first?.defaultConfig.maxTokens ?? 4096,
-            }));
-          } else if (nextProvider === "ollama") {
-            const [first] = listModelsByProvider("ollama");
-            updateConfig(() => ({
+            } ) );
+          } else if ( nextProvider === "ollama" ) {
+            const [first] = listModelsByProvider( "ollama" );
+            updateConfig( () => ( {
               provider: "ollama",
               model: first?.id ?? "llama3.1",
               endpoint: first?.defaultConfig.endpoint ?? LOCAL_MODEL_ENDPOINTS.ollama,
               temperature: first?.defaultConfig.temperature ?? 0.4,
               topP: first?.defaultConfig.topP ?? 0.9,
               numCtx: first?.defaultConfig.numCtx ?? 8192,
-            }));
+            } ) );
           } else {
-            const [first] = listModelsByProvider("lmstudio");
-            updateConfig(() => ({
+            const [first] = listModelsByProvider( "lmstudio" );
+            updateConfig( () => ( {
               provider: "lmstudio",
               model: first?.id ?? "lmstudio-default",
               endpoint: first?.defaultConfig.endpoint ?? LOCAL_MODEL_ENDPOINTS.lmstudio,
               temperature: first?.defaultConfig.temperature ?? 0.4,
               topP: first?.defaultConfig.topP ?? 0.9,
               maxTokens: first?.defaultConfig.maxTokens ?? 4096,
-            }));
+            } ) );
           }
         }}
       >
@@ -669,25 +674,25 @@ function ModelEditor({
           <select
             className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
             value={selectedModelId}
-            onChange={(event) => {
+            onChange={( event ) => {
               const nextId = event.target.value;
-              const metadata = getModelMetadata(nextId);
-              updateConfig((cfg: any) => ({
+              const metadata = getModelMetadata( nextId );
+              updateConfig( ( cfg: any ) => ( {
                 ...cfg,
                 modelId: nextId,
                 temperature: metadata?.defaultConfig.temperature ?? cfg.temperature ?? 0.2,
                 topP: metadata?.defaultConfig.topP ?? cfg.topP ?? 0.9,
                 maxTokens: metadata?.defaultConfig.maxTokens ?? cfg.maxTokens ?? 4096,
-              }));
+              } ) );
             }}
           >
             <option value="">Select a model...</option>
-            {providerModels.map((model) => (
+            {providerModels.map( ( model ) => (
               <option key={model.id} value={model.id}>
                 {model.label}
                 {model.recommended ? " (recommended)" : ""}
               </option>
-            ))}
+            ) )}
           </select>
 
           <label className="block text-sm font-medium text-gray-700">
@@ -696,8 +701,8 @@ function ModelEditor({
           <input
             className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
             value={config.modelId ?? ""}
-            onChange={(event) =>
-              updateConfig((cfg: any) => ({ ...cfg, modelId: event.target.value }))
+            onChange={( event ) =>
+              updateConfig( ( cfg: any ) => ( { ...cfg, modelId: event.target.value } ) )
             }
             placeholder="anthropic.claude-3-5-sonnet-20241022"
           />
@@ -705,22 +710,22 @@ function ModelEditor({
           <ParameterSlider
             label="Temperature"
             value={config.temperature ?? defaultTemperature}
-            onChange={(value) =>
-              updateConfig((cfg: any) => ({ ...cfg, temperature: value }))
+            onChange={( value ) =>
+              updateConfig( ( cfg: any ) => ( { ...cfg, temperature: value } ) )
             }
           />
           <ParameterSlider
             label="topP"
             value={config.topP ?? defaultTopP}
-            onChange={(value) =>
-              updateConfig((cfg: any) => ({ ...cfg, topP: value }))
+            onChange={( value ) =>
+              updateConfig( ( cfg: any ) => ( { ...cfg, topP: value } ) )
             }
           />
           <ParameterInput
             label="Max Tokens"
             value={config.maxTokens ?? 0}
-            onChange={(value) =>
-              updateConfig((cfg: any) => ({ ...cfg, maxTokens: value }))
+            onChange={( value ) =>
+              updateConfig( ( cfg: any ) => ( { ...cfg, maxTokens: value } ) )
             }
           />
         </div>
@@ -734,10 +739,10 @@ function ModelEditor({
           <select
             className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
             value={selectedModelId}
-            onChange={(event) => {
+            onChange={( event ) => {
               const nextId = event.target.value;
-              const metadata = getModelMetadata(nextId);
-              updateConfig((cfg: any) => ({
+              const metadata = getModelMetadata( nextId );
+              updateConfig( ( cfg: any ) => ( {
                 ...cfg,
                 model: nextId,
                 temperature:
@@ -746,16 +751,16 @@ function ModelEditor({
                 numCtx: metadata?.defaultConfig.numCtx ?? cfg.numCtx ?? 8192,
                 endpoint:
                   metadata?.defaultConfig.endpoint ?? cfg.endpoint ?? LOCAL_MODEL_ENDPOINTS.ollama,
-              }));
+              } ) );
             }}
           >
             <option value="">Select a model...</option>
-            {providerModels.map((model) => (
+            {providerModels.map( ( model ) => (
               <option key={model.id} value={model.id}>
                 {model.label}
                 {model.recommended ? " (recommended)" : ""}
               </option>
-            ))}
+            ) )}
           </select>
 
           <label className="block text-sm font-medium text-gray-700">
@@ -763,9 +768,9 @@ function ModelEditor({
           </label>
           <input
             className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
-            value={(config as any).model ?? ""}
-            onChange={(event) =>
-              updateConfig((cfg: any) => ({ ...cfg, model: event.target.value }))
+            value={( config as any ).model ?? ""}
+            onChange={( event ) =>
+              updateConfig( ( cfg: any ) => ( { ...cfg, model: event.target.value } ) )
             }
           />
           <label className="block text-sm font-medium text-gray-700">
@@ -773,30 +778,30 @@ function ModelEditor({
           </label>
           <input
             className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
-            value={(config as any).endpoint ?? ""}
-            onChange={(event) =>
-              updateConfig((cfg: any) => ({ ...cfg, endpoint: event.target.value }))
+            value={( config as any ).endpoint ?? ""}
+            onChange={( event ) =>
+              updateConfig( ( cfg: any ) => ( { ...cfg, endpoint: event.target.value } ) )
             }
           />
           <ParameterSlider
             label="Temperature"
             value={config.temperature ?? defaultTemperature}
-            onChange={(value) =>
-              updateConfig((cfg: any) => ({ ...cfg, temperature: value }))
+            onChange={( value ) =>
+              updateConfig( ( cfg: any ) => ( { ...cfg, temperature: value } ) )
             }
           />
           <ParameterSlider
             label="topP"
             value={config.topP ?? defaultTopP}
-            onChange={(value) =>
-              updateConfig((cfg: any) => ({ ...cfg, topP: value }))
+            onChange={( value ) =>
+              updateConfig( ( cfg: any ) => ( { ...cfg, topP: value } ) )
             }
           />
           <ParameterInput
             label="Context Window (numCtx)"
-            value={(config as any).numCtx ?? selectedMetadata?.defaultConfig.numCtx ?? 8192}
-            onChange={(value) =>
-              updateConfig((cfg: any) => ({ ...cfg, numCtx: value }))
+            value={( config as any ).numCtx ?? selectedMetadata?.defaultConfig.numCtx ?? 8192}
+            onChange={( value ) =>
+              updateConfig( ( cfg: any ) => ( { ...cfg, numCtx: value } ) )
             }
           />
         </div>
@@ -810,10 +815,10 @@ function ModelEditor({
           <select
             className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
             value={selectedModelId}
-            onChange={(event) => {
+            onChange={( event ) => {
               const nextId = event.target.value;
-              const metadata = getModelMetadata(nextId);
-              updateConfig((cfg: any) => ({
+              const metadata = getModelMetadata( nextId );
+              updateConfig( ( cfg: any ) => ( {
                 ...cfg,
                 model: nextId,
                 temperature:
@@ -822,16 +827,16 @@ function ModelEditor({
                 maxTokens: metadata?.defaultConfig.maxTokens ?? cfg.maxTokens ?? 4096,
                 endpoint:
                   metadata?.defaultConfig.endpoint ?? cfg.endpoint ?? LOCAL_MODEL_ENDPOINTS.lmstudio,
-              }));
+              } ) );
             }}
           >
             <option value="">Select a model...</option>
-            {providerModels.map((model) => (
+            {providerModels.map( ( model ) => (
               <option key={model.id} value={model.id}>
                 {model.label}
                 {model.recommended ? " (recommended)" : ""}
               </option>
-            ))}
+            ) )}
           </select>
 
           <label className="block text-sm font-medium text-gray-700">
@@ -839,30 +844,30 @@ function ModelEditor({
           </label>
           <input
             className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
-            value={(config as any).endpoint ?? LOCAL_MODEL_ENDPOINTS.lmstudio}
-            onChange={(event) =>
-              updateConfig((cfg: any) => ({ ...cfg, endpoint: event.target.value }))
+            value={( config as any ).endpoint ?? LOCAL_MODEL_ENDPOINTS.lmstudio}
+            onChange={( event ) =>
+              updateConfig( ( cfg: any ) => ( { ...cfg, endpoint: event.target.value } ) )
             }
           />
           <ParameterSlider
             label="Temperature"
             value={config.temperature ?? defaultTemperature}
-            onChange={(value) =>
-              updateConfig((cfg: any) => ({ ...cfg, temperature: value }))
+            onChange={( value ) =>
+              updateConfig( ( cfg: any ) => ( { ...cfg, temperature: value } ) )
             }
           />
           <ParameterSlider
             label="topP"
             value={config.topP ?? defaultTopP}
-            onChange={(value) =>
-              updateConfig((cfg: any) => ({ ...cfg, topP: value }))
+            onChange={( value ) =>
+              updateConfig( ( cfg: any ) => ( { ...cfg, topP: value } ) )
             }
           />
           <ParameterInput
             label="Max Tokens"
-            value={(config as any).maxTokens ?? 4096}
-            onChange={(value) =>
-              updateConfig((cfg: any) => ({ ...cfg, maxTokens: value }))
+            value={( config as any ).maxTokens ?? 4096}
+            onChange={( value ) =>
+              updateConfig( ( cfg: any ) => ( { ...cfg, maxTokens: value } ) )
             }
           />
         </div>
@@ -874,7 +879,7 @@ function ModelEditor({
           <p>{selectedMetadata.description}</p>
           {selectedMetadata.tags && (
             <p className="text-gray-500">
-              Tags: {selectedMetadata.tags.join(", ")}
+              Tags: {selectedMetadata.tags.join( ", " )}
             </p>
           )}
           {selectedMetadata.contextLength && (
@@ -887,24 +892,24 @@ function ModelEditor({
 
       {errorMessages.length > 0 && (
         <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600 space-y-1">
-          {errorMessages.map((message, index) => (
+          {errorMessages.map( ( message, index ) => (
             <p key={index}>{message}</p>
-          ))}
+          ) )}
         </div>
       )}
     </div>
   );
 }
 
-function ParameterSlider({
+function ParameterSlider( {
   label,
   value,
   onChange,
 }: {
   label: string;
   value: number;
-  onChange: (value: number) => void;
-}) {
+  onChange: ( value: number ) => void;
+} ) {
   return (
     <div className="space-y-1">
       <label className="block text-sm font-medium text-gray-700">
@@ -916,22 +921,22 @@ function ParameterSlider({
         max={1}
         step={0.05}
         value={value}
-        onChange={(event) => onChange(Number(event.target.value))}
+        onChange={( event ) => onChange( Number( event.target.value ) )}
         className="w-full"
       />
     </div>
   );
 }
 
-function ParameterInput({
+function ParameterInput( {
   label,
   value,
   onChange,
 }: {
   label: string;
   value: number;
-  onChange: (value: number) => void;
-}) {
+  onChange: ( value: number ) => void;
+} ) {
   return (
     <div className="space-y-1">
       <label className="block text-sm font-medium text-gray-700">{label}</label>
@@ -939,19 +944,19 @@ function ParameterInput({
         type="number"
         className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
         value={value}
-        onChange={(event) => onChange(Number(event.target.value))}
+        onChange={( event ) => onChange( Number( event.target.value ) )}
       />
     </div>
   );
 }
 
-function ModelSetEditor({
+function ModelSetEditor( {
   config,
   updateConfig,
 }: {
   config: ModelSetConfig;
   updateConfig: ConfigUpdater<ModelSetConfig>;
-}) {
+} ) {
   return (
     <div className="space-y-3">
       <label className="block text-sm font-medium text-gray-700">
@@ -960,11 +965,11 @@ function ModelSetEditor({
       <select
         className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
         value={config.strategy}
-        onChange={(event) =>
-          updateConfig((cfg) => ({
+        onChange={( event ) =>
+          updateConfig( ( cfg ) => ( {
             ...cfg,
             strategy: event.target.value as ModelSetConfig["strategy"],
-          }))
+          } ) )
         }
       >
         <option value="single">Single</option>
@@ -983,8 +988,8 @@ function ModelSetEditor({
       <input
         className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
         value={config.primary ?? ""}
-        onChange={(event) =>
-          updateConfig((cfg) => ({ ...cfg, primary: event.target.value }))
+        onChange={( event ) =>
+          updateConfig( ( cfg ) => ( { ...cfg, primary: event.target.value } ) )
         }
         placeholder="model-node-id"
       />
@@ -995,8 +1000,8 @@ function ModelSetEditor({
       <input
         className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
         value={config.routerPromptId ?? ""}
-        onChange={(event) =>
-          updateConfig((cfg) => ({ ...cfg, routerPromptId: event.target.value }))
+        onChange={( event ) =>
+          updateConfig( ( cfg ) => ( { ...cfg, routerPromptId: event.target.value } ) )
         }
         placeholder="prompt-text-node-id"
       />
@@ -1004,19 +1009,19 @@ function ModelSetEditor({
       <ParameterInput
         label="k (samples / votes)"
         value={config.k ?? 0}
-        onChange={(value) => updateConfig((cfg) => ({ ...cfg, k: value }))}
+        onChange={( value ) => updateConfig( ( cfg ) => ( { ...cfg, k: value } ) )}
       />
     </div>
   );
 }
 
-function ToolEditor({
+function ToolEditor( {
   config,
   updateConfig,
 }: {
   config: ToolConfig;
   updateConfig: ConfigUpdater<ToolConfig>;
-}) {
+} ) {
   const kind = config.kind;
 
   return (
@@ -1025,27 +1030,27 @@ function ToolEditor({
       <select
         className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
         value={kind}
-        onChange={(event) => {
+        onChange={( event ) => {
           const nextKind = event.target.value as ToolConfig["kind"];
-          if (nextKind === "mcp") {
-            updateConfig(() => ({
+          if ( nextKind === "mcp" ) {
+            updateConfig( () => ( {
               kind: "mcp",
               server: "",
               tool: "",
               params: {},
-            }));
-          } else if (nextKind === "openapi") {
-            updateConfig(() => ({
+            } ) );
+          } else if ( nextKind === "openapi" ) {
+            updateConfig( () => ( {
               kind: "openapi",
               specUri: "",
               opId: "",
-            }));
+            } ) );
           } else {
-            updateConfig(() => ({
+            updateConfig( () => ( {
               kind: "internal",
               name: "",
               args: {},
-            }));
+            } ) );
           }
         }}
       >
@@ -1062,16 +1067,16 @@ function ToolEditor({
           <input
             className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
             value={config.server}
-            onChange={(event) =>
-              updateConfig((cfg: any) => ({ ...cfg, server: event.target.value }))
+            onChange={( event ) =>
+              updateConfig( ( cfg: any ) => ( { ...cfg, server: event.target.value } ) )
             }
           />
           <label className="block text-sm font-medium text-gray-700">Tool</label>
           <input
             className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
             value={config.tool}
-            onChange={(event) =>
-              updateConfig((cfg: any) => ({ ...cfg, tool: event.target.value }))
+            onChange={( event ) =>
+              updateConfig( ( cfg: any ) => ( { ...cfg, tool: event.target.value } ) )
             }
           />
         </div>
@@ -1085,8 +1090,8 @@ function ToolEditor({
           <input
             className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
             value={config.specUri}
-            onChange={(event) =>
-              updateConfig((cfg: any) => ({ ...cfg, specUri: event.target.value }))
+            onChange={( event ) =>
+              updateConfig( ( cfg: any ) => ( { ...cfg, specUri: event.target.value } ) )
             }
           />
           <label className="block text-sm font-medium text-gray-700">
@@ -1095,8 +1100,8 @@ function ToolEditor({
           <input
             className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
             value={config.opId}
-            onChange={(event) =>
-              updateConfig((cfg: any) => ({ ...cfg, opId: event.target.value }))
+            onChange={( event ) =>
+              updateConfig( ( cfg: any ) => ( { ...cfg, opId: event.target.value } ) )
             }
           />
         </div>
@@ -1110,8 +1115,8 @@ function ToolEditor({
           <input
             className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
             value={config.name}
-            onChange={(event) =>
-              updateConfig((cfg: any) => ({ ...cfg, name: event.target.value }))
+            onChange={( event ) =>
+              updateConfig( ( cfg: any ) => ( { ...cfg, name: event.target.value } ) )
             }
           />
         </div>
@@ -1120,13 +1125,13 @@ function ToolEditor({
   );
 }
 
-function ToolSetEditor({
+function ToolSetEditor( {
   config,
   updateConfig,
 }: {
   config: ToolSetConfig;
   updateConfig: ConfigUpdater<ToolSetConfig>;
-}) {
+} ) {
   return (
     <div className="space-y-3">
       <label className="block text-sm font-medium text-gray-700">
@@ -1134,15 +1139,15 @@ function ToolSetEditor({
       </label>
       <input
         className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
-        value={(config.allowList ?? []).join(", ")}
-        onChange={(event) =>
-          updateConfig((cfg) => ({
+        value={( config.allowList ?? [] ).join( ", " )}
+        onChange={( event ) =>
+          updateConfig( ( cfg ) => ( {
             ...cfg,
             allowList: event.target.value
-              .split(",")
-              .map((token) => token.trim())
-              .filter(Boolean),
-          }))
+              .split( "," )
+              .map( ( token ) => token.trim() )
+              .filter( Boolean ),
+          } ) )
         }
         placeholder="tool-node-id-1, tool-node-id-2"
       />
@@ -1150,7 +1155,7 @@ function ToolSetEditor({
       <ParameterInput
         label="Max Parallel Calls"
         value={config.maxParallel ?? 1}
-        onChange={(value) => updateConfig((cfg) => ({ ...cfg, maxParallel: value }))}
+        onChange={( value ) => updateConfig( ( cfg ) => ( { ...cfg, maxParallel: value } ) )}
       />
 
       <label className="block text-sm font-medium text-gray-700">
@@ -1159,11 +1164,11 @@ function ToolSetEditor({
       <select
         className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
         value={config.callPolicy ?? "model-first"}
-        onChange={(event) =>
-          updateConfig((cfg) => ({
+        onChange={( event ) =>
+          updateConfig( ( cfg ) => ( {
             ...cfg,
             callPolicy: event.target.value as ToolSetConfig["callPolicy"],
-          }))
+          } ) )
         }
       >
         <option value="model-first">Model First</option>
@@ -1174,24 +1179,24 @@ function ToolSetEditor({
   );
 }
 
-function EntrypointEditor({
+function EntrypointEditor( {
   config,
   updateConfig,
 }: {
   config: EntrypointConfig;
   updateConfig: ConfigUpdater<EntrypointConfig>;
-}) {
+} ) {
   return (
     <div className="space-y-3">
       <label className="block text-sm font-medium text-gray-700">Runtime</label>
       <select
         className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
         value={config.runtime}
-        onChange={(event) =>
-          updateConfig((cfg) => ({
+        onChange={( event ) =>
+          updateConfig( ( cfg ) => ( {
             ...cfg,
             runtime: event.target.value as EntrypointConfig["runtime"],
-          }))
+          } ) )
         }
       >
         <option value="http">HTTP</option>
@@ -1203,8 +1208,8 @@ function EntrypointEditor({
       <input
         className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
         value={config.path ?? ""}
-        onChange={(event) =>
-          updateConfig((cfg) => ({ ...cfg, path: event.target.value }))
+        onChange={( event ) =>
+          updateConfig( ( cfg ) => ( { ...cfg, path: event.target.value } ) )
         }
       />
 
@@ -1214,8 +1219,8 @@ function EntrypointEditor({
       <input
         className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
         value={config.inputSchema ?? ""}
-        onChange={(event) =>
-          updateConfig((cfg) => ({ ...cfg, inputSchema: event.target.value }))
+        onChange={( event ) =>
+          updateConfig( ( cfg ) => ( { ...cfg, inputSchema: event.target.value } ) )
         }
         placeholder="./schemas/input.json"
       />
@@ -1226,8 +1231,8 @@ function EntrypointEditor({
       <input
         className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
         value={config.outputSchema ?? ""}
-        onChange={(event) =>
-          updateConfig((cfg) => ({ ...cfg, outputSchema: event.target.value }))
+        onChange={( event ) =>
+          updateConfig( ( cfg ) => ( { ...cfg, outputSchema: event.target.value } ) )
         }
         placeholder="./schemas/output.json"
       />
@@ -1236,8 +1241,8 @@ function EntrypointEditor({
         <input
           type="checkbox"
           checked={config.streaming ?? false}
-          onChange={(event) =>
-            updateConfig((cfg) => ({ ...cfg, streaming: event.target.checked }))
+          onChange={( event ) =>
+            updateConfig( ( cfg ) => ( { ...cfg, streaming: event.target.checked } ) )
           }
         />
         Stream responses
@@ -1246,13 +1251,13 @@ function EntrypointEditor({
   );
 }
 
-function MemoryEditor({
+function MemoryEditor( {
   config,
   updateConfig,
 }: {
   config: MemoryConfig;
   updateConfig: ConfigUpdater<MemoryConfig>;
-}) {
+} ) {
   return (
     <div className="space-y-3">
       <label className="block text-sm font-medium text-gray-700">
@@ -1261,11 +1266,11 @@ function MemoryEditor({
       <select
         className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
         value={config.source}
-        onChange={(event) =>
-          updateConfig((cfg) => ({
+        onChange={( event ) =>
+          updateConfig( ( cfg ) => ( {
             ...cfg,
             source: event.target.value as MemoryConfig["source"],
-          }))
+          } ) )
         }
       >
         <option value="convex">Convex</option>
@@ -1277,51 +1282,51 @@ function MemoryEditor({
       <input
         className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
         value={config.index ?? ""}
-        onChange={(event) =>
-          updateConfig((cfg) => ({ ...cfg, index: event.target.value }))
+        onChange={( event ) =>
+          updateConfig( ( cfg ) => ( { ...cfg, index: event.target.value } ) )
         }
       />
 
       <ParameterInput
         label="topK"
         value={config.topK ?? 5}
-        onChange={(value) => updateConfig((cfg) => ({ ...cfg, topK: value }))}
+        onChange={( value ) => updateConfig( ( cfg ) => ( { ...cfg, topK: value } ) )}
       />
     </div>
   );
 }
 
-function RouterEditor({
+function RouterEditor( {
   config,
   updateConfig,
 }: {
   config: RouterConfig;
   updateConfig: ConfigUpdater<RouterConfig>;
-}) {
+} ) {
   const addCondition = () => {
-    updateConfig((cfg) => ({
+    updateConfig( ( cfg ) => ( {
       ...cfg,
       conditions: [
-        ...(cfg.conditions || []),
+        ...( cfg.conditions || [] ),
         { type: "if", expression: "", thenNode: "" },
       ],
-    }));
+    } ) );
   };
 
-  const updateCondition = (index: number, updates: Partial<RouterConfig["conditions"][number]>) => {
-    updateConfig((cfg) => {
-      const next = [...(cfg.conditions || [])];
+  const updateCondition = ( index: number, updates: Partial<RouterConfig["conditions"][number]> ) => {
+    updateConfig( ( cfg ) => {
+      const next = [...( cfg.conditions || [] )];
       next[index] = { ...next[index], ...updates };
       return { ...cfg, conditions: next };
-    });
+    } );
   };
 
-  const removeCondition = (index: number) => {
-    updateConfig((cfg) => {
-      const next = [...(cfg.conditions || [])];
-      next.splice(index, 1);
+  const removeCondition = ( index: number ) => {
+    updateConfig( ( cfg ) => {
+      const next = [...( cfg.conditions || [] )];
+      next.splice( index, 1 );
       return { ...cfg, conditions: next };
-    });
+    } );
   };
 
   return (
@@ -1338,10 +1343,10 @@ function RouterEditor({
           + Add
         </button>
       </div>
-      {(config.conditions || []).length === 0 && (
+      {( config.conditions || [] ).length === 0 && (
         <p className="text-xs text-gray-500">No conditions defined.</p>
       )}
-      {(config.conditions || []).map((condition, index) => (
+      {( config.conditions || [] ).map( ( condition, index ) => (
         <div
           key={index}
           className="border border-gray-200 rounded p-3 space-y-2 text-sm"
@@ -1349,10 +1354,10 @@ function RouterEditor({
           <select
             className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
             value={condition.type}
-            onChange={(event) =>
-              updateCondition(index, {
+            onChange={( event ) =>
+              updateCondition( index, {
                 type: event.target.value as RouterConfig["conditions"][number]["type"],
-              })
+              } )
             }
           >
             <option value="if">If / Else</option>
@@ -1363,8 +1368,8 @@ function RouterEditor({
           <input
             className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
             value={condition.expression}
-            onChange={(event) =>
-              updateCondition(index, { expression: event.target.value })
+            onChange={( event ) =>
+              updateCondition( index, { expression: event.target.value } )
             }
             placeholder="context.toolResult == null"
           />
@@ -1372,8 +1377,8 @@ function RouterEditor({
           <input
             className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
             value={condition.thenNode}
-            onChange={(event) =>
-              updateCondition(index, { thenNode: event.target.value })
+            onChange={( event ) =>
+              updateCondition( index, { thenNode: event.target.value } )
             }
             placeholder="node-id-if-true"
           />
@@ -1382,8 +1387,8 @@ function RouterEditor({
             <input
               className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
               value={condition.elseNode ?? ""}
-              onChange={(event) =>
-                updateCondition(index, { elseNode: event.target.value })
+              onChange={( event ) =>
+                updateCondition( index, { elseNode: event.target.value } )
               }
               placeholder="node-id-if-false"
             />
@@ -1391,13 +1396,13 @@ function RouterEditor({
 
           <button
             type="button"
-            onClick={() => removeCondition(index)}
+            onClick={() => removeCondition( index )}
             className="text-xs text-red-500 hover:underline"
           >
             Remove
           </button>
         </div>
-      ))}
+      ) )}
     </div>
   );
 }
@@ -1409,15 +1414,15 @@ const AGENT_EXECUTION_MODES: { value: AgentExecutionMode; label: string; descrip
   { value: "workflow", label: "Workflow", description: "Sequential pipeline. Connect SubAgent nodes." },
 ];
 
-function AgentEditor({
+function AgentEditor( {
   config,
   updateConfig,
 }: {
   config: AgentConfig;
   updateConfig: ConfigUpdater<AgentConfig>;
-}) {
+} ) {
   const mode = config.executionMode ?? "direct";
-  const activeMode = AGENT_EXECUTION_MODES.find((m) => m.value === mode);
+  const activeMode = AGENT_EXECUTION_MODES.find( ( m ) => m.value === mode );
 
   return (
     <div className="space-y-4">
@@ -1427,8 +1432,8 @@ function AgentEditor({
       <input
         className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
         value={config.agentId ?? ""}
-        onChange={(event) =>
-          updateConfig((cfg) => ({ ...cfg, agentId: event.target.value }))
+        onChange={( event ) =>
+          updateConfig( ( cfg ) => ( { ...cfg, agentId: event.target.value } ) )
         }
         placeholder="Select an agent from your library (paste agent ID)"
       />
@@ -1443,18 +1448,18 @@ function AgentEditor({
         className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
         title="Agent execution mode"
         value={mode}
-        onChange={(event) =>
-          updateConfig((cfg) => ({
+        onChange={( event ) =>
+          updateConfig( ( cfg ) => ( {
             ...cfg,
             executionMode: event.target.value as AgentExecutionMode,
-          }))
+          } ) )
         }
       >
-        {AGENT_EXECUTION_MODES.map((m) => (
+        {AGENT_EXECUTION_MODES.map( ( m ) => (
           <option key={m.value} value={m.value}>
             {m.label}
           </option>
-        ))}
+        ) )}
       </select>
       {activeMode && (
         <p className="text-xs text-gray-500">{activeMode.description}</p>
@@ -1472,8 +1477,8 @@ function AgentEditor({
           <input
             className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
             value={config.name ?? ""}
-            onChange={(event) =>
-              updateConfig((cfg) => ({ ...cfg, name: event.target.value }))
+            onChange={( event ) =>
+              updateConfig( ( cfg ) => ( { ...cfg, name: event.target.value } ) )
             }
             placeholder="Agent name"
           />
@@ -1485,8 +1490,8 @@ function AgentEditor({
             rows={4}
             className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
             value={config.systemPrompt ?? ""}
-            onChange={(event) =>
-              updateConfig((cfg) => ({ ...cfg, systemPrompt: event.target.value }))
+            onChange={( event ) =>
+              updateConfig( ( cfg ) => ( { ...cfg, systemPrompt: event.target.value } ) )
             }
             placeholder="You are a helpful assistant..."
           />
@@ -1497,8 +1502,8 @@ function AgentEditor({
           <input
             className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
             value={config.model ?? ""}
-            onChange={(event) =>
-              updateConfig((cfg) => ({ ...cfg, model: event.target.value }))
+            onChange={( event ) =>
+              updateConfig( ( cfg ) => ( { ...cfg, model: event.target.value } ) )
             }
             placeholder="Model ID (e.g. from agent library)"
           />
@@ -1510,8 +1515,8 @@ function AgentEditor({
             className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
             title="Model provider"
             value={config.modelProvider ?? "bedrock"}
-            onChange={(event) =>
-              updateConfig((cfg) => ({ ...cfg, modelProvider: event.target.value }))
+            onChange={( event ) =>
+              updateConfig( ( cfg ) => ( { ...cfg, modelProvider: event.target.value } ) )
             }
           >
             <option value="bedrock">AWS Bedrock</option>
@@ -1524,13 +1529,13 @@ function AgentEditor({
   );
 }
 
-function SubAgentEditor({
+function SubAgentEditor( {
   config,
   updateConfig,
 }: {
   config: SubAgentConfig;
   updateConfig: ConfigUpdater<SubAgentConfig>;
-}) {
+} ) {
   return (
     <div className="space-y-4">
       <label className="block text-sm font-medium text-gray-700">
@@ -1539,8 +1544,8 @@ function SubAgentEditor({
       <input
         className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
         value={config.agentId ?? ""}
-        onChange={(event) =>
-          updateConfig((cfg) => ({ ...cfg, agentId: event.target.value }))
+        onChange={( event ) =>
+          updateConfig( ( cfg ) => ( { ...cfg, agentId: event.target.value } ) )
         }
         placeholder="Paste the ID of a child agent"
       />
@@ -1554,8 +1559,8 @@ function SubAgentEditor({
       <input
         className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
         value={config.role ?? ""}
-        onChange={(event) =>
-          updateConfig((cfg) => ({ ...cfg, role: event.target.value }))
+        onChange={( event ) =>
+          updateConfig( ( cfg ) => ( { ...cfg, role: event.target.value } ) )
         }
         placeholder="e.g. researcher, writer, reviewer"
       />
@@ -1567,11 +1572,11 @@ function SubAgentEditor({
         className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
         title="Communication protocol"
         value={config.communicationProtocol ?? "hierarchical"}
-        onChange={(event) =>
-          updateConfig((cfg) => ({
+        onChange={( event ) =>
+          updateConfig( ( cfg ) => ( {
             ...cfg,
             communicationProtocol: event.target.value as SubAgentConfig["communicationProtocol"],
-          }))
+          } ) )
         }
       >
         <option value="hierarchical">Hierarchical</option>

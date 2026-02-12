@@ -18,6 +18,66 @@ import type { WorkflowNode, WorkflowEdge } from "../src/types/workflowNodes";
 import { composeWorkflow } from "../src/engine/messageComposer";
 import { executeComposedMessages } from "./lib/messageExecutor";
 
+async function getUserScope( ctx: any ): Promise<string> {
+  const identity = await ctx.auth.getUserIdentity();
+  if ( !identity ) {
+    throw new Error( "Authentication required to execute workflows." );
+  }
+
+  const scope =
+    identity.subject ||
+    identity.tokenIdentifier ||
+    identity.email ||
+    identity.provider;
+
+  if ( !scope ) {
+    throw new Error( "Unable to resolve user identity." );
+  }
+
+  return scope;
+}
+
+function detectDependencyCycle(
+  nodes: WorkflowNode[],
+  dependencies: Map<string, string[]>
+): string[] | null {
+  const state = new Map<string, "visiting" | "visited">();
+  const stack: string[] = [];
+
+  const visit = ( nodeId: string ): string[] | null => {
+    const currentState = state.get( nodeId );
+    if ( currentState === "visiting" ) {
+      const cycleStart = stack.indexOf( nodeId );
+      const cyclePath = cycleStart >= 0 ? stack.slice( cycleStart ) : [nodeId];
+      return [...cyclePath, nodeId];
+    }
+    if ( currentState === "visited" ) {
+      return null;
+    }
+
+    state.set( nodeId, "visiting" );
+    stack.push( nodeId );
+    for ( const depId of dependencies.get( nodeId ) || [] ) {
+      const cycle = visit( depId );
+      if ( cycle ) {
+        return cycle;
+      }
+    }
+    stack.pop();
+    state.set( nodeId, "visited" );
+    return null;
+  };
+
+  for ( const node of nodes ) {
+    const cycle = visit( node.id );
+    if ( cycle ) {
+      return cycle;
+    }
+  }
+
+  return null;
+}
+
 export const executeWorkflow = action({
   args: {
     workflowId: v.id("workflows"),
@@ -31,6 +91,12 @@ export const executeWorkflow = action({
     const workflow = await ctx.runQuery(internal.workflows.getInternal, { workflowId });
     if (!workflow) {
       throw new Error(`Workflow ${workflowId} not found`);
+    }
+
+    // Enforce workflow ownership before execution.
+    const userScope = await getUserScope( ctx );
+    if ( workflow.userId !== userScope ) {
+      throw new Error( "Workflow not found for current user" );
     }
 
     // DB stores loosely typed data; validated at save time via sanitizeNode
@@ -224,6 +290,13 @@ async function executeDAGWorkflow(
     deps.push(edge.source);
     dependencies.set(edge.target, deps);
   });
+
+  const cycle = detectDependencyCycle( nodes, dependencies );
+  if ( cycle ) {
+    throw new Error(
+      `Workflow contains a cycle: ${cycle.join( " -> " )}. DAG execution requires an acyclic graph.`
+    );
+  }
 
   // In-flight promises prevent duplicate concurrent executions of the same node
   const inFlight = new Map<string, Promise<any>>();

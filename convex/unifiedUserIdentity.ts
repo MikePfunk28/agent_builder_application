@@ -93,7 +93,7 @@ async function mergeAnonymousUser(ctx: any, anonymousId: any, authenticatedId: a
   // Transfer agents
   const agents = await ctx.db
     .query("agents")
-    .withIndex("by_creator", (q: any) => q.eq("createdBy", anonymousId))
+    .withIndex("by_user", (q: any) => q.eq("createdBy", anonymousId))
     .collect();
 
   for (const agent of agents) {
