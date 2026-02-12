@@ -143,14 +143,23 @@ export const executeAgentWithStrandsAgents = action( {
 
       const result = await executeViaAgentCore( ctx, agent, args.message, history );
 
-      // ─── Token-based metering ───────────────────────────────────────────
+      // ─── Token-based metering (non-fatal) ────────────────────────────────
       if ( result.tokenUsage ) {
-        await ctx.runMutation( internal.stripeMutations.incrementUsageAndReportOverage, {
-          userId: agent.createdBy,
-          modelId: agent.model,
-          inputTokens: result.tokenUsage.inputTokens,
-          outputTokens: result.tokenUsage.outputTokens,
-        } );
+        try {
+          await ctx.runMutation( internal.stripeMutations.incrementUsageAndReportOverage, {
+            userId: agent.createdBy,
+            modelId: agent.model,
+            inputTokens: result.tokenUsage.inputTokens,
+            outputTokens: result.tokenUsage.outputTokens,
+          } );
+        } catch ( billingErr ) {
+          console.error( "strandsAgentExecution: billing failed (non-fatal)", {
+            userId: agent.createdBy, modelId: agent.model,
+            inputTokens: result.tokenUsage.inputTokens,
+            outputTokens: result.tokenUsage.outputTokens,
+            error: billingErr instanceof Error ? billingErr.message : billingErr,
+          } );
+        }
       }
 
       return result;

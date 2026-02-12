@@ -43,7 +43,7 @@ export const executePromptChain = action({
   }> => {
     // Gate: enforce tier-based Bedrock access if any prompt uses a Bedrock model
     const hasBedrock = args.prompts.some( ( p ) => p.model.startsWith( "bedrock:" ) );
-    let gateUserId: any = null;
+    let gateUserId: import("./_generated/dataModel").Id<"users"> | null = null;
     let gateModelId: string | undefined;
     if ( hasBedrock ) {
       const { requireBedrockAccess } = await import( "./lib/bedrockGate" );
@@ -173,10 +173,11 @@ export const executeParallelPrompts = action({
       error?: string;
     }>;
     totalLatency: number;
+    error?: string;
   }> => {
     // Gate: enforce tier-based Bedrock access if any prompt uses a Bedrock model
     const hasBedrock = args.prompts.some( ( p ) => p.model.startsWith( "bedrock:" ) );
-    let gateUserId: any = null;
+    let gateUserId: import("./_generated/dataModel").Id<"users"> | null = null;
     let gateModelId: string | undefined;
     if ( hasBedrock ) {
       const { requireBedrockAccess } = await import( "./lib/bedrockGate" );
@@ -191,6 +192,7 @@ export const executeParallelPrompts = action({
           success: false,
           results: [],
           totalLatency: 0,
+          error: gateResult.reason,
         };
       }
       gateUserId = gateResult.userId;
@@ -431,7 +433,7 @@ export const testPrompt = action({
     error?: string;
   }> => {
     // Gate: enforce tier-based Bedrock access
-    let gateUserId: any = null;
+    let gateUserId: import("./_generated/dataModel").Id<"users"> | null = null;
     let gateModelId: string | undefined;
     if ( args.model.startsWith( "bedrock:" ) ) {
       const { requireBedrockAccess } = await import( "./lib/bedrockGate" );

@@ -223,7 +223,7 @@ export const executeWorkflowStage = action( {
     // Meter: token-based billing for this workflow stage
     if ( result.inputTokens > 0 || result.outputTokens > 0 ) {
       await ctx.runMutation( internal.stripeMutations.incrementUsageAndReportOverage, {
-        userId: gateResult.userId as any,
+        userId: gateResult.userId,
         modelId: WORKFLOW_MODEL_ID,
         inputTokens: result.inputTokens,
         outputTokens: result.outputTokens,

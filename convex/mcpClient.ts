@@ -629,7 +629,13 @@ async function invokeBedrockDirect(parameters: any, timeout: number): Promise<an
     const { extractTokenUsage, estimateTokenUsage } = await import( "./lib/tokenBilling" );
     let tokenUsage = extractTokenUsage( responseBody, modelId );
     if ( tokenUsage.totalTokens === 0 ) {
-      tokenUsage = estimateTokenUsage( input, responseText );
+      // Include full payload (system prompt + history + current input) for accurate estimate
+      const fullInputText = [
+        systemPrompt,
+        ...conversationHistory.map( ( msg: any ) => `${msg.role}: ${msg.content}` ),
+        input,
+      ].filter( Boolean ).join( "\n" );
+      tokenUsage = estimateTokenUsage( fullInputText, responseText );
     }
 
     return {

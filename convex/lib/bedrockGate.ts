@@ -13,6 +13,7 @@
  */
 
 import { getAuthUserId } from "@convex-dev/auth/server";
+import type { Id } from "../_generated/dataModel";
 import {
   isProviderAllowedForTier,
   isBedrockModelAllowedForTier,
@@ -26,7 +27,7 @@ import {
 
 export interface BedrockAccessGranted {
   allowed: true;
-  userId: string;
+  userId: Id<"users">;
   tier: TierName;
 }
 
@@ -82,7 +83,7 @@ export async function requireBedrockAccess(
   const result = await requireBedrockAccessForUser( user, modelId );
   if ( result.allowed ) {
     // Override userId with the real authenticated user ID
-    return { ...result, userId: String( userId ) };
+    return { ...result, userId };
   }
   return result;
 }
@@ -210,9 +211,18 @@ export async function requireBedrockAccessForUser(
     };
   }
 
+  if ( !userDoc._id ) {
+    console.error( "bedrockGate: userDoc is missing _id", { tier, isAnonymous: userDoc.isAnonymous } );
+    return {
+      allowed: false,
+      reason: "User record is incomplete (missing ID). Please sign in again.",
+      upgradeMessage: "Sign in to continue.",
+    };
+  }
+
   return {
     allowed: true,
-    userId: String( userDoc._id || "internal" ),
+    userId: userDoc._id as Id<"users">,
     tier,
   };
 }

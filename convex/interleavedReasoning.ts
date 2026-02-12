@@ -145,14 +145,23 @@ export const sendMessage: any = action( {
         args.message
       );
 
-      // Meter token usage for billing
+      // Meter token usage for billing (non-fatal: don't kill message delivery)
       if ( response.tokenUsage && gateResult.allowed ) {
-        await ctx.runMutation( internal.stripeMutations.incrementUsageAndReportOverage, {
-          userId: gateResult.userId as any,
-          modelId,
-          inputTokens: response.tokenUsage.inputTokens,
-          outputTokens: response.tokenUsage.outputTokens,
-        } );
+        try {
+          await ctx.runMutation( internal.stripeMutations.incrementUsageAndReportOverage, {
+            userId: gateResult.userId,
+            modelId,
+            inputTokens: response.tokenUsage.inputTokens,
+            outputTokens: response.tokenUsage.outputTokens,
+          } );
+        } catch ( billingErr ) {
+          console.error( "interleavedReasoning: billing failed (non-fatal)", {
+            userId: gateResult.userId, modelId,
+            inputTokens: response.tokenUsage.inputTokens,
+            outputTokens: response.tokenUsage.outputTokens,
+            error: billingErr instanceof Error ? billingErr.message : billingErr,
+          } );
+        }
       }
     }
 
