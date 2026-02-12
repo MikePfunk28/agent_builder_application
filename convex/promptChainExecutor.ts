@@ -8,6 +8,7 @@
 "use node";
 
 import { action } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { v } from "convex/values";
 
 /**
@@ -40,9 +41,35 @@ export const executePromptChain = action({
     totalLatency: number;
     error?: string;
   }> => {
+    // Gate: enforce tier-based Bedrock access if any prompt uses a Bedrock model
+    const hasBedrock = args.prompts.some( ( p ) => p.model.startsWith( "bedrock:" ) );
+    let gateUserId: any = null;
+    let gateModelId: string | undefined;
+    if ( hasBedrock ) {
+      const { requireBedrockAccess } = await import( "./lib/bedrockGate" );
+      const bedrockModel = args.prompts.find( ( p ) => p.model.startsWith( "bedrock:" ) );
+      gateModelId = bedrockModel?.model.substring( "bedrock:".length );
+      const gateResult = await requireBedrockAccess(
+        ctx, gateModelId,
+        async ( lookupArgs ) => ctx.runQuery( internal.users.getInternal, lookupArgs ),
+      );
+      if ( !gateResult.allowed ) {
+        return {
+          success: false,
+          finalOutput: null,
+          intermediateResults: [],
+          totalLatency: 0,
+          error: gateResult.reason,
+        };
+      }
+      gateUserId = gateResult.userId;
+    }
+
     const startTime = Date.now();
     const intermediateResults = [];
     let context = args.initialInput;
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
 
     try {
       for (const promptConfig of args.prompts) {
@@ -55,14 +82,17 @@ export const executePromptChain = action({
         });
 
         // Execute prompt with specified model
-        const response = await invokeModel(
+        const modelResult = await invokeModel(
           promptConfig.model,
           renderedPrompt,
           ctx
         );
+        const response = modelResult.text;
+        totalInputTokens += modelResult.inputTokens;
+        totalOutputTokens += modelResult.outputTokens;
 
         // Extract output if specified
-        let extracted = response;
+        let extracted: any = response;
         if (promptConfig.extractOutput) {
           extracted = extractValue(response, promptConfig.extractOutput);
         }
@@ -87,6 +117,16 @@ export const executePromptChain = action({
         } else {
           context = extracted;
         }
+      }
+
+      // Meter: token-based billing for the entire chain
+      if ( gateUserId && ( totalInputTokens > 0 || totalOutputTokens > 0 ) ) {
+        await ctx.runMutation( internal.stripeMutations.incrementUsageAndReportOverage, {
+          userId: gateUserId,
+          modelId: gateModelId,
+          inputTokens: totalInputTokens,
+          outputTokens: totalOutputTokens,
+        } );
       }
 
       const totalLatency = Date.now() - startTime;
@@ -134,7 +174,31 @@ export const executeParallelPrompts = action({
     }>;
     totalLatency: number;
   }> => {
+    // Gate: enforce tier-based Bedrock access if any prompt uses a Bedrock model
+    const hasBedrock = args.prompts.some( ( p ) => p.model.startsWith( "bedrock:" ) );
+    let gateUserId: any = null;
+    let gateModelId: string | undefined;
+    if ( hasBedrock ) {
+      const { requireBedrockAccess } = await import( "./lib/bedrockGate" );
+      const bedrockModel = args.prompts.find( ( p ) => p.model.startsWith( "bedrock:" ) );
+      gateModelId = bedrockModel?.model.substring( "bedrock:".length );
+      const gateResult = await requireBedrockAccess(
+        ctx, gateModelId,
+        async ( lookupArgs ) => ctx.runQuery( internal.users.getInternal, lookupArgs ),
+      );
+      if ( !gateResult.allowed ) {
+        return {
+          success: false,
+          results: [],
+          totalLatency: 0,
+        };
+      }
+      gateUserId = gateResult.userId;
+    }
+
     const startTime = Date.now();
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
 
     const resultPromises = args.prompts.map(async (promptConfig) => {
       const promptStartTime = Date.now();
@@ -147,11 +211,13 @@ export const executeParallelPrompts = action({
         });
 
         // Execute
-        const response = await invokeModel(promptConfig.model, renderedPrompt, ctx);
+        const modelResult = await invokeModel(promptConfig.model, renderedPrompt, ctx);
+        totalInputTokens += modelResult.inputTokens;
+        totalOutputTokens += modelResult.outputTokens;
 
         return {
           promptId: promptConfig.id,
-          response,
+          response: modelResult.text,
           latency: Date.now() - promptStartTime,
         };
       } catch (error: any) {
@@ -165,6 +231,17 @@ export const executeParallelPrompts = action({
     });
 
     const results = await Promise.all(resultPromises);
+
+    // Meter: token-based billing for all parallel prompts
+    if ( gateUserId && ( totalInputTokens > 0 || totalOutputTokens > 0 ) ) {
+      await ctx.runMutation( internal.stripeMutations.incrementUsageAndReportOverage, {
+        userId: gateUserId,
+        modelId: gateModelId,
+        inputTokens: totalInputTokens,
+        outputTokens: totalOutputTokens,
+      } );
+    }
+
     const totalLatency = Date.now() - startTime;
 
     const success = results.every((r) => !r.error);
@@ -226,7 +303,11 @@ function extractValue(response: string, extractor: string): any {
 /**
  * Invoke model (Ollama or Bedrock)
  */
-async function invokeModel(modelSpec: string, prompt: string, _ctx: any): Promise<string> {
+async function invokeModel(
+  modelSpec: string,
+  prompt: string,
+  _ctx: any,
+): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
   const [provider] = modelSpec.split(":");
 
   if (provider === "ollama") {
@@ -245,7 +326,10 @@ async function invokeModel(modelSpec: string, prompt: string, _ctx: any): Promis
 /**
  * Invoke Ollama model
  */
-async function invokeOllama(model: string, prompt: string): Promise<string> {
+async function invokeOllama(
+  model: string,
+  prompt: string,
+): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
   const ollamaHost = process.env.OLLAMA_ENDPOINT || "http://127.0.0.1:11434";
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 30000);
@@ -269,7 +353,7 @@ async function invokeOllama(model: string, prompt: string): Promise<string> {
     }
 
     const data = await response.json();
-    return data.response;
+    return { text: data.response, inputTokens: 0, outputTokens: 0 };
   } finally {
     clearTimeout(timeoutId);
   }
@@ -278,15 +362,23 @@ async function invokeOllama(model: string, prompt: string): Promise<string> {
 /**
  * Invoke Bedrock model
  */
-async function invokeBedrock(model: string, prompt: string): Promise<string> {
+async function invokeBedrock(
+  model: string,
+  prompt: string,
+): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
   const { BedrockRuntimeClient, InvokeModelCommand } = await import("@aws-sdk/client-bedrock-runtime");
+
+  const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
+  if ( ( accessKeyId && !secretAccessKey ) || ( secretAccessKey && !accessKeyId ) ) {
+    throw new Error( "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must both be set or both be unset" );
+  }
 
   const client = new BedrockRuntimeClient({
     region: process.env.AWS_REGION || "us-east-1",
-    credentials: {
-      accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-    },
+    credentials: accessKeyId && secretAccessKey
+      ? { accessKeyId, secretAccessKey }
+      : undefined,
   });
 
   const command = new InvokeModelCommand({
@@ -307,8 +399,19 @@ async function invokeBedrock(model: string, prompt: string): Promise<string> {
 
   const response = await client.send(command);
   const responseBody = JSON.parse(new TextDecoder().decode(response.body));
+  const outputText = responseBody.content?.[0]?.text || "";
 
-  return responseBody.content[0].text;
+  const { extractTokenUsage, estimateTokenUsage } = await import( "./lib/tokenBilling" );
+  let tokenUsage = extractTokenUsage( responseBody, model );
+  if ( tokenUsage.totalTokens === 0 ) {
+    tokenUsage = estimateTokenUsage( prompt, outputText );
+  }
+
+  return {
+    text: outputText,
+    inputTokens: tokenUsage.inputTokens,
+    outputTokens: tokenUsage.outputTokens,
+  };
 }
 
 /**
@@ -327,6 +430,22 @@ export const testPrompt = action({
     latency: number;
     error?: string;
   }> => {
+    // Gate: enforce tier-based Bedrock access
+    let gateUserId: any = null;
+    let gateModelId: string | undefined;
+    if ( args.model.startsWith( "bedrock:" ) ) {
+      const { requireBedrockAccess } = await import( "./lib/bedrockGate" );
+      gateModelId = args.model.substring( "bedrock:".length );
+      const gateResult = await requireBedrockAccess(
+        ctx, gateModelId,
+        async ( lookupArgs ) => ctx.runQuery( internal.users.getInternal, lookupArgs ),
+      );
+      if ( !gateResult.allowed ) {
+        return { success: false, prompt: args.template, response: "", latency: 0, error: gateResult.reason };
+      }
+      gateUserId = gateResult.userId;
+    }
+
     const startTime = Date.now();
 
     try {
@@ -334,12 +453,22 @@ export const testPrompt = action({
       const renderedPrompt = renderTemplate(args.template, args.variables || {});
 
       // Execute
-      const response = await invokeModel(args.model, renderedPrompt, ctx);
+      const modelResult = await invokeModel(args.model, renderedPrompt, ctx);
+
+      // Meter: token-based billing
+      if ( gateUserId && ( modelResult.inputTokens > 0 || modelResult.outputTokens > 0 ) ) {
+        await ctx.runMutation( internal.stripeMutations.incrementUsageAndReportOverage, {
+          userId: gateUserId,
+          modelId: gateModelId,
+          inputTokens: modelResult.inputTokens,
+          outputTokens: modelResult.outputTokens,
+        } );
+      }
 
       return {
         success: true,
         prompt: renderedPrompt,
-        response,
+        response: modelResult.text,
         latency: Date.now() - startTime,
       };
     } catch (error: any) {

@@ -197,7 +197,10 @@ export function selectModel(
   // and should not go through dynamic model switching.
   const availableModels = [MODEL_TIERS.haiku, MODEL_TIERS.sonnet, MODEL_TIERS.sonnet45];
 
-  // Freemium users: execution layer blocks Bedrock, return cheapest as safety net
+  // Freemium users are limited to free models. For now we return the fast
+  // Haiku tier (`MODEL_TIERS.haiku`) as the informational selection. Note
+  // that actual Bedrock execution for freemium users is gated elsewhere via
+  // tier checks (see `isProviderAllowedForTier`).
   if ( userTier === "freemium" ) {
     return MODEL_TIERS.haiku;
   }

@@ -132,6 +132,7 @@ async function deployTier1(ctx: any, args: any, userId: any): Promise<any> {
     // Increment usage counter (centralized in stripeMutations.ts)
     await ctx.runMutation( internalStripeMutations.incrementUsageAndReportOverage, {
       userId,
+      modelId: agent.model,
     } );
 
     return {
@@ -206,13 +207,16 @@ async function deployTier3(_ctx: any, _args: any, _userId: string): Promise<any>
 export const incrementUsage = mutation({
   args: {
     userId: v.id("users"),
+    modelId: v.optional( v.string() ),
   },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if ( !identity ) {
       throw new Error( "Not authenticated" );
     }
-    await incrementUsageAndReportOverageImpl( ctx, args.userId );
+    await incrementUsageAndReportOverageImpl( ctx, args.userId, {
+      modelId: args.modelId,
+    } );
   },
 });
 

@@ -138,9 +138,31 @@ export const processResponse = action( {
       },
     ];
 
+    // Gate: enforce tier-based Bedrock access
+    const { requireBedrockAccess } = await import( "./lib/bedrockGate" );
+    const modelId = process.env.AGENT_BUILDER_MODEL_ID || "anthropic.claude-haiku-4-5-20251001-v1:0";
+    const gateResult = await requireBedrockAccess(
+      ctx,
+      modelId,
+      async ( lookupArgs ) => ctx.runQuery( internal.users.getInternal, lookupArgs ),
+    );
+    if ( !gateResult.allowed ) {
+      throw new Error( gateResult.reason );
+    }
+
     // Use Claude Haiku 4.5 with interleaved thinking to analyze and ask next question
     const systemPrompt = buildSystemPrompt( session.agentRequirements );
     const response = await analyzeAndAskNext( systemPrompt, updatedHistory );
+
+    // Meter token usage for billing
+    if ( response.tokenUsage && gateResult.allowed ) {
+      await ctx.runMutation( internal.stripeMutations.incrementUsageAndReportOverage, {
+        userId: gateResult.userId as any,
+        modelId,
+        inputTokens: response.tokenUsage.inputTokens,
+        outputTokens: response.tokenUsage.outputTokens,
+      } );
+    }
 
     // Parse response to extract:
     // 1. Thinking/reasoning
@@ -285,6 +307,7 @@ async function analyzeAndAskNext(
   nextQuestion: string | null;
   readyToGenerate: boolean;
   agentConfig: any | null;
+  tokenUsage: { inputTokens: number; outputTokens: number; totalTokens: number };
 }> {
   const { BedrockRuntimeClient, InvokeModelCommand } = await import( "@aws-sdk/client-bedrock-runtime" );
 
@@ -343,12 +366,22 @@ async function analyzeAndAskNext(
     throw new Error( `Bedrock model invocation failed: ${err.message}` );
   }
 
+  // Extract token usage for billing
+  const { extractTokenUsage, estimateTokenUsage } = await import( "./lib/tokenBilling" );
+  let tokenUsage = extractTokenUsage( responseBody, modelId );
+
   // Extract text response
   let textResponse = "";
   for ( const block of responseBody.content || [] ) {
     if ( block.type === "text" ) {
       textResponse += block.text;
     }
+  }
+
+  // Fallback to character-based estimation if provider did not return token counts
+  if ( tokenUsage.totalTokens === 0 ) {
+    const inputText = systemPrompt + conversationHistory.map( ( m ) => m.content ).join( " " );
+    tokenUsage = estimateTokenUsage( inputText, textResponse );
   }
 
   // Parse response - AI should return structured JSON
@@ -362,6 +395,7 @@ async function analyzeAndAskNext(
         nextQuestion: null,
         readyToGenerate: true,
         agentConfig: parsed.agentConfig,
+        tokenUsage,
       };
     } else {
       const suggestions = parsed.suggestions || [];
@@ -375,6 +409,7 @@ async function analyzeAndAskNext(
         nextQuestion: formattedQuestion,
         readyToGenerate: false,
         agentConfig: null,
+        tokenUsage,
       };
     }
   } catch ( error ) {
@@ -385,6 +420,7 @@ async function analyzeAndAskNext(
       nextQuestion: textResponse,
       readyToGenerate: false,
       agentConfig: null,
+      tokenUsage,
     };
   }
 }

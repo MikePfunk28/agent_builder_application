@@ -9,10 +9,11 @@
  */
 
 import type { ComposedMessages } from "../../src/engine/messageComposer";
+import type { TokenUsage } from "./tokenBilling";
 
 export async function executeComposedMessages(
   composed: ComposedMessages
-): Promise<{ text: string; raw: any }> {
+): Promise<{ text: string; raw: any; tokenUsage?: TokenUsage }> {
   if (composed.kind === "tool-only") {
     return {
       text: "",
@@ -49,7 +50,13 @@ export async function executeComposedMessages(
         ?.map((content: any) => ("text" in content ? content.text : ""))
         .join("") ?? "";
 
-    return { text, raw: response };
+    // Extract token usage from ConverseCommand response (standardized by AWS SDK)
+    const { extractTokenUsage } = await import( "./tokenBilling" );
+    const tokenUsage = response.usage
+      ? extractTokenUsage( response.usage, composed.bedrock.modelId )
+      : undefined;
+
+    return { text, raw: response, tokenUsage };
   }
 
   if (composed.kind === "ollama" && composed.ollama) {

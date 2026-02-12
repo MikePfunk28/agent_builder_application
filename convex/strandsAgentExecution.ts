@@ -39,6 +39,7 @@ interface AgentExecutionBase {
   error?: string;
   reasoning?: string;
   toolCalls?: ToolCall[];
+  tokenUsage?: { inputTokens: number; outputTokens: number; totalTokens: number };
 }
 
 type AgentExecutionSuccess = AgentExecutionBase & {
@@ -90,7 +91,7 @@ export const executeAgentWithStrandsAgents = action( {
     try {
       const agent = ( await ctx.runQuery( internal.strandsAgentExecution.getAgentInternal, {
         agentId: args.agentId,
-      } ) ) as AgentDoc | null;
+      } ) );
 
       if ( !agent ) {
         throw new Error( "Agent not found" );
@@ -140,7 +141,19 @@ export const executeAgentWithStrandsAgents = action( {
         } ) ) as ConversationMessage[];
       }
 
-      return await executeViaAgentCore( ctx, agent, args.message, history );
+      const result = await executeViaAgentCore( ctx, agent, args.message, history );
+
+      // ─── Token-based metering ───────────────────────────────────────────
+      if ( result.tokenUsage ) {
+        await ctx.runMutation( internal.stripeMutations.incrementUsageAndReportOverage, {
+          userId: agent.createdBy,
+          modelId: agent.model,
+          inputTokens: result.tokenUsage.inputTokens,
+          outputTokens: result.tokenUsage.outputTokens,
+        } );
+      }
+
+      return result;
     } catch ( error: unknown ) {
       console.error( "Agent execution error:", error );
       const message = error instanceof Error ? error.message : "Agent execution failed";
@@ -233,11 +246,28 @@ async function executeDirectBedrock(
       };
     } else {
       // Generic Bedrock model fallback (Cohere, AI21, Titan, etc.)
-      payload = {
-        prompt: `${systemPrefix}${promptText}\nassistant:`,
-        max_tokens: 4096,
-        temperature: 0.7,
-      };
+      // Amazon Titan requires a different payload shape: use `inputText`
+      // and wrap generation options in `textGenerationConfig` with
+      // `maxTokenCount` (replacing `max_tokens`) and `temperature`.
+      const isTitan = modelId.toLowerCase().includes( "titan" );
+
+      if ( isTitan ) {
+        // Titan-compatible payload
+        payload = {
+          inputText: `${systemPrefix}${promptText}`,
+          textGenerationConfig: {
+            maxTokenCount: 4096,
+            temperature: 0.7,
+          },
+        };
+      } else {
+        // Existing prompt/max_tokens shape for other Bedrock providers
+        payload = {
+          prompt: `${systemPrefix}${promptText}\nassistant:`,
+          max_tokens: 4096,
+          temperature: 0.7,
+        };
+      }
     }
   }
 
@@ -291,14 +321,36 @@ async function executeDirectBedrock(
     content = responseBody.results.map( ( r ) => r.outputText || "" ).join( "" );
   } else {
     // Fallback: try to extract text from any field in the response
-    const raw = new TextDecoder().decode( response.body );
-    console.warn( `Unrecognized Bedrock response format for model ${modelId}. Raw preview: ${raw.slice( 0, 200 )}` );
+    // Use the already-parsed `responseBody` and avoid logging raw/sensitive content.
+    console.warn( `Unrecognized Bedrock response format for model ${modelId}. Response did not match expected fields.` );
     try {
-      const parsed = JSON.parse( raw );
-      content = typeof parsed === "string" ? parsed : JSON.stringify( parsed );
+      if ( typeof responseBody === "string" ) {
+        const parsed = JSON.parse( responseBody );
+        content = typeof parsed === "string" ? parsed : JSON.stringify( parsed );
+      } else if ( responseBody && typeof responseBody === "object" ) {
+        // Preserve a JSON representation of the object as the fallback content
+        content = JSON.stringify( responseBody );
+      } else {
+        content = String( responseBody );
+      }
     } catch {
-      content = raw;
+      // If JSON.parse fails for some reason, fall back to a best-effort string
+      try {
+        content = JSON.stringify( responseBody );
+      } catch {
+        content = String( responseBody );
+      }
     }
+  }
+
+  // ─── Token extraction for billing ───────────────────────────────────────
+  const { extractTokenUsage, estimateTokenUsage } = await import( "./lib/tokenBilling" );
+  let tokenUsage = extractTokenUsage( responseBody, modelId );
+
+  // Fallback: estimate from text when provider doesn't return counts
+  if ( tokenUsage.totalTokens === 0 ) {
+    const inputText = JSON.stringify( payload );
+    tokenUsage = estimateTokenUsage( inputText, content );
   }
 
   return {
@@ -306,6 +358,7 @@ async function executeDirectBedrock(
     content: content.trim(),
     reasoning: reasoning.trim() || undefined,
     toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+    tokenUsage,
     metadata: {
       model: modelId,
       modelProvider: "bedrock",
@@ -319,7 +372,7 @@ export const getAgentInternal = internalQuery( {
     agentId: v.id( "agents" ),
   },
   handler: async ( ctx, args ): Promise<AgentDoc | null> => {
-    const agent = ( await ctx.db.get( args.agentId ) ) as AgentDoc | null;
+    const agent = ( await ctx.db.get( args.agentId ) );
     return agent;
   },
 } );
@@ -346,7 +399,7 @@ export const testAgentExecution = action( {
       agentId: args.agentId,
       conversationId: conversation.conversationId,
       message: testMessage,
-    } ) ) as AgentExecutionResult;
+    } ) );
 
     return {
       ...result,

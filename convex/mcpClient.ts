@@ -131,6 +131,21 @@ export const invokeMCPToolInternal = internalAction({
 
       const executionTime = Date.now() - startTime;
 
+      // Meter Bedrock usage if this was a direct Bedrock invocation with token data
+      if (
+        result.success &&
+        args.userId &&
+        result.result?.tokenUsage &&
+        ( result.result.tokenUsage.inputTokens > 0 || result.result.tokenUsage.outputTokens > 0 )
+      ) {
+        await ctx.runMutation( internal.stripeMutations.incrementUsageAndReportOverage, {
+          userId: args.userId,
+          modelId: result.result.model_id,
+          inputTokens: result.result.tokenUsage.inputTokens,
+          outputTokens: result.result.tokenUsage.outputTokens,
+        } );
+      }
+
       // Return properly typed result
       if (result.success) {
         return {
@@ -545,15 +560,20 @@ async function invokeBedrockDirect(parameters: any, timeout: number): Promise<an
   try {
     const { BedrockRuntimeClient, InvokeModelCommand } = await import("@aws-sdk/client-bedrock-runtime");
 
+    const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
+    const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
+    if ( ( accessKeyId && !secretAccessKey ) || ( secretAccessKey && !accessKeyId ) ) {
+      throw new Error( "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must both be set or both be unset" );
+    }
+
     const client = new BedrockRuntimeClient({
       region: process.env.AWS_REGION || "us-east-1",
-      credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-      },
+      credentials: accessKeyId && secretAccessKey
+        ? { accessKeyId, secretAccessKey }
+        : undefined,
     });
 
-    const modelId = parameters.model_id || "anthropic.claude-3-haiku-20240307-v1:0";
+    const modelId = parameters.model_id || process.env.AGENT_BUILDER_MODEL_ID || "deepseek.v3-v1:0";
     const input = parameters.input || "";
     const systemPrompt = parameters.system_prompt || "You are a helpful AI assistant.";
     const conversationHistory = parameters.conversation_history || [];
@@ -605,10 +625,18 @@ async function invokeBedrockDirect(parameters: any, timeout: number): Promise<an
     // Extract text from response
     const responseText = responseBody.content?.[0]?.text || JSON.stringify(responseBody);
 
+    // Extract token usage for metering
+    const { extractTokenUsage, estimateTokenUsage } = await import( "./lib/tokenBilling" );
+    let tokenUsage = extractTokenUsage( responseBody, modelId );
+    if ( tokenUsage.totalTokens === 0 ) {
+      tokenUsage = estimateTokenUsage( input, responseText );
+    }
+
     return {
       response: responseText,
       model_id: modelId,
       usage: responseBody.usage || {},
+      tokenUsage,
       stop_reason: responseBody.stop_reason,
     };
   } catch (error: any) {

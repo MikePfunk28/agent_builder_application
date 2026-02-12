@@ -42,7 +42,7 @@ function generateToolCode(
   agentId: string
 ): string {
   // Sanitize inputs to prevent template injection in generated Python code
-  const sanitize = ( s: string ) => s.replaceAll( '\\', "\\\\" ).replace( /"""/g, '\\"\\"\\"' );
+  const sanitize = ( s: string ) => s.replaceAll( '\\', "\\\\" ).replaceAll( '"""', String.raw`\"\"\"` );
   const safeAgentName = sanitize( agentName );
   return `"""
 Agent-as-Tool: ${safeAgentName}

@@ -24,11 +24,13 @@ async function getUserScope( ctx: any ): Promise<string> {
     throw new Error( "Authentication required to execute workflows." );
   }
 
+  // subject and tokenIdentifier are always unique per user in Convex auth.
+  // email is a reasonable fallback. Do NOT use identity.provider alone —
+  // it is just the provider name (e.g., "github") and is the same for all users.
   const scope =
     identity.subject ||
     identity.tokenIdentifier ||
-    identity.email ||
-    identity.provider;
+    identity.email;
 
   if ( !scope ) {
     throw new Error( "Unable to resolve user identity." );
@@ -78,19 +80,19 @@ function detectDependencyCycle(
   return null;
 }
 
-export const executeWorkflow = action({
+export const executeWorkflow = action( {
   args: {
-    workflowId: v.id("workflows"),
+    workflowId: v.id( "workflows" ),
     input: v.any(),
-    runtimeInputs: v.optional(v.any()),
+    runtimeInputs: v.optional( v.any() ),
   },
-  handler: async (ctx, { workflowId, input, runtimeInputs }) => {
+  handler: async ( ctx, { workflowId, input, runtimeInputs } ) => {
     const startTime = Date.now();
 
     // 1. QUERY ACTUAL WORKFLOW FROM DATABASE
-    const workflow = await ctx.runQuery(internal.workflows.getInternal, { workflowId });
-    if (!workflow) {
-      throw new Error(`Workflow ${workflowId} not found`);
+    const workflow = await ctx.runQuery( internal.workflows.getInternal, { workflowId } );
+    if ( !workflow ) {
+      throw new Error( `Workflow ${workflowId} not found` );
     }
 
     // Enforce workflow ownership before execution.
@@ -103,33 +105,38 @@ export const executeWorkflow = action({
     const nodes = workflow.nodes as unknown as WorkflowNode[];
     const edges = workflow.edges as unknown as WorkflowEdge[];
 
-    if (!nodes.length) {
-      throw new Error("Workflow has no nodes");
+    if ( !nodes.length ) {
+      throw new Error( "Workflow has no nodes" );
     }
 
     // 2. DETECT WORKFLOW PATTERN
-    const hasPromptNodes = nodes.some((n) => n.data.type === "Prompt");
-    const hasModelNodes = nodes.some((n) => n.data.type === "Model" || n.data.type === "ModelSet");
-    const hasToolNodes = nodes.some((n) => n.data.type === "Tool" || n.data.type === "ToolSet");
-    const hasRouterNodes = nodes.some((n) => n.data.type === "Router");
-    const hasAgentNodes = nodes.some((n) => n.data.type === "Agent");
+    const hasPromptNodes = nodes.some( ( n ) => n.data.type === "Prompt" );
+    const hasModelNodes = nodes.some( ( n ) => n.data.type === "Model" || n.data.type === "ModelSet" );
+    const hasToolNodes = nodes.some( ( n ) => n.data.type === "Tool" || n.data.type === "ToolSet" );
+    const hasRouterNodes = nodes.some( ( n ) => n.data.type === "Router" );
+    const hasAgentNodes = nodes.some( ( n ) => n.data.type === "Agent" );
 
     // 3. CHOOSE EXECUTION STRATEGY
-    if (hasAgentNodes) {
+    if ( hasAgentNodes ) {
       // Agent-driven workflow — delegate to strands agent or multi-agent runtime
-      return await executeAgentWorkflow(ctx, { nodes, edges, input, startTime });
-    } else if (hasPromptNodes && hasModelNodes && !hasRouterNodes) {
+      return await executeAgentWorkflow( ctx, { nodes, edges, input, startTime } );
+    } else if ( hasPromptNodes && hasModelNodes && !hasRouterNodes ) {
       // Use message composer for Prompt + Model workflows
-      return await executePromptModelWorkflow(ctx, { nodes, edges, input, runtimeInputs, startTime });
-    } else if (hasRouterNodes) {
+      return await executePromptModelWorkflow( ctx, { nodes, edges, input, runtimeInputs, startTime } );
+    } else if ( hasRouterNodes ) {
       // Execute with conditional routing
-      return await executeRoutedWorkflow(ctx, { nodes, edges, input, startTime });
+      return await executeRoutedWorkflow( ctx, { nodes, edges, input, startTime } );
+    } else if ( hasToolNodes && !hasPromptNodes && !hasModelNodes ) {
+      // Tool-only workflow — execute tools in DAG order
+      return await executeDAGWorkflow( ctx, { nodes, edges, input, startTime } );
     } else {
-      // Execute as DAG with topological order
-      return await executeDAGWorkflow(ctx, { nodes, edges, input, startTime });
+      // Generic DAG execution for all other patterns
+      return await executeDAGWorkflow( ctx, { nodes, edges, input, startTime } );
     }
   },
-});
+} );
+
+
 
 /**
  * Execute Prompt + Model workflows using message composer
@@ -152,12 +159,37 @@ async function executePromptModelWorkflow(
 ) {
   try {
     // Compose messages from prompt nodes
-    const composed = composeWorkflow(nodes, edges, {
-      runtimeInputs: { ...input, ...(runtimeInputs || {}) },
-    });
+    const composed = composeWorkflow( nodes, edges, {
+      runtimeInputs: { ...input, ...( runtimeInputs || {} ) },
+    } );
+
+    // Gate: enforce tier-based Bedrock access before executing
+    let gateResult: { allowed: true; userId: string; tier: string } | undefined;
+    if ( composed.kind === "bedrock" ) {
+      const { requireBedrockAccess } = await import( "./lib/bedrockGate" );
+      const gate = await requireBedrockAccess(
+        ctx,
+        composed.bedrock?.modelId,
+        async ( args ) => ctx.runQuery( internal.users.getInternal, args ),
+      );
+      if ( !gate.allowed ) {
+        throw new Error( gate.reason );
+      }
+      gateResult = gate;
+    }
 
     // Execute composed messages with actual API calls
-    const result = await executeComposedMessages(composed);
+    const result = await executeComposedMessages( composed );
+
+    // Meter token usage for billing
+    if ( result.tokenUsage && gateResult ) {
+      await ctx.runMutation( internal.stripeMutations.incrementUsageAndReportOverage, {
+        userId: gateResult.userId as any,
+        modelId: composed.bedrock?.modelId,
+        inputTokens: result.tokenUsage.inputTokens,
+        outputTokens: result.tokenUsage.outputTokens,
+      } );
+    }
 
     return {
       success: true,
@@ -175,7 +207,7 @@ async function executePromptModelWorkflow(
       ],
       executionTime: Date.now() - startTime,
     };
-  } catch (error: any) {
+  } catch ( error: any ) {
     return {
       success: false,
       error: error.message,
@@ -205,15 +237,15 @@ async function executeRoutedWorkflow(
   const executionLog: any[] = [];
 
   // Find entry point (node with no incoming edges)
-  const incomingEdges = new Set(edges.map((e) => e.target));
-  const entryNodes = nodes.filter((n) => !incomingEdges.has(n.id));
+  const incomingEdges = new Set( edges.map( ( e ) => e.target ) );
+  const entryNodes = nodes.filter( ( n ) => !incomingEdges.has( n.id ) );
 
-  if (entryNodes.length === 0) {
-    throw new Error("No entry point found in workflow");
+  if ( entryNodes.length === 0 ) {
+    throw new Error( "No entry point found in workflow" );
   }
 
-  if (entryNodes.length > 1) {
-    throw new Error(`Workflow has ${entryNodes.length} entry points (nodes with no incoming edges). Expected exactly one.`);
+  if ( entryNodes.length > 1 ) {
+    throw new Error( `Workflow has ${entryNodes.length} entry points (nodes with no incoming edges). Expected exactly one.` );
   }
 
   // Execute starting from entry point
@@ -222,33 +254,33 @@ async function executeRoutedWorkflow(
   let iterations = 0;
   const maxIterations = 100; // Prevent infinite loops
 
-  while (currentNodeId && iterations < maxIterations) {
+  while ( currentNodeId && iterations < maxIterations ) {
     iterations++;
-    const node = nodes.find((n) => n.id === currentNodeId);
-    if (!node) break;
+    const node = nodes.find( ( n ) => n.id === currentNodeId );
+    if ( !node ) break;
 
     const nodeStartTime = Date.now();
 
     // Execute node
-    const result = await executeNode(ctx, node, currentInput, nodeResults);
+    const result = await executeNode( ctx, node, currentInput, nodeResults );
 
-    executionLog.push({
+    executionLog.push( {
       nodeId: node.id,
       nodeType: node.data.type,
       nodeLabel: node.data.label || node.id,
       executionTime: Date.now() - nodeStartTime,
       result,
-    });
+    } );
 
-    nodeResults.set(node.id, result);
+    nodeResults.set( node.id, result );
     currentInput = result;
 
     // Determine next node based on Router logic
-    if (node.data.type === "Router") {
-      currentNodeId = await evaluateRouterConditions(node, result, edges);
+    if ( node.data.type === "Router" ) {
+      currentNodeId = await evaluateRouterConditions( node, result, edges );
     } else {
       // Follow first outgoing edge
-      const outgoing = edges.filter((e) => e.source === node.id);
+      const outgoing = edges.filter( ( e ) => e.source === node.id );
       currentNodeId = outgoing.length > 0 ? outgoing[0].target : "";
     }
   }
@@ -285,11 +317,11 @@ async function executeDAGWorkflow(
 
   // Build dependency map
   const dependencies = new Map<string, string[]>();
-  edges.forEach((edge) => {
-    const deps = dependencies.get(edge.target) || [];
-    deps.push(edge.source);
-    dependencies.set(edge.target, deps);
-  });
+  edges.forEach( ( edge ) => {
+    const deps = dependencies.get( edge.target ) || [];
+    deps.push( edge.source );
+    dependencies.set( edge.target, deps );
+  } );
 
   const cycle = detectDependencyCycle( nodes, dependencies );
   if ( cycle ) {
@@ -302,24 +334,24 @@ async function executeDAGWorkflow(
   const inFlight = new Map<string, Promise<any>>();
 
   // Recursive execution with deduplication
-  async function executeNodeRecursive(nodeId: string): Promise<any> {
-    if (executed.has(nodeId)) {
-      return nodeResults.get(nodeId);
+  async function executeNodeRecursive( nodeId: string ): Promise<any> {
+    if ( executed.has( nodeId ) ) {
+      return nodeResults.get( nodeId );
     }
 
     // Return existing in-flight promise to prevent race conditions
-    if (inFlight.has(nodeId)) {
-      return inFlight.get(nodeId);
+    if ( inFlight.has( nodeId ) ) {
+      return inFlight.get( nodeId );
     }
 
-    const promise = (async () => {
-      const node = nodes.find((n) => n.id === nodeId);
-      if (!node) throw new Error(`Node ${nodeId} not found`);
+    const promise = ( async () => {
+      const node = nodes.find( ( n ) => n.id === nodeId );
+      if ( !node ) throw new Error( `Node ${nodeId} not found` );
 
       // Execute dependencies first (parallel if independent)
-      const deps = dependencies.get(nodeId) || [];
+      const deps = dependencies.get( nodeId ) || [];
       const depResults = await Promise.all(
-        deps.map((depId) => executeNodeRecursive(depId))
+        deps.map( ( depId ) => executeNodeRecursive( depId ) )
       );
 
       // Merge dependency outputs
@@ -327,44 +359,44 @@ async function executeDAGWorkflow(
 
       // Execute this node
       const nodeStartTime = Date.now();
-      const result = await executeNode(ctx, node, nodeInput, nodeResults);
+      const result = await executeNode( ctx, node, nodeInput, nodeResults );
 
-      executionLog.push({
+      executionLog.push( {
         nodeId: node.id,
         nodeType: node.data.type,
         nodeLabel: node.data.label || node.id,
         executionTime: Date.now() - nodeStartTime,
         result,
-      });
+      } );
 
-      executed.add(nodeId);
-      nodeResults.set(nodeId, result);
+      executed.add( nodeId );
+      nodeResults.set( nodeId, result );
 
       return result;
-    })();
+    } )();
 
-    inFlight.set(nodeId, promise);
+    inFlight.set( nodeId, promise );
     return promise;
   }
 
   // Find output nodes (nodes with no outgoing edges)
-  const outgoingEdges = new Set(edges.map((e) => e.source));
-  const outputNodes = nodes.filter((n) => !outgoingEdges.has(n.id));
+  const outgoingEdges = new Set( edges.map( ( e ) => e.source ) );
+  const outputNodes = nodes.filter( ( n ) => !outgoingEdges.has( n.id ) );
 
-  if (outputNodes.length === 0) {
+  if ( outputNodes.length === 0 ) {
     // No explicit output, execute all nodes
-    await Promise.all(nodes.map((n) => executeNodeRecursive(n.id)));
+    await Promise.all( nodes.map( ( n ) => executeNodeRecursive( n.id ) ) );
     // Deterministic: pick the last node in the original array that was executed
     let lastExecutedNodeId = nodes[nodes.length - 1].id;
-    for (let i = nodes.length - 1; i >= 0; i--) {
-      if (nodeResults.has(nodes[i].id)) {
+    for ( let i = nodes.length - 1; i >= 0; i-- ) {
+      if ( nodeResults.has( nodes[i].id ) ) {
         lastExecutedNodeId = nodes[i].id;
         break;
       }
     }
     return {
       success: true,
-      result: nodeResults.get(lastExecutedNodeId),
+      result: nodeResults.get( lastExecutedNodeId ),
       executionLog,
       executionTime: Date.now() - startTime,
     };
@@ -372,7 +404,7 @@ async function executeDAGWorkflow(
 
   // Execute all output nodes
   const results = await Promise.all(
-    outputNodes.map((n) => executeNodeRecursive(n.id))
+    outputNodes.map( ( n ) => executeNodeRecursive( n.id ) )
   );
 
   return {
@@ -403,21 +435,21 @@ async function executeAgentWorkflow(
   }
 ): Promise<{ success: boolean; result?: any; error?: string; executionLog?: any[]; executionTime: number }> {
   const executionLog: any[] = [];
-  const agentNodes = nodes.filter((n) => n.data.type === "Agent");
+  const agentNodes = nodes.filter( ( n ) => n.data.type === "Agent" );
 
-  if (agentNodes.length === 0) {
-    throw new Error("No Agent nodes found in workflow");
+  if ( agentNodes.length === 0 ) {
+    throw new Error( "No Agent nodes found in workflow" );
   }
 
   // Use the first Agent node as the primary agent
   const primaryAgent = agentNodes[0];
   const agentConfig = primaryAgent.data.config as any;
   const executionMode = agentConfig.executionMode || "direct";
-  const message = typeof input === "string" ? input : (input?.message ?? JSON.stringify(input));
+  const message = typeof input === "string" ? input : ( input?.message ?? JSON.stringify( input ) );
 
-  if (executionMode === "direct") {
+  if ( executionMode === "direct" ) {
     // Single agent execution
-    if (!agentConfig.agentId) {
+    if ( !agentConfig.agentId ) {
       return {
         success: false,
         error: "Agent node requires an agentId for direct execution. Select an agent in the node settings.",
@@ -426,18 +458,18 @@ async function executeAgentWorkflow(
     }
 
     try {
-      const result: any = await ctx.runAction(api.strandsAgentExecution.executeAgentWithStrandsAgents, {
+      const result: any = await ctx.runAction( api.strandsAgentExecution.executeAgentWithStrandsAgents, {
         agentId: agentConfig.agentId,
         message,
-      });
+      } );
 
-      executionLog.push({
+      executionLog.push( {
         nodeId: primaryAgent.id,
         nodeType: "Agent",
         nodeLabel: primaryAgent.data.label || agentConfig.name || "Agent",
         executionTime: Date.now() - startTime,
         result,
-      });
+      } );
 
       return {
         success: result.success,
@@ -445,7 +477,7 @@ async function executeAgentWorkflow(
         executionLog,
         executionTime: Date.now() - startTime,
       };
-    } catch (error: any) {
+    } catch ( error: any ) {
       return {
         success: false,
         error: error.message,
@@ -457,12 +489,12 @@ async function executeAgentWorkflow(
 
   // Multi-agent mode (swarm/graph/workflow)
   // Gather SubAgent nodes connected to the primary Agent
-  const subAgentNodes = nodes.filter((n) => n.data.type === "SubAgent");
-  const connectedSubAgents = subAgentNodes.filter((sub) =>
-    edges.some((e) => e.target === primaryAgent.id && e.source === sub.id)
+  const subAgentNodes = nodes.filter( ( n ) => n.data.type === "SubAgent" );
+  const connectedSubAgents = subAgentNodes.filter( ( sub ) =>
+    edges.some( ( e ) => e.target === primaryAgent.id && e.source === sub.id )
   );
 
-  if (!agentConfig.agentId) {
+  if ( !agentConfig.agentId ) {
     return {
       success: false,
       error: "Agent node requires an agentId for multi-agent execution.",
@@ -471,17 +503,17 @@ async function executeAgentWorkflow(
   }
 
   const agentsList = connectedSubAgents
-    .map((sub) => {
+    .map( ( sub ) => {
       const subConfig = sub.data.config as any;
-      if (!subConfig.agentId) return null;
+      if ( !subConfig.agentId ) return null;
       return {
         agentId: subConfig.agentId,
         role: subConfig.role || sub.data.label || "worker",
       };
-    })
-    .filter(Boolean);
+    } )
+    .filter( Boolean );
 
-  if (agentsList.length === 0) {
+  if ( agentsList.length === 0 ) {
     return {
       success: false,
       error: `Agent is in "${executionMode}" mode but has no connected SubAgent nodes with valid agentIds.`,
@@ -491,15 +523,15 @@ async function executeAgentWorkflow(
 
   try {
     const pattern = executionMode === "swarm" ? "swarm" : executionMode === "graph" ? "graph" : "workflow";
-    const result: any = await ctx.runAction(api.multiAgentRuntime.executeMultiAgentPattern, {
+    const result: any = await ctx.runAction( api.multiAgentRuntime.executeMultiAgentPattern, {
       parentAgentId: agentConfig.agentId,
       pattern,
       agents: agentsList,
       executionMode: pattern === "swarm" ? "parallel" : "sequential",
       sharedContext: { input: message },
-    });
+    } );
 
-    executionLog.push({
+    executionLog.push( {
       nodeId: primaryAgent.id,
       nodeType: "Agent",
       nodeLabel: primaryAgent.data.label || agentConfig.name || "Agent",
@@ -507,7 +539,7 @@ async function executeAgentWorkflow(
       subAgents: agentsList.length,
       executionTime: Date.now() - startTime,
       result,
-    });
+    } );
 
     return {
       success: true,
@@ -515,7 +547,7 @@ async function executeAgentWorkflow(
       executionLog,
       executionTime: Date.now() - startTime,
     };
-  } catch (error: any) {
+  } catch ( error: any ) {
     return {
       success: false,
       error: error.message,
@@ -537,7 +569,7 @@ async function executeNode(
   const nodeType = node.data.type;
   const config = node.data.config;
 
-  switch (nodeType) {
+  switch ( nodeType ) {
     case "Prompt":
     case "PromptText":
     case "Background":
@@ -562,19 +594,19 @@ async function executeNode(
       // REAL TOOL EXECUTION
       const toolConfig = config as any;
 
-      if (toolConfig.kind === "mcp") {
+      if ( toolConfig.kind === "mcp" ) {
         // Execute MCP tool
         try {
-          const result = await ctx.runAction(internal.mcpClient.invokeMCPToolInternal, {
+          const result = await ctx.runAction( internal.mcpClient.invokeMCPToolInternal, {
             serverName: toolConfig.server || "default",
             toolName: toolConfig.tool,
             parameters: toolConfig.params || input,
-          });
+          } );
           return result;
-        } catch (error: any) {
+        } catch ( error: any ) {
           return { success: false, error: error.message, toolType: "mcp" };
         }
-      } else if (toolConfig.kind === "internal") {
+      } else if ( toolConfig.kind === "internal" ) {
         // Execute internal @tool
         const toolName = toolConfig.name;
         const toolMap: Record<string, any> = {
@@ -589,22 +621,22 @@ async function executeNode(
           parallel_prompts: api.tools.parallelPrompts,
         };
 
-        const toolAction = toolMap[toolName] || toolMap[toolName.toLowerCase().replace(/ /g, "_")];
+        const toolAction = toolMap[toolName] || toolMap[toolName.toLowerCase().replace( / /g, "_" )];
 
-        if (toolAction) {
+        if ( toolAction ) {
           try {
-            return await ctx.runAction(toolAction, toolConfig.args || input);
-          } catch (error: any) {
+            return await ctx.runAction( toolAction, toolConfig.args || input );
+          } catch ( error: any ) {
             return { success: false, error: error.message, toolType: "internal", toolName };
           }
         } else {
-          return await ctx.runAction(api.tools.executeStrandsTool, {
+          return await ctx.runAction( api.tools.executeStrandsTool, {
             toolName,
             params: toolConfig.args || input,
             context: { nodeId: node.id },
-          });
+          } );
         }
-      } else if (toolConfig.kind === "openapi") {
+      } else if ( toolConfig.kind === "openapi" ) {
         // OpenAPI execution (TODO: implement swagger client)
         return {
           success: false,
@@ -627,13 +659,13 @@ async function executeNode(
 
       // Find connected Tool nodes
       const toolNodes = allowedTools
-        .map((toolId: string) => {
+        .map( ( toolId: string ) => {
           // Look in nodeResults for tool outputs
-          return nodeResults.get(toolId);
-        })
-        .filter(Boolean);
+          return nodeResults.get( toolId );
+        } )
+        .filter( Boolean );
 
-      if (callPolicy === "tool-first") {
+      if ( callPolicy === "tool-first" ) {
         // Execute tools first, then model
         return { toolResults: toolNodes, callPolicy };
       } else {
@@ -646,13 +678,13 @@ async function executeNode(
       // REAL MEMORY EXECUTION
       const memoryConfig = config as any;
 
-      if (memoryConfig.source === "convex") {
+      if ( memoryConfig.source === "convex" ) {
         // TODO: Query Convex database
         return { source: "convex", index: memoryConfig.index, topK: memoryConfig.topK };
-      } else if (memoryConfig.source === "s3") {
+      } else if ( memoryConfig.source === "s3" ) {
         // TODO: Query S3
         return { source: "s3", index: memoryConfig.index };
-      } else if (memoryConfig.source === "vector_db") {
+      } else if ( memoryConfig.source === "vector_db" ) {
         // TODO: Query vector database
         return { source: "vector_db", index: memoryConfig.index, topK: memoryConfig.topK };
       }
@@ -710,41 +742,41 @@ async function evaluateRouterConditions(
   const config = node.data.config as any;
   const conditions = config.conditions || [];
 
-  for (const condition of conditions) {
+  for ( const condition of conditions ) {
     // Simple expression evaluation (unsafe, TODO: use safe evaluator)
     try {
       const context = { result, success: result?.success };
-      const evalResult = evaluateExpression(condition.expression, context);
+      const evalResult = evaluateExpression( condition.expression, context );
 
-      if (evalResult) {
+      if ( evalResult ) {
         return condition.thenNode;
-      } else if (condition.type === "if" && condition.elseNode) {
+      } else if ( condition.type === "if" && condition.elseNode ) {
         return condition.elseNode;
       }
-    } catch (error) {
-      console.error("Router condition evaluation failed:", error);
+    } catch ( error ) {
+      console.error( "Router condition evaluation failed:", error );
     }
   }
 
   // Default: follow first outgoing edge
-  const outgoing = edges.filter((e) => e.source === node.id);
+  const outgoing = edges.filter( ( e ) => e.source === node.id );
   return outgoing.length > 0 ? outgoing[0].target : "";
 }
 
 /**
  * Safe expression evaluator (simplified)
  */
-function evaluateExpression(expression: string, context: Record<string, any>): boolean {
+function evaluateExpression( expression: string, context: Record<string, any> ): boolean {
   // Simple checks for now (TODO: use proper safe evaluator)
-  if (expression.includes("success")) {
+  if ( expression.includes( "success" ) ) {
     return context.success === true;
   }
-  if (expression.includes("error")) {
+  if ( expression.includes( "error" ) ) {
     return context.result?.error !== undefined;
   }
-  if (expression.includes("==") || expression.includes("===")) {
+  if ( expression.includes( "==" ) || expression.includes( "===" ) ) {
     // Very basic equality check
-    const [left, right] = expression.split(/===?/).map((s) => s.trim());
+    const [left, right] = expression.split( /===?/ ).map( ( s ) => s.trim() );
     const leftValue = context[left] || context.result?.[left];
     const rightValue = right === "null" ? null : right === "true" ? true : right === "false" ? false : right;
     return leftValue === rightValue;

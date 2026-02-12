@@ -48,6 +48,7 @@ interface AgentExecutionBase {
   error?: string;
   reasoning?: string;
   toolCalls?: ToolCall[];
+  tokenUsage?: { inputTokens: number; outputTokens: number; totalTokens: number };
 }
 
 type AgentExecutionSuccess = AgentExecutionBase & {
@@ -149,16 +150,29 @@ export const executeAgentWithDynamicModel = action( {
       }
 
       // Execute with or without dynamic model switching
+      let result: AgentExecutionResult;
       if ( args.enableModelSwitching === false ) {
-        return await executeDirectBedrock( ctx, agent, args.message, history );
+        result = await executeDirectBedrock( ctx, agent, args.message, history );
       } else {
-        return await executeWithModelSwitching( ctx, agent, args.message, history, {
+        result = await executeWithModelSwitching( ctx, agent, args.message, history, {
           preferCost: args.preferCost,
           preferSpeed: args.preferSpeed,
           preferCapability: args.preferCapability,
           userTier,
         } );
       }
+
+      // ─── Token-based metering ───────────────────────────────────────────
+      if ( result.tokenUsage ) {
+        await ctx.runMutation( internal.stripeMutations.incrementUsageAndReportOverage, {
+          userId: agent.createdBy,
+          modelId: agent.model,
+          inputTokens: result.tokenUsage.inputTokens,
+          outputTokens: result.tokenUsage.outputTokens,
+        } );
+      }
+
+      return result;
     } catch ( error: unknown ) {
       console.error( "Agent execution error:", error );
       const message = error instanceof Error ? error.message : "Agent execution failed";
@@ -370,11 +384,22 @@ async function executeDirectBedrock(
     }
   }
 
+  // ─── Token extraction for billing ───────────────────────────────────────
+  const { extractTokenUsage, estimateTokenUsage } = await import( "./lib/tokenBilling" );
+  let tokenUsage = extractTokenUsage( responseBody, modelId );
+
+  // Fallback: estimate from text when provider doesn't return counts
+  if ( tokenUsage.totalTokens === 0 ) {
+    const inputText = JSON.stringify( payload );
+    tokenUsage = estimateTokenUsage( inputText, content );
+  }
+
   return {
     success: true,
     content: content.trim(),
     reasoning: reasoning.trim() || undefined,
     toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+    tokenUsage,
     metadata: {
       model: modelId,
       modelProvider: "bedrock",

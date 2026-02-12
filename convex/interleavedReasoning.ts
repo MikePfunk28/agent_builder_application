@@ -126,12 +126,34 @@ export const sendMessage: any = action( {
         toolCalls: agentResult.toolCalls,
       };
     } else {
+      // Gate: enforce tier-based Bedrock access before direct Claude invocation
+      const { requireBedrockAccess } = await import( "./lib/bedrockGate" );
+      const modelId = process.env.AGENT_BUILDER_MODEL_ID || "anthropic.claude-haiku-4-5-20251001-v1:0";
+      const gateResult = await requireBedrockAccess(
+        ctx,
+        modelId,
+        async ( args ) => ctx.runQuery( internal.users.getInternal, args ),
+      );
+      if ( !gateResult.allowed ) {
+        throw new Error( gateResult.reason );
+      }
+
       // Fall back to direct Claude Haiku 4.5 with interleaved thinking
       response = await invokeClaudeWithInterleavedThinking(
         conversation.systemPrompt,
         history,
         args.message
       );
+
+      // Meter token usage for billing
+      if ( response.tokenUsage && gateResult.allowed ) {
+        await ctx.runMutation( internal.stripeMutations.incrementUsageAndReportOverage, {
+          userId: gateResult.userId as any,
+          modelId,
+          inputTokens: response.tokenUsage.inputTokens,
+          outputTokens: response.tokenUsage.outputTokens,
+        } );
+      }
     }
 
     // Batch insert BOTH messages in a single mutation (1 WRITE PER TURN)
@@ -230,7 +252,7 @@ async function invokeClaudeWithInterleavedThinking(
   systemPrompt: string,
   history: any[],
   userMessage: string
-): Promise<{ content: string; reasoning?: string; toolCalls?: any[] }> {
+): Promise<{ content: string; reasoning?: string; toolCalls?: any[]; tokenUsage: { inputTokens: number; outputTokens: number; totalTokens: number } }> {
   const { BedrockRuntimeClient, InvokeModelCommand } = await import( "@aws-sdk/client-bedrock-runtime" );
 
   const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
@@ -291,6 +313,10 @@ async function invokeClaudeWithInterleavedThinking(
   const response: any = await client.send( command );
   const responseBody = JSON.parse( new TextDecoder().decode( response.body ) );
 
+  // Extract token usage for billing
+  const { extractTokenUsage } = await import( "./lib/tokenBilling" );
+  const tokenUsage = extractTokenUsage( responseBody, modelId );
+
   // Extract content and reasoning
   let content = "";
   let reasoning = "";
@@ -314,6 +340,7 @@ async function invokeClaudeWithInterleavedThinking(
     content: content.trim(),
     reasoning: reasoning.trim() || undefined,
     toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+    tokenUsage,
   };
 }
 

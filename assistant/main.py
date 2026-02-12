@@ -35,7 +35,7 @@ app.add_middleware(
 
 # AWS Bedrock configuration
 AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
-CLAUDE_HAIKU_MODEL = "anthropic.claude-haiku-4-5-20250514-v1:0"
+CLAUDE_HAIKU_MODEL = "anthropic.claude-haiku-4-5-20251001-v1:0"
 
 bedrock_config = Config(
     region_name=AWS_REGION,

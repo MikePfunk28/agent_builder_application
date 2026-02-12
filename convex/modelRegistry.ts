@@ -94,8 +94,8 @@ export const BEDROCK_MODELS: Record<string, ModelMetadata> = {
   // ============================================================================
   // CLAUDE 4.6 (PREMIUM)
   // ============================================================================
-  "anthropic.claude-opus-4-6-v1": {
-    id: "anthropic.claude-opus-4-6-v1",
+  "anthropic.claude-opus-4-6-v1:0": {
+    id: "anthropic.claude-opus-4-6-v1:0",
     name: "Claude 4.6 Opus",
     provider: "bedrock",
     providerDisplay: "Anthropic (Bedrock)",
@@ -106,54 +106,6 @@ export const BEDROCK_MODELS: Record<string, ModelMetadata> = {
     costPer1MTokens: { input: 5.0, output: 25.0 },
     unitsPerCall: 5,
     description: "Most capable Claude model — 5x Haiku cost per call",
-  },
-
-  // ============================================================================
-  // CLAUDE 4.1 SERIES
-  // ============================================================================
-  "anthropic.claude-opus-4-1-20250805-v1:0": {
-    id: "anthropic.claude-opus-4-1-20250805-v1:0",
-    name: "Claude 4.1 Opus",
-    provider: "bedrock",
-    providerDisplay: "Anthropic (Bedrock)",
-    capabilities: ["text", "vision", "reasoning"],
-    contextWindow: 200000,
-    maxOutput: 16384,
-    category: "premium",
-    costPer1MTokens: { input: 15.0, output: 75.0 },
-    unitsPerCall: 15,
-    description: "Most capable Claude model for complex reasoning tasks",
-  },
-
-  // ============================================================================
-  // CLAUDE 4.0 SERIES
-  // ============================================================================
-  "anthropic.claude-opus-4-20250514-v1:0": {
-    id: "anthropic.claude-opus-4-20250514-v1:0",
-    name: "Claude 4.0 Opus",
-    provider: "bedrock",
-    providerDisplay: "Anthropic (Bedrock)",
-    capabilities: ["text", "vision", "reasoning"],
-    contextWindow: 200000,
-    maxOutput: 16384,
-    category: "premium",
-    costPer1MTokens: { input: 15.0, output: 75.0 },
-    unitsPerCall: 15,
-    description: "High-performance Claude model for demanding tasks",
-  },
-
-  "anthropic.claude-sonnet-4-20250514-v1:0": {
-    id: "anthropic.claude-sonnet-4-20250514-v1:0",
-    name: "Claude 4.0 Sonnet",
-    provider: "bedrock",
-    providerDisplay: "Anthropic (Bedrock)",
-    capabilities: ["text", "vision", "reasoning"],
-    contextWindow: 200000,
-    maxOutput: 8192,
-    category: "balanced",
-    costPer1MTokens: { input: 3.0, output: 15.0 },
-    unitsPerCall: 3,
-    description: "Balanced Claude model for general use",
   },
 
   // ============================================================================
@@ -875,18 +827,11 @@ export const ALL_MODELS = {
  */
 export const SHORT_NAME_TO_BEDROCK_ID: Record<string, string> = {
   // Claude 4.6
-  "claude-opus-4.6": "anthropic.claude-opus-4-6-v1",
+  "claude-opus-4.6": "anthropic.claude-opus-4-6-v1:0",
 
   // Claude 4.5
   "claude-sonnet-4.5": "anthropic.claude-sonnet-4-5-20250929-v1:0",
   "claude-haiku-4.5": "anthropic.claude-haiku-4-5-20251001-v1:0",
-
-  // Claude 4.1
-  "claude-opus-4.1": "anthropic.claude-opus-4-1-20250805-v1:0",
-
-  // Claude 4.0
-  "claude-opus-4": "anthropic.claude-opus-4-20250514-v1:0",
-  "claude-sonnet-4": "anthropic.claude-sonnet-4-20250514-v1:0",
 
   // Amazon Nova
   "nova-pro": "us.amazon.nova-pro-v1:0",

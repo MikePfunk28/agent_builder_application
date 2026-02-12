@@ -152,8 +152,10 @@ const applicationTables = {
     stripeSubscriptionId: v.optional( v.string() ),
     subscriptionStatus: v.optional( v.string() ), // "active", "past_due", "canceled"
     currentPeriodEnd: v.optional( v.number() ), // Unix timestamp
-    executionsThisMonth: v.optional( v.number() ), // Weighted units consumed in current billing period (1 Haiku = 1 unit, 1 Sonnet = 3, 1 Opus = 5)
+    executionsThisMonth: v.optional( v.number() ), // Weighted units consumed in current billing period (token-based: 2x AWS cost at $0.05/unit)
     rawCallsThisMonth: v.optional( v.number() ), // Unweighted call count for analytics
+    tokensInputThisMonth: v.optional( v.number() ), // Total input tokens consumed this billing period
+    tokensOutputThisMonth: v.optional( v.number() ), // Total output tokens consumed this billing period
     billingPeriodStart: v.optional( v.number() ), // Start of current billing period
   } )
     .index( "by_tier", ["tier"] )

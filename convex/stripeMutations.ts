@@ -39,7 +39,12 @@ const internalStripe = ( internal as any ).stripe;
 export async function incrementUsageAndReportOverageImpl(
   ctx: { db: any; scheduler: any },
   userId: any,
-  options?: { updateLastTestAt?: boolean; modelId?: string },
+  options?: {
+    updateLastTestAt?: boolean;
+    modelId?: string;
+    inputTokens?: number;
+    outputTokens?: number;
+  },
 ) {
   const user = await ctx.db.get( userId );
   if ( !user ) {
@@ -47,17 +52,40 @@ export async function incrementUsageAndReportOverageImpl(
     return;
   }
 
-  // Look up weighted units for this model (defaults to 1 for unknown/Haiku)
-  const { getUnitsForModel } = await import( "./modelRegistry" );
-  const units = options?.modelId ? getUnitsForModel( options.modelId ) : 1;
+  // Token-based billing: use actual token counts when available (2x AWS cost at $0.05/unit).
+  // Falls back to flat per-call units when token counts are not provided.
+  let units: number;
+  const hasTokens =
+    options?.inputTokens !== undefined &&
+    options?.outputTokens !== undefined &&
+    ( ( options.inputTokens || 0 ) > 0 || ( options.outputTokens || 0 ) > 0 );
+
+  if ( hasTokens ) {
+    const { calculateUnitsFromTokens } = await import( "./lib/tokenBilling" );
+    units = calculateUnitsFromTokens(
+      options!.modelId || "anthropic.claude-haiku-4-5-20251001-v1:0",
+      options!.inputTokens!,
+      options!.outputTokens!,
+    );
+  } else {
+    // Flat fallback: look up unitsPerCall from model registry
+    const { getUnitsForModel } = await import( "./modelRegistry" );
+    units = options?.modelId ? getUnitsForModel( options.modelId ) : 1;
+  }
 
   const prevUnits = user.executionsThisMonth || 0;
   const newCount = prevUnits + units;
   const newRawCalls = ( user.rawCallsThisMonth || 0 ) + 1;
 
+  // Accumulate token totals for analytics
+  const newInputTokens = ( user.tokensInputThisMonth || 0 ) + ( options?.inputTokens || 0 );
+  const newOutputTokens = ( user.tokensOutputThisMonth || 0 ) + ( options?.outputTokens || 0 );
+
   const patch: Record<string, unknown> = {
     executionsThisMonth: newCount,
     rawCallsThisMonth: newRawCalls,
+    tokensInputThisMonth: newInputTokens,
+    tokensOutputThisMonth: newOutputTokens,
   };
   if ( options?.updateLastTestAt ) {
     patch.lastTestAt = Date.now();
@@ -89,11 +117,15 @@ export const incrementUsageAndReportOverage = internalMutation( {
     userId: v.id( "users" ),
     updateLastTestAt: v.optional( v.boolean() ),
     modelId: v.optional( v.string() ),
+    inputTokens: v.optional( v.number() ),
+    outputTokens: v.optional( v.number() ),
   },
   handler: async ( ctx, args ) => {
     await incrementUsageAndReportOverageImpl( ctx, args.userId, {
       updateLastTestAt: args.updateLastTestAt,
       modelId: args.modelId,
+      inputTokens: args.inputTokens,
+      outputTokens: args.outputTokens,
     } );
   },
 } );
@@ -203,6 +235,8 @@ export const resetMonthlyUsage = internalMutation( {
     await ctx.db.patch( user._id, {
       executionsThisMonth: 0,
       rawCallsThisMonth: 0,
+      tokensInputThisMonth: 0,
+      tokensOutputThisMonth: 0,
       billingPeriodStart: args.periodStart,
     } );
   },
@@ -234,6 +268,65 @@ export const markPastDue = internalMutation( {
   },
 } );
 
+/**
+ * Restrict account when a charge dispute (chargeback) is created.
+ * Sets subscriptionStatus to "disputed" which bedrockGate blocks.
+ */
+export const restrictAccountForDispute = internalMutation( {
+  args: {
+    stripeCustomerId: v.string(),
+  },
+  handler: async ( ctx, args ) => {
+    const user = await ctx.db
+      .query( "users" )
+      .withIndex( "by_stripe_customer_id", ( q ) =>
+        q.eq( "stripeCustomerId", args.stripeCustomerId )
+      )
+      .first();
+
+    if ( !user ) {
+      console.error( `Stripe webhook: No user found for customer ${args.stripeCustomerId}` );
+      return;
+    }
+
+    await ctx.db.patch( user._id, {
+      subscriptionStatus: "disputed",
+    } );
+  },
+} );
+
+/**
+ * Handle charge refund — mark subscription status so the gate can act on it.
+ * We don't downgrade immediately (the subscription may still be active),
+ * but we log it for monitoring. If the refund leads to a cancellation,
+ * the customer.subscription.deleted event will handle the downgrade.
+ */
+export const handleChargeRefund = internalMutation( {
+  args: {
+    stripeCustomerId: v.string(),
+    amountRefunded: v.number(),
+  },
+  handler: async ( ctx, args ) => {
+    const user = await ctx.db
+      .query( "users" )
+      .withIndex( "by_stripe_customer_id", ( q ) =>
+        q.eq( "stripeCustomerId", args.stripeCustomerId )
+      )
+      .first();
+
+    if ( !user ) {
+      console.error( `Stripe webhook: No user found for customer ${args.stripeCustomerId}` );
+      return;
+    }
+
+    // Log refund but don't change tier — the subscription lifecycle events handle that.
+    // If this is a full refund, Stripe will likely also fire subscription.deleted.
+    console.warn(
+      `Stripe refund processed for customer ${args.stripeCustomerId}: $${( args.amountRefunded / 100 ).toFixed( 2 )}`
+    );
+  },
+} );
+
 // ─── Query (Client-callable) ─────────────────────────────────────────────────
 
 /**
@@ -258,6 +351,8 @@ export const getSubscriptionStatus = query( {
       subscriptionStatus: user.subscriptionStatus ?? null,
       executionsThisMonth: user.executionsThisMonth ?? 0,
       rawCallsThisMonth: user.rawCallsThisMonth ?? 0,
+      tokensInputThisMonth: user.tokensInputThisMonth ?? 0,
+      tokensOutputThisMonth: user.tokensOutputThisMonth ?? 0,
       currentPeriodEnd: user.currentPeriodEnd ?? null,
       hasActiveSubscription: user.subscriptionStatus === "active",
     };

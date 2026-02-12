@@ -16,6 +16,7 @@ import { v } from "convex/values";
 import { findToolMetadata, normalizeToolName } from "./lib/strandsTools";
 import { executeComposedMessages } from "./lib/messageExecutor";
 import type { ComposedMessages } from "../src/engine/messageComposer";
+import type { TokenUsage } from "./lib/tokenBilling";
 
 /** Shape of entries returned from internal.lib.memoryStore queries */
 interface MemoryEntry {
@@ -65,7 +66,7 @@ async function invokeLLM(
   model: string,
   prompt: string,
   options?: { temperature?: number; maxTokens?: number }
-): Promise<string> {
+): Promise<{ text: string; tokenUsage?: TokenUsage }> {
   const isOllama = model.includes(":") && !model.includes(".");
 
   const composed: ComposedMessages = isOllama
@@ -90,7 +91,7 @@ async function invokeLLM(
       };
 
   const result = await executeComposedMessages(composed);
-  return result.text;
+  return { text: result.text, tokenUsage: result.tokenUsage };
 }
 
 /**
@@ -357,10 +358,24 @@ export const selfConsistency = action({
     numPaths: v.optional(v.number()),
     votingStrategy: v.optional(v.union(v.literal("majority"), v.literal("weighted"), v.literal("consensus"))),
   },
-  handler: async (_ctx, args) => {
+  handler: async (ctx, args) => {
+    // Gate: enforce tier-based Bedrock access for cloud models
+    const isOllamaModel = args.model.includes(":") && !args.model.includes(".");
+    let gateResult: { allowed: true; userId: string; tier: string } | undefined;
+    if (!isOllamaModel) {
+      const { requireBedrockAccess } = await import("./lib/bedrockGate");
+      const gate = await requireBedrockAccess(
+        ctx, args.model,
+        async (lookupArgs) => ctx.runQuery(internal.users.getInternal, lookupArgs),
+      );
+      if (!gate.allowed) { throw new Error(gate.reason); }
+      gateResult = gate;
+    }
+
     const numPaths = args.numPaths || 3;
     const answers: string[] = [];
     const reasoningPaths: string[] = [];
+    let totalInputTokens = 0, totalOutputTokens = 0;
 
     // Generate multiple reasoning paths with different temperatures
     for (let i = 0; i < numPaths; i++) {
@@ -368,17 +383,29 @@ export const selfConsistency = action({
       const prompt = `Solve the following problem step by step. Show your reasoning, then give a final answer on the last line prefixed with "ANSWER: ".\n\nProblem: ${args.problem}`;
 
       try {
-        const response = await invokeLLM(args.model, prompt, { temperature, maxTokens: 2048 });
-        reasoningPaths.push(response);
+        const llmResult = await invokeLLM(args.model, prompt, { temperature, maxTokens: 2048 });
+        totalInputTokens += llmResult.tokenUsage?.inputTokens ?? 0;
+        totalOutputTokens += llmResult.tokenUsage?.outputTokens ?? 0;
+        reasoningPaths.push(llmResult.text);
 
         // Extract answer from last line
-        const lines = response.trim().split("\n");
+        const lines = llmResult.text.trim().split("\n");
         const answerLine = lines.find((l) => l.startsWith("ANSWER:")) || lines[lines.length - 1];
         answers.push(answerLine.replace(/^ANSWER:\s*/i, "").trim());
       } catch (error: any) {
         reasoningPaths.push(`Path ${i + 1} failed: ${error.message}`);
         answers.push(`[error: ${error.message}]`);
       }
+    }
+
+    // Meter accumulated token usage
+    if ((totalInputTokens > 0 || totalOutputTokens > 0) && gateResult) {
+      await ctx.runMutation(internal.stripeMutations.incrementUsageAndReportOverage, {
+        userId: gateResult.userId as any,
+        modelId: args.model,
+        inputTokens: totalInputTokens,
+        outputTokens: totalOutputTokens,
+      });
     }
 
     // Count votes
@@ -412,12 +439,26 @@ export const treeOfThoughts = action({
     maxDepth: v.optional(v.number()),
     branchingFactor: v.optional(v.number()),
   },
-  handler: async (_ctx, args) => {
+  handler: async (ctx, args) => {
+    // Gate: enforce tier-based Bedrock access for cloud models
+    const isOllamaModel = args.model.includes(":") && !args.model.includes(".");
+    let gateResult: { allowed: true; userId: string; tier: string } | undefined;
+    if (!isOllamaModel) {
+      const { requireBedrockAccess } = await import("./lib/bedrockGate");
+      const gate = await requireBedrockAccess(
+        ctx, args.model,
+        async (lookupArgs) => ctx.runQuery(internal.users.getInternal, lookupArgs),
+      );
+      if (!gate.allowed) { throw new Error(gate.reason); }
+      gateResult = gate;
+    }
+
     const maxDepth = args.maxDepth || 3;
     const branchingFactor = args.branchingFactor || 2;
     const explored: string[] = [];
     let bestPath: string[] = [args.problem];
     let bestScore = 0;
+    let totalInputTokens = 0, totalOutputTokens = 0;
 
     // Breadth-first expansion with path tracking
     let frontier: Array<{ thought: string; path: string[] }> = [
@@ -431,11 +472,13 @@ export const treeOfThoughts = action({
         const expandPrompt = `Given this reasoning step:\n"${thought}"\n\nGenerate ${branchingFactor} possible next reasoning steps. Number them 1), 2), etc. Then rate which is most promising on a scale of 0-10 after "SCORE: ".`;
 
         try {
-          const response = await invokeLLM(args.model, expandPrompt, { temperature: 0.8, maxTokens: 1024 });
-          explored.push(response);
+          const llmResult = await invokeLLM(args.model, expandPrompt, { temperature: 0.8, maxTokens: 1024 });
+          totalInputTokens += llmResult.tokenUsage?.inputTokens ?? 0;
+          totalOutputTokens += llmResult.tokenUsage?.outputTokens ?? 0;
+          explored.push(llmResult.text);
 
           // Extract numbered items as next thoughts with path tracking
-          const items = response.match(/\d\)\s*(.+)/g) || [];
+          const items = llmResult.text.match(/\d\)\s*(.+)/g) || [];
           const childEntries = items.map((item) => {
             const cleaned = item.replace(/^\d\)\s*/, "").trim();
             return { thought: cleaned, path: [...path, cleaned] };
@@ -443,7 +486,7 @@ export const treeOfThoughts = action({
           nextFrontier.push(...childEntries);
 
           // Extract score and associate with best child path
-          const scoreMatch = response.match(/SCORE:\s*(\d+)/i);
+          const scoreMatch = llmResult.text.match(/SCORE:\s*(\d+)/i);
           const score = scoreMatch ? parseInt(scoreMatch[1], 10) : 5;
           if (score > bestScore) {
             bestScore = score;
@@ -455,6 +498,16 @@ export const treeOfThoughts = action({
       }
 
       frontier = nextFrontier;
+    }
+
+    // Meter accumulated token usage
+    if ((totalInputTokens > 0 || totalOutputTokens > 0) && gateResult) {
+      await ctx.runMutation(internal.stripeMutations.incrementUsageAndReportOverage, {
+        userId: gateResult.userId as any,
+        modelId: args.model,
+        inputTokens: totalInputTokens,
+        outputTokens: totalOutputTokens,
+      });
     }
 
     return {
@@ -477,7 +530,20 @@ export const reflexion = action({
     maxIterations: v.optional(v.number()),
     improvementThreshold: v.optional(v.number()),
   },
-  handler: async (_ctx, args) => {
+  handler: async (ctx, args) => {
+    // Gate: enforce tier-based Bedrock access for cloud models
+    const isOllamaModel = args.model.includes(":") && !args.model.includes(".");
+    let gateResult: { allowed: true; userId: string; tier: string } | undefined;
+    if (!isOllamaModel) {
+      const { requireBedrockAccess } = await import("./lib/bedrockGate");
+      const gate = await requireBedrockAccess(
+        ctx, args.model,
+        async (lookupArgs) => ctx.runQuery(internal.users.getInternal, lookupArgs),
+      );
+      if (!gate.allowed) { throw new Error(gate.reason); }
+      gateResult = gate;
+    }
+
     const maxIterations = args.maxIterations || 3;
     const iterationHistory: Array<{
       iteration: number;
@@ -485,6 +551,7 @@ export const reflexion = action({
       critique: string;
       improvementScore: number;
     }> = [];
+    let totalInputTokens = 0, totalOutputTokens = 0;
 
     let currentSolution = "";
 
@@ -495,20 +562,24 @@ export const reflexion = action({
         : `Previous solution:\n${currentSolution}\n\nPrevious critique:\n${iterationHistory[i - 1].critique}\n\nImprove the solution based on the critique. Provide the improved version.`;
 
       try {
-        const solution = await invokeLLM(args.model, solvePrompt, { temperature: 0.5, maxTokens: 2048 });
-        currentSolution = solution;
+        const solveLlmResult = await invokeLLM(args.model, solvePrompt, { temperature: 0.5, maxTokens: 2048 });
+        totalInputTokens += solveLlmResult.tokenUsage?.inputTokens ?? 0;
+        totalOutputTokens += solveLlmResult.tokenUsage?.outputTokens ?? 0;
+        currentSolution = solveLlmResult.text;
 
         // Self-critique
-        const critiquePrompt = `Critically evaluate this solution to the task "${args.task}":\n\n${solution}\n\nList specific weaknesses and rate the improvement needed on a scale of 0-1 after "IMPROVEMENT_NEEDED: ".`;
-        const critiqueResponse = await invokeLLM(args.model, critiquePrompt, { temperature: 0.3, maxTokens: 1024 });
+        const critiquePrompt = `Critically evaluate this solution to the task "${args.task}":\n\n${solveLlmResult.text}\n\nList specific weaknesses and rate the improvement needed on a scale of 0-1 after "IMPROVEMENT_NEEDED: ".`;
+        const critiqueLlmResult = await invokeLLM(args.model, critiquePrompt, { temperature: 0.3, maxTokens: 1024 });
+        totalInputTokens += critiqueLlmResult.tokenUsage?.inputTokens ?? 0;
+        totalOutputTokens += critiqueLlmResult.tokenUsage?.outputTokens ?? 0;
 
-        const scoreMatch = critiqueResponse.match(/IMPROVEMENT_NEEDED:\s*([\d.]+)/i);
+        const scoreMatch = critiqueLlmResult.text.match(/IMPROVEMENT_NEEDED:\s*([\d.]+)/i);
         const improvementScore = scoreMatch ? parseFloat(scoreMatch[1]) : 0.5;
 
         iterationHistory.push({
           iteration: i + 1,
-          solution,
-          critique: critiqueResponse,
+          solution: solveLlmResult.text,
+          critique: critiqueLlmResult.text,
           improvementScore,
         });
 
@@ -524,6 +595,16 @@ export const reflexion = action({
         });
         break;
       }
+    }
+
+    // Meter accumulated token usage
+    if ((totalInputTokens > 0 || totalOutputTokens > 0) && gateResult) {
+      await ctx.runMutation(internal.stripeMutations.incrementUsageAndReportOverage, {
+        userId: gateResult.userId as any,
+        modelId: args.model,
+        inputTokens: totalInputTokens,
+        outputTokens: totalOutputTokens,
+      });
     }
 
     return {
@@ -547,8 +628,22 @@ export const mapReduce = action({
     reducePrompt: v.string(),
     chunkSize: v.optional(v.number()),
   },
-  handler: async (_ctx, args) => {
+  handler: async (ctx, args) => {
+    // Gate: enforce tier-based Bedrock access for cloud models
+    const isOllamaModel = args.model.includes(":") && !args.model.includes(".");
+    let gateResult: { allowed: true; userId: string; tier: string } | undefined;
+    if (!isOllamaModel) {
+      const { requireBedrockAccess } = await import("./lib/bedrockGate");
+      const gate = await requireBedrockAccess(
+        ctx, args.model,
+        async (lookupArgs) => ctx.runQuery(internal.users.getInternal, lookupArgs),
+      );
+      if (!gate.allowed) { throw new Error(gate.reason); }
+      gateResult = gate;
+    }
+
     const chunkSize = args.chunkSize || 5;
+    let totalInputTokens = 0, totalOutputTokens = 0;
 
     // Split data into chunks
     const chunks: any[][] = [];
@@ -566,7 +661,10 @@ export const mapReduce = action({
           const index = i + batchIdx;
           const prompt = `${args.mapPrompt}\n\nData chunk ${index + 1}:\n${JSON.stringify(chunk, null, 2)}`;
           try {
-            return await invokeLLM(args.model, prompt, { temperature: 0.3, maxTokens: 2048 });
+            const llmResult = await invokeLLM(args.model, prompt, { temperature: 0.3, maxTokens: 2048 });
+            totalInputTokens += llmResult.tokenUsage?.inputTokens ?? 0;
+            totalOutputTokens += llmResult.tokenUsage?.outputTokens ?? 0;
+            return llmResult.text;
           } catch (error: any) {
             return `Chunk ${index + 1} failed: ${error.message}`;
           }
@@ -579,13 +677,26 @@ export const mapReduce = action({
     let finalResult: string;
     try {
       const reduceInput = mapResults.map((r, i) => `Result ${i + 1}:\n${r}`).join("\n\n");
-      finalResult = await invokeLLM(
+      const reduceLlmResult = await invokeLLM(
         args.model,
         `${args.reducePrompt}\n\nIntermediate results:\n${reduceInput}`,
         { temperature: 0.2, maxTokens: 4096 }
       );
+      totalInputTokens += reduceLlmResult.tokenUsage?.inputTokens ?? 0;
+      totalOutputTokens += reduceLlmResult.tokenUsage?.outputTokens ?? 0;
+      finalResult = reduceLlmResult.text;
     } catch (error: any) {
       finalResult = `Reduce phase failed: ${error.message}. Intermediate: ${mapResults.join(" | ")}`;
+    }
+
+    // Meter accumulated token usage
+    if ((totalInputTokens > 0 || totalOutputTokens > 0) && gateResult) {
+      await ctx.runMutation(internal.stripeMutations.incrementUsageAndReportOverage, {
+        userId: gateResult.userId as any,
+        modelId: args.model,
+        inputTokens: totalInputTokens,
+        outputTokens: totalOutputTokens,
+      });
     }
 
     return {
@@ -612,9 +723,23 @@ export const parallelPrompts = action({
     inputData: v.optional(v.record(v.string(), v.any())),
     maxParallelism: v.optional(v.number()),
   },
-  handler: async (_ctx, args) => {
+  handler: async (ctx, args) => {
+    // Gate: enforce tier-based Bedrock access for cloud models
+    const isOllamaModel = args.model.includes(":") && !args.model.includes(".");
+    let gateResult: { allowed: true; userId: string; tier: string } | undefined;
+    if (!isOllamaModel) {
+      const { requireBedrockAccess } = await import("./lib/bedrockGate");
+      const gate = await requireBedrockAccess(
+        ctx, args.model,
+        async (lookupArgs) => ctx.runQuery(internal.users.getInternal, lookupArgs),
+      );
+      if (!gate.allowed) { throw new Error(gate.reason); }
+      gateResult = gate;
+    }
+
     const startTime = Date.now();
     const maxParallelism = args.maxParallelism || 3;
+    let totalInputTokens = 0, totalOutputTokens = 0;
 
     // Sort by priority
     const sortedPrompts = [...args.prompts].sort((a, b) =>
@@ -632,8 +757,10 @@ export const parallelPrompts = action({
         batch.map(async (prompt) => {
           const promptStart = Date.now();
           try {
-            const result = await invokeLLM(args.model, prompt.template, { temperature: 0.7, maxTokens: 2048 });
-            return { id: prompt.id, result, timing: Date.now() - promptStart };
+            const llmResult = await invokeLLM(args.model, prompt.template, { temperature: 0.7, maxTokens: 2048 });
+            totalInputTokens += llmResult.tokenUsage?.inputTokens ?? 0;
+            totalOutputTokens += llmResult.tokenUsage?.outputTokens ?? 0;
+            return { id: prompt.id, result: llmResult.text, timing: Date.now() - promptStart };
           } catch (error: any) {
             return { id: prompt.id, result: `Error: ${error.message}`, timing: Date.now() - promptStart };
           }
@@ -643,6 +770,16 @@ export const parallelPrompts = action({
       batchResults.forEach((r) => {
         results[r.id] = r.result;
         timings[r.id] = r.timing;
+      });
+    }
+
+    // Meter accumulated token usage
+    if ((totalInputTokens > 0 || totalOutputTokens > 0) && gateResult) {
+      await ctx.runMutation(internal.stripeMutations.incrementUsageAndReportOverage, {
+        userId: gateResult.userId as any,
+        modelId: args.model,
+        inputTokens: totalInputTokens,
+        outputTokens: totalOutputTokens,
       });
     }
 

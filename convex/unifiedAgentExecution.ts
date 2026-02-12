@@ -93,6 +93,22 @@ export const executeUnifiedAgent = action({
       });
       const userTier = (user?.tier as "freemium" | "personal" | "enterprise") || "freemium";
 
+      // Gate: enforce tier-based Bedrock access
+      const isBedrock = agent.deploymentType === "bedrock"
+        || ( !agent.deploymentType && /^(us\.|eu\.|apac\.|global\.)?(anthropic|amazon|meta|mistral|cohere|ai21|deepseek|moonshot)\./.test( agent.model ) );
+      if ( isBedrock ) {
+        const { requireBedrockAccessForUser } = await import( "./lib/bedrockGate" );
+        const gateResult = await requireBedrockAccessForUser( user, agent.model );
+        if ( !gateResult.allowed ) {
+          return {
+            success: false,
+            modality: "text",
+            content: "",
+            error: gateResult.reason,
+          } as UnifiedExecutionResult;
+        }
+      }
+
       // Make modality and model switching decision
       const decision = decideUnifiedModelSwitch(
         args.message,
@@ -221,6 +237,21 @@ async function executeText(
     } else if (block.type === "thinking") {
       reasoning += block.thinking;
     }
+  }
+
+  // Token extraction + metering
+  const { extractTokenUsage, estimateTokenUsage } = await import( "./lib/tokenBilling" );
+  let tokenUsage = extractTokenUsage( responseBody, config.modelId );
+  if ( tokenUsage.totalTokens === 0 ) {
+    tokenUsage = estimateTokenUsage( message, content );
+  }
+  if ( tokenUsage.inputTokens > 0 || tokenUsage.outputTokens > 0 ) {
+    await ctx.runMutation( internal.stripeMutations.incrementUsageAndReportOverage, {
+      userId: agent.createdBy as any,
+      modelId: config.modelId,
+      inputTokens: tokenUsage.inputTokens,
+      outputTokens: tokenUsage.outputTokens,
+    } );
   }
 
   return {

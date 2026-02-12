@@ -9,7 +9,7 @@
 
 import { v } from "convex/values";
 import { action } from "./_generated/server";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
 
 const WORKFLOW_MODEL_ID =
@@ -188,6 +188,16 @@ export const executeWorkflowStage = action( {
     conversationId: v.optional( v.string() )
   },
   handler: async ( ctx, args ) => {
+    // Gate: enforce tier-based Bedrock access
+    const { requireBedrockAccess } = await import( "./lib/bedrockGate" );
+    const gateResult = await requireBedrockAccess(
+      ctx, WORKFLOW_MODEL_ID,
+      async ( lookupArgs ) => ctx.runQuery( internal.users.getInternal, lookupArgs ),
+    );
+    if ( !gateResult.allowed ) {
+      throw new Error( gateResult.reason );
+    }
+
     const stage = WORKFLOW_STAGES[args.stage as keyof typeof WORKFLOW_STAGES];
     if ( !stage ) {
       throw new Error( `Invalid workflow stage: ${args.stage}` );
@@ -209,6 +219,16 @@ export const executeWorkflowStage = action( {
       systemPrompt: stage.systemPrompt,
       userPrompt: fullPrompt,
     } );
+
+    // Meter: token-based billing for this workflow stage
+    if ( result.inputTokens > 0 || result.outputTokens > 0 ) {
+      await ctx.runMutation( internal.stripeMutations.incrementUsageAndReportOverage, {
+        userId: gateResult.userId as any,
+        modelId: WORKFLOW_MODEL_ID,
+        inputTokens: result.inputTokens,
+        outputTokens: result.outputTokens,
+      } );
+    }
 
     return {
       stage: stage.name,
@@ -295,6 +315,16 @@ export const executeCompleteWorkflow = action( {
     conversationId: v.optional( v.string() )
   },
   handler: async ( ctx, args ) => {
+    // Gate: enforce tier-based Bedrock access
+    const { requireBedrockAccess } = await import( "./lib/bedrockGate" );
+    const gateResult = await requireBedrockAccess(
+      ctx, WORKFLOW_MODEL_ID,
+      async ( lookupArgs ) => ctx.runQuery( internal.users.getInternal, lookupArgs ),
+    );
+    if ( !gateResult.allowed ) {
+      throw new Error( gateResult.reason );
+    }
+
     const workflowResults: Array<{
       stage: string;
       output: string;
@@ -352,6 +382,16 @@ export const streamWorkflowExecution = action( {
     conversationId: v.optional( v.string() )
   },
   handler: async ( ctx, args ) => {
+    // Gate: enforce tier-based Bedrock access
+    const { requireBedrockAccess } = await import( "./lib/bedrockGate" );
+    const gateResult = await requireBedrockAccess(
+      ctx, WORKFLOW_MODEL_ID,
+      async ( lookupArgs ) => ctx.runQuery( internal.users.getInternal, lookupArgs ),
+    );
+    if ( !gateResult.allowed ) {
+      throw new Error( gateResult.reason );
+    }
+
     const Anthropic = ( await import( "@anthropic-ai/sdk" ) ).default;
     const anthropic = new Anthropic( {
       apiKey: process.env.ANTHROPIC_API_KEY,
