@@ -2,11 +2,11 @@ import React, { useState } from 'react';
 import { useAction } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
-import { 
-  X, 
-  Play, 
-  CheckCircle, 
-  XCircle, 
+import {
+  X,
+  Play,
+  CheckCircle,
+  XCircle,
   Save,
   Copy,
   ChevronDown,
@@ -16,7 +16,8 @@ import { toast } from 'sonner';
 
 interface MCPToolTesterProps {
   server: {
-    _id: Id<"mcpServers">;
+    _id: Id<"mcpServers"> | string;
+    source?: "system" | "user";
     name: string;
     availableTools?: Array<{
       name: string;
@@ -60,7 +61,7 @@ export function MCPToolTester({ server, onClose }: MCPToolTesterProps) {
   const handleToolSelect = (toolName: string) => {
     setSelectedTool(toolName);
     setTestResult(null);
-    
+
     // Load saved template if exists
     if (savedTemplates.has(toolName)) {
       setParameters(savedTemplates.get(toolName)!);
@@ -81,7 +82,7 @@ export function MCPToolTester({ server, onClose }: MCPToolTesterProps) {
     }
 
     const defaults: Record<string, any> = {};
-    
+
     Object.entries(schema.properties).forEach(([key, prop]: [string, any]) => {
       if (prop.type === 'string') {
         defaults[key] = prop.default || '';

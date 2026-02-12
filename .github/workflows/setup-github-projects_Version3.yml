@@ -32,17 +32,12 @@ jobs:
             exit 1
           fi
 
-      - name: Authenticate GH CLI
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh auth login --with-token <<< "${GH_TOKEN}"
-
       - name: Create Project with description
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          PROJECT_NAME="Auto Project"
-          PROJECT_DESC="Automated project for task management with weekly iterations"
+          PROJECT_NAME="Agent Builder Application"
+          PROJECT_DESC="Agent Builder Application - AI agent creation, testing, and deployment platform"
 
           # Check if project exists
           proj_list=$(gh project list --owner ${{ github.repository_owner }} --format json 2>&1)

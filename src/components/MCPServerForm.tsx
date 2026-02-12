@@ -7,7 +7,8 @@ import { toast } from 'sonner';
 
 interface MCPServerFormProps {
   server?: {
-    _id: Id<"mcpServers">;
+    _id: Id<"mcpServers"> | string;
+    source?: "system" | "user";
     name: string;
     command: string;
     args: string[];

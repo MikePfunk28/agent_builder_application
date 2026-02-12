@@ -18,7 +18,8 @@ import { MCPServerForm } from './MCPServerForm';
 import { MCPToolTester } from './MCPToolTester';
 
 interface MCPServer {
-  _id: Id<"mcpServers">;
+  _id: Id<"mcpServers"> | string;
+  source?: "system" | "user";
   name: string;
   command: string;
   args: string[];
@@ -198,32 +199,38 @@ export function MCPManagementPanel() {
                   </div>
                 </div>
 
-                {/* Action Buttons */}
+                {/* Action Buttons: only allow Test/Edit/Delete for DB-backed (user) servers */}
                 <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => handleTestConnection(server._id)}
-                    disabled={testingServerId === server._id || server.disabled}
-                    className="p-2 text-blue-600 hover:text-blue-400 hover:bg-blue-900/20 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="Test Connection"
-                  >
-                    <RefreshCw className={`w-4 h-4 ${
-                      testingServerId === server._id ? 'animate-spin' : ''
-                    }`} />
-                  </button>
-                  <button
-                    onClick={() => handleEdit(server)}
-                    className="p-2 text-green-600 hover:text-green-400 hover:bg-green-900/20 rounded-md transition-colors"
-                    title="Edit Server"
-                  >
-                    <Edit className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(server._id, server.name)}
-                    className="p-2 text-red-600 hover:text-red-400 hover:bg-red-900/20 rounded-md transition-colors"
-                    title="Delete Server"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  {server.source === 'user' ? (
+                    <>
+                      <button
+                        onClick={() => handleTestConnection(server._id as Id<"mcpServers">)}
+                        disabled={testingServerId === server._id || server.disabled}
+                        className="p-2 text-blue-600 hover:text-blue-400 hover:bg-blue-900/20 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Test Connection"
+                      >
+                        <RefreshCw className={`w-4 h-4 ${
+                          testingServerId === server._id ? 'animate-spin' : ''
+                        }`} />
+                      </button>
+                      <button
+                        onClick={() => handleEdit(server as any)}
+                        className="p-2 text-green-600 hover:text-green-400 hover:bg-green-900/20 rounded-md transition-colors"
+                        title="Edit Server"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(server._id as Id<"mcpServers">, server.name)}
+                        className="p-2 text-red-600 hover:text-red-400 hover:bg-red-900/20 rounded-md transition-colors"
+                        title="Delete Server"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </>
+                  ) : (
+                    <div className="text-xs px-2 py-1 bg-gray-800 text-gray-400 rounded">System</div>
+                  )}
                 </div>
               </div>
 
