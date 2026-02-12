@@ -22,7 +22,7 @@ export const create = mutation({
 
     const deploymentId = await ctx.db.insert("deployments", {
       agentId: args.agentId,
-      userId: userId as any,
+      userId: userId,
       tier: args.tier,
       awsAccountId: args.awsAccountId,
       region: args.region,
@@ -74,7 +74,7 @@ export const list = query({
 
     return await ctx.db
       .query("deployments")
-      .withIndex("by_user", (q) => q.eq("userId", userId as any))
+      .withIndex("by_user", (q) => q.eq("userId", userId))
       .order("desc")
       .take(args.limit || 20);
   },

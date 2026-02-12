@@ -119,14 +119,22 @@ export const executePromptChain = action({
         }
       }
 
-      // Meter: token-based billing for the entire chain
+      // Meter: token-based billing for the entire chain (non-fatal)
       if ( gateUserId && ( totalInputTokens > 0 || totalOutputTokens > 0 ) ) {
-        await ctx.runMutation( internal.stripeMutations.incrementUsageAndReportOverage, {
-          userId: gateUserId,
-          modelId: gateModelId,
-          inputTokens: totalInputTokens,
-          outputTokens: totalOutputTokens,
-        } );
+        try {
+          await ctx.runMutation( internal.stripeMutations.incrementUsageAndReportOverage, {
+            userId: gateUserId,
+            modelId: gateModelId,
+            inputTokens: totalInputTokens,
+            outputTokens: totalOutputTokens,
+          } );
+        } catch ( billingErr ) {
+          console.error( "promptChainExecutor: billing failed (non-fatal)", {
+            userId: gateUserId, modelId: gateModelId,
+            inputTokens: totalInputTokens, outputTokens: totalOutputTokens,
+            error: billingErr instanceof Error ? billingErr.message : billingErr,
+          } );
+        }
       }
 
       const totalLatency = Date.now() - startTime;
@@ -457,14 +465,22 @@ export const testPrompt = action({
       // Execute
       const modelResult = await invokeModel(args.model, renderedPrompt, ctx);
 
-      // Meter: token-based billing
+      // Meter: token-based billing (non-fatal)
       if ( gateUserId && ( modelResult.inputTokens > 0 || modelResult.outputTokens > 0 ) ) {
-        await ctx.runMutation( internal.stripeMutations.incrementUsageAndReportOverage, {
-          userId: gateUserId,
-          modelId: gateModelId,
-          inputTokens: modelResult.inputTokens,
-          outputTokens: modelResult.outputTokens,
-        } );
+        try {
+          await ctx.runMutation( internal.stripeMutations.incrementUsageAndReportOverage, {
+            userId: gateUserId,
+            modelId: gateModelId,
+            inputTokens: modelResult.inputTokens,
+            outputTokens: modelResult.outputTokens,
+          } );
+        } catch ( billingErr ) {
+          console.error( "promptChainExecutor: billing failed (non-fatal)", {
+            userId: gateUserId, modelId: gateModelId,
+            inputTokens: modelResult.inputTokens, outputTokens: modelResult.outputTokens,
+            error: billingErr instanceof Error ? billingErr.message : billingErr,
+          } );
+        }
       }
 
       return {

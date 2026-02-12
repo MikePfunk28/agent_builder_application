@@ -3,6 +3,7 @@
 import { action, internalAction } from "./_generated/server";
 import { v } from "convex/values";
 import { api, internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 
 /**
  * MCP Client for invoking tools from configured MCP servers
@@ -131,19 +132,28 @@ export const invokeMCPToolInternal = internalAction({
 
       const executionTime = Date.now() - startTime;
 
-      // Meter Bedrock usage if this was a direct Bedrock invocation with token data
+      // Meter Bedrock usage if this was a direct Bedrock invocation with token data (non-fatal)
       if (
         result.success &&
         args.userId &&
         result.result?.tokenUsage &&
         ( result.result.tokenUsage.inputTokens > 0 || result.result.tokenUsage.outputTokens > 0 )
       ) {
-        await ctx.runMutation( internal.stripeMutations.incrementUsageAndReportOverage, {
-          userId: args.userId,
-          modelId: result.result.model_id,
-          inputTokens: result.result.tokenUsage.inputTokens,
-          outputTokens: result.result.tokenUsage.outputTokens,
-        } );
+        try {
+          await ctx.runMutation( internal.stripeMutations.incrementUsageAndReportOverage, {
+            userId: args.userId,
+            modelId: result.result.model_id,
+            inputTokens: result.result.tokenUsage.inputTokens,
+            outputTokens: result.result.tokenUsage.outputTokens,
+          } );
+        } catch ( billingErr ) {
+          console.error( "mcpClient: billing failed (non-fatal)", {
+            userId: args.userId, modelId: result.result.model_id,
+            inputTokens: result.result.tokenUsage.inputTokens,
+            outputTokens: result.result.tokenUsage.outputTokens,
+            error: billingErr instanceof Error ? billingErr.message : billingErr,
+          } );
+        }
       }
 
       // Return properly typed result
@@ -240,13 +250,19 @@ export const invokeMCPTool = action({
 
       const executionTime = Date.now() - startTime;
 
+      // Built-in servers (e.g. "system_ollama") have string _id, not Id<"mcpServers">.
+      // Only update status for real DB-backed servers.
+      const isDbServer = typeof server._id === "string" && !server._id.startsWith( "system_" );
+
       if (result.success) {
         // Update server status on successful invocation
-        await ctx.runMutation(api.mcpConfig.updateMCPServerStatus, {
-          serverId: server._id,
-          status: "connected",
-          lastConnected: Date.now(),
-        });
+        if ( isDbServer ) {
+          await ctx.runMutation(api.mcpConfig.updateMCPServerStatus, {
+            serverId: server._id as Id<"mcpServers">,
+            status: "connected",
+            lastConnected: Date.now(),
+          });
+        }
 
         // Log successful invocation
         await ctx.runMutation(api.errorLogging.logAuditEvent, {
@@ -282,12 +298,14 @@ export const invokeMCPTool = action({
           },
         });
 
-        // Update server status on failure
-        await ctx.runMutation(api.mcpConfig.updateMCPServerStatus, {
-          serverId: server._id,
-          status: "error",
-          lastError: result.error,
-        });
+        // Update server status on failure (skip built-in servers)
+        if ( isDbServer ) {
+          await ctx.runMutation(api.mcpConfig.updateMCPServerStatus, {
+            serverId: server._id as Id<"mcpServers">,
+            status: "error",
+            lastError: result.error,
+          });
+        }
       }
 
       // Return properly typed result with discriminated union

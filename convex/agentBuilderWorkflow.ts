@@ -220,14 +220,22 @@ export const executeWorkflowStage = action( {
       userPrompt: fullPrompt,
     } );
 
-    // Meter: token-based billing for this workflow stage
+    // Meter: token-based billing for this workflow stage (non-fatal)
     if ( result.inputTokens > 0 || result.outputTokens > 0 ) {
-      await ctx.runMutation( internal.stripeMutations.incrementUsageAndReportOverage, {
-        userId: gateResult.userId,
-        modelId: WORKFLOW_MODEL_ID,
-        inputTokens: result.inputTokens,
-        outputTokens: result.outputTokens,
-      } );
+      try {
+        await ctx.runMutation( internal.stripeMutations.incrementUsageAndReportOverage, {
+          userId: gateResult.userId,
+          modelId: WORKFLOW_MODEL_ID,
+          inputTokens: result.inputTokens,
+          outputTokens: result.outputTokens,
+        } );
+      } catch ( billingErr ) {
+        console.error( "agentBuilderWorkflow: billing failed (non-fatal)", {
+          userId: gateResult.userId, modelId: WORKFLOW_MODEL_ID,
+          inputTokens: result.inputTokens, outputTokens: result.outputTokens,
+          error: billingErr instanceof Error ? billingErr.message : billingErr,
+        } );
+      }
     }
 
     return {

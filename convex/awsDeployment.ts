@@ -7,6 +7,7 @@
 import { action, internalAction, mutation, query, internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import { internal, api } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 
 // Stripe mutations live in stripeMutations.ts. Cast bridges codegen gap.
 
@@ -703,7 +704,7 @@ async function deployToAgentCore( artifacts: any, config: any ) {
 export const createDeploymentInternal = internalMutation( {
   args: {
     agentId: v.id( "agents" ),
-    userId: v.union( v.id( "users" ), v.string() ),
+    userId: v.id( "users" ),
     tier: v.optional( v.string() ),
     deploymentConfig: v.object( {
       region: v.string(),
@@ -714,14 +715,9 @@ export const createDeploymentInternal = internalMutation( {
     } ),
   },
   handler: async ( ctx, args ) => {
-    // Ensure userId is a proper Id<"users">
-    const userId = typeof args.userId === 'string' && args.userId.startsWith( 'j' )
-      ? args.userId as any
-      : args.userId;
-
     return await ctx.db.insert( "deployments", {
       agentId: args.agentId,
-      userId: userId,
+      userId: args.userId,
       tier: args.tier || "freemium",
       agentName: args.deploymentConfig.agentName,
       description: args.deploymentConfig.description,
@@ -953,7 +949,7 @@ export const executeDeploymentInternal = internalAction( {
 /**
  * Tier 1: Deploy to YOUR Fargate (Freemium)
  */
-async function deployTier1( ctx: any, args: any, userId: string ): Promise<any> {
+async function deployTier1( ctx: any, args: any, userId: Id<"users"> ): Promise<any> {
   // Create deployment record
   const deploymentId: any = await ctx.runMutation( internal.awsDeployment.createDeploymentInternal, {
     agentId: args.agentId,
@@ -962,8 +958,15 @@ async function deployTier1( ctx: any, args: any, userId: string ): Promise<any> 
     deploymentConfig: args.deploymentConfig,
   } );
 
-  // Increment usage counter (centralized in stripeMutations.ts)
-  await ctx.runMutation( internalStripeMutations.incrementUsageAndReportOverage, { userId } );
+  // Increment usage counter (non-fatal: don't block deployment)
+  try {
+    await ctx.runMutation( internalStripeMutations.incrementUsageAndReportOverage, { userId } );
+  } catch ( billingErr ) {
+    console.error( "awsDeployment.deployTier1: billing failed (non-fatal)", {
+      userId,
+      error: billingErr instanceof Error ? billingErr.message : billingErr,
+    } );
+  }
 
   // Start deployment
   await ctx.scheduler.runAfter( 0, internal.awsDeployment.executeDeploymentInternal, {

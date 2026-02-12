@@ -16,14 +16,31 @@ import { getAuthUserId } from "@convex-dev/auth/server";
  */
 
 /**
- * Built-in MCP servers available to all users
+ * Built-in MCP servers available to all users.
+ * These are in-memory objects (not from DB) with synthetic IDs and "system" userId.
  */
-const BUILT_IN_MCP_SERVERS = [
+interface BuiltInMcpServer {
+  _id: string;
+  _creationTime: number;
+  name: string;
+  userId: string; // "system" — not a real user ID
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+  disabled: boolean;
+  timeout: number;
+  status: string;
+  availableTools: Array<{ name: string; description: string }>;
+  createdAt: number;
+  updatedAt: number;
+}
+
+const BUILT_IN_MCP_SERVERS: BuiltInMcpServer[] = [
   {
-    _id: "system_bedrock_agentcore" as any,
+    _id: "system_bedrock_agentcore",
     _creationTime: Date.now(),
     name: "bedrock-agentcore-mcp-server",
-    userId: "system" as any,
+    userId: "system",
     command: "bedrock-agentcore",
     args: [],
     env: {},
@@ -38,10 +55,10 @@ const BUILT_IN_MCP_SERVERS = [
   },
 
   {
-    _id: "system_document_fetcher" as any,
+    _id: "system_document_fetcher",
     _creationTime: Date.now(),
     name: "document-fetcher-mcp-server",
-    userId: "system" as any,
+    userId: "system",
     command: "uvx",
     args: ["mcp-document-fetcher"],
     env: {},
@@ -57,10 +74,10 @@ const BUILT_IN_MCP_SERVERS = [
     updatedAt: Date.now(),
   },
   {
-    _id: "system_aws_diagram" as any,
+    _id: "system_aws_diagram",
     _creationTime: Date.now(),
     name: "aws-diagram-mcp-server",
-    userId: "system" as any,
+    userId: "system",
     command: "uvx",
     args: ["awslabs.aws-diagram-mcp-server@latest"],
     env: {},
@@ -75,10 +92,10 @@ const BUILT_IN_MCP_SERVERS = [
     updatedAt: Date.now(),
   },
   {
-    _id: "system_ollama" as any,
+    _id: "system_ollama",
     _creationTime: Date.now(),
     name: "ollama-mcp-server",
-    userId: "system" as any,
+    userId: "system",
     command: "node",
     args: [process.env.OLLAMA_MCP_PATH || ""],
     env: {

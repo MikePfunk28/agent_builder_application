@@ -180,14 +180,22 @@ async function executePromptModelWorkflow(
     // Execute composed messages with actual API calls
     const result = await executeComposedMessages( composed );
 
-    // Meter token usage for billing
+    // Meter token usage for billing (non-fatal: don't kill workflow execution)
     if ( result.tokenUsage && gateResult ) {
-      await ctx.runMutation( internal.stripeMutations.incrementUsageAndReportOverage, {
-        userId: gateResult.userId,
-        modelId: composed.bedrock?.modelId,
-        inputTokens: result.tokenUsage.inputTokens,
-        outputTokens: result.tokenUsage.outputTokens,
-      } );
+      try {
+        await ctx.runMutation( internal.stripeMutations.incrementUsageAndReportOverage, {
+          userId: gateResult.userId,
+          modelId: composed.bedrock?.modelId,
+          inputTokens: result.tokenUsage.inputTokens,
+          outputTokens: result.tokenUsage.outputTokens,
+        } );
+      } catch ( billingErr ) {
+        console.error( "workflowExecutor: billing failed (non-fatal)", {
+          userId: gateResult.userId, modelId: composed.bedrock?.modelId,
+          inputTokens: result.tokenUsage.inputTokens, outputTokens: result.tokenUsage.outputTokens,
+          error: billingErr instanceof Error ? billingErr.message : billingErr,
+        } );
+      }
     }
 
     return {

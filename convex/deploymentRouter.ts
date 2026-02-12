@@ -8,6 +8,7 @@ import { mutation, query } from "./_generated/server";
 import { action } from "./_generated/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { api, internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 
 // Stripe mutations live in stripeMutations.ts. Cast bridges codegen gap.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -64,7 +65,7 @@ export const getUserTier = query({
 });
 
 // Tier 1: Deploy to AgentCore (Freemium)
-async function deployTier1(ctx: any, args: any, userId: any): Promise<any> {
+async function deployTier1(ctx: any, args: any, userId: Id<"users">): Promise<any> {
   // Check usage limits
   const user = await ctx.runQuery(api.deploymentRouter.getUserTier);
 
@@ -129,11 +130,18 @@ async function deployTier1(ctx: any, args: any, userId: any): Promise<any> {
       throw new Error(result.error || "AgentCore deployment failed");
     }
 
-    // Increment usage counter (centralized in stripeMutations.ts)
-    await ctx.runMutation( internalStripeMutations.incrementUsageAndReportOverage, {
-      userId,
-      modelId: agent.model,
-    } );
+    // Increment usage counter (non-fatal: don't block deployment)
+    try {
+      await ctx.runMutation( internalStripeMutations.incrementUsageAndReportOverage, {
+        userId,
+        modelId: agent.model,
+      } );
+    } catch ( billingErr ) {
+      console.error( "deploymentRouter.deployTier1: billing failed (non-fatal)", {
+        userId, modelId: agent.model,
+        error: billingErr instanceof Error ? billingErr.message : billingErr,
+      } );
+    }
 
     return {
       success: true,
@@ -251,7 +259,7 @@ export const getDeploymentHistory = query({
 
     let query = ctx.db
       .query("deployments")
-      .withIndex("by_user", (q) => q.eq("userId", userId as any));
+      .withIndex("by_user", (q) => q.eq("userId", userId));
 
     if (args.agentId) {
       query = ctx.db

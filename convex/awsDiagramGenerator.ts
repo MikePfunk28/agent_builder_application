@@ -365,7 +365,7 @@ export const storeDiagram = mutation({
       // Create new diagram
       return await ctx.db.insert("diagrams", {
         deploymentId: args.deploymentId,
-        userId: userId as any,
+        userId: userId,
         format: args.format,
         content: args.content,
         generatedAt: Date.now(),
