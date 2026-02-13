@@ -51,6 +51,13 @@ export interface ModelMetadata {
   unitsPerCall?: number;
   description?: string;
   type?: "text" | "image" | "video" | "embedding";
+  /**
+   * API path for thinking/reasoning invocation on Bedrock.
+   * - "anthropic-invoke": InvokeModelCommand with anthropic_version + thinking config (Claude only)
+   * - "converse-reasoning": ConverseCommand with reasoningContent blocks (DeepSeek V3.x, Kimi K2.x)
+   * - null/undefined: standard ConverseCommand, no thinking support
+   */
+  thinkingApiPath?: "anthropic-invoke" | "converse-reasoning" | null;
 }
 
 /**
@@ -74,6 +81,7 @@ export const BEDROCK_MODELS: Record<string, ModelMetadata> = {
     costPer1MTokens: { input: 3.0, output: 15.0 },
     unitsPerCall: 3,
     description: "Latest Claude model with interleaved reasoning, best for complex tasks",
+    thinkingApiPath: "anthropic-invoke",
   },
 
   "anthropic.claude-haiku-4-5-20251001-v1:0": {
@@ -89,6 +97,7 @@ export const BEDROCK_MODELS: Record<string, ModelMetadata> = {
     costPer1MTokens: { input: 1.0, output: 5.0 },
     unitsPerCall: 1,
     description: "Latest fast Claude model with reasoning, perfect for thinking agents and tool creation",
+    thinkingApiPath: "anthropic-invoke",
   },
 
   // ============================================================================
@@ -106,6 +115,7 @@ export const BEDROCK_MODELS: Record<string, ModelMetadata> = {
     costPer1MTokens: { input: 5.0, output: 25.0 },
     unitsPerCall: 5,
     description: "Most capable Claude model — 5x Haiku cost per call",
+    thinkingApiPath: "anthropic-invoke",
   },
 
   // ============================================================================
@@ -444,6 +454,7 @@ export const BEDROCK_MODELS: Record<string, ModelMetadata> = {
     costPer1MTokens: { input: 1.35, output: 5.40 },
     unitsPerCall: 2,
     description: "DeepSeek reasoning model with chain-of-thought on Bedrock — heavier output tokens",
+    thinkingApiPath: "converse-reasoning",
   },
 
   "deepseek.v3-v1:0": {
@@ -459,6 +470,7 @@ export const BEDROCK_MODELS: Record<string, ModelMetadata> = {
     costPer1MTokens: { input: 0.58, output: 1.68 },
     unitsPerCall: 1,
     description: "DeepSeek V3.1 hybrid model — best value reasoning model on Bedrock",
+    thinkingApiPath: "converse-reasoning",
   },
 
   // ============================================================================
@@ -476,6 +488,135 @@ export const BEDROCK_MODELS: Record<string, ModelMetadata> = {
     costPer1MTokens: { input: 1.00, output: 4.00 },
     unitsPerCall: 1,
     description: "Moonshot Kimi K2 with chain-of-thought reasoning on Bedrock",
+    thinkingApiPath: "converse-reasoning",
+  },
+
+  // ============================================================================
+  // NEW MODELS — Feb 10, 2026 announcement
+  // https://aws.amazon.com/about-aws/whats-new/2026/02/amazon-bedrock-adds-support-six-open-weights-models/
+  // NOTE: Model IDs predicted from naming patterns. Verify in AWS console.
+  // ============================================================================
+
+  "deepseek.v3-0324-v1:0": {
+    id: "deepseek.v3-0324-v1:0",
+    name: "DeepSeek V3.2",
+    provider: "bedrock",
+    providerDisplay: "DeepSeek (Bedrock)",
+    capabilities: ["text", "reasoning", "coding"],
+    contextWindow: 128000,
+    maxOutput: 16384,
+    recommended: true,
+    category: "flagship",
+    costPer1MTokens: { input: 0.62, output: 1.85 },
+    unitsPerCall: 1,
+    description: "DeepSeek V3.2 — frontier reasoning and agentic intelligence on Bedrock",
+    thinkingApiPath: "converse-reasoning",
+  },
+
+  "minimax.minimax-m2": {
+    id: "minimax.minimax-m2",
+    name: "MiniMax M2",
+    provider: "bedrock",
+    providerDisplay: "MiniMax (Bedrock)",
+    capabilities: ["text", "coding"],
+    contextWindow: 1000000,
+    maxOutput: 65536,
+    category: "coding",
+    costPer1MTokens: { input: 0.30, output: 1.20 },
+    unitsPerCall: 1,
+    description: "MiniMax M2 with massive output window for autonomous coding",
+  },
+
+  "minimax.minimax-m2-1": {
+    id: "minimax.minimax-m2-1",
+    name: "MiniMax M2.1",
+    provider: "bedrock",
+    providerDisplay: "MiniMax (Bedrock)",
+    capabilities: ["text", "coding"],
+    contextWindow: 1000000,
+    maxOutput: 65536,
+    recommended: true,
+    category: "coding",
+    costPer1MTokens: { input: 0.30, output: 1.20 },
+    unitsPerCall: 1,
+    description: "MiniMax M2.1 — autonomous coding with massive output window on Bedrock",
+  },
+
+  // NOTE: GLM model IDs not yet confirmed in AWS docs. Verify prefix (zhipu. vs z-ai.) in console.
+  "zhipu.glm-4-7-v1:0": {
+    id: "zhipu.glm-4-7-v1:0",
+    name: "GLM 4.7",
+    provider: "bedrock",
+    providerDisplay: "Zhipu AI (Bedrock)",
+    capabilities: ["text", "reasoning", "coding"],
+    contextWindow: 128000,
+    maxOutput: 16384,
+    category: "flagship",
+    costPer1MTokens: { input: 0.60, output: 2.00 },
+    unitsPerCall: 1,
+    description: "Zhipu GLM 4.7 — frontier reasoning and coding on Bedrock",
+    thinkingApiPath: "converse-reasoning",
+  },
+
+  "zhipu.glm-4-7-flash-v1:0": {
+    id: "zhipu.glm-4-7-flash-v1:0",
+    name: "GLM 4.7 Flash",
+    provider: "bedrock",
+    providerDisplay: "Zhipu AI (Bedrock)",
+    capabilities: ["text", "coding"],
+    contextWindow: 128000,
+    maxOutput: 8192,
+    category: "fast",
+    costPer1MTokens: { input: 0.10, output: 0.40 },
+    unitsPerCall: 1,
+    description: "GLM 4.7 Flash — lightweight, cost-efficient for production on Bedrock",
+  },
+
+  "moonshot.kimi-k2-5-thinking": {
+    id: "moonshot.kimi-k2-5-thinking",
+    name: "Kimi K2.5 Thinking",
+    provider: "bedrock",
+    providerDisplay: "Moonshot AI (Bedrock)",
+    capabilities: ["text", "reasoning"],
+    contextWindow: 128000,
+    maxOutput: 16384,
+    recommended: true,
+    category: "reasoning",
+    costPer1MTokens: { input: 0.60, output: 2.50 },
+    unitsPerCall: 1,
+    description: "Kimi K2.5 — best price-performance reasoning with 300 sequential tool calls",
+    thinkingApiPath: "converse-reasoning",
+  },
+
+  // Qwen3 models confirmed in AWS docs
+  "qwen.qwen3-coder-480b-a35b-v1:0": {
+    id: "qwen.qwen3-coder-480b-a35b-v1:0",
+    name: "Qwen3 Coder 480B",
+    provider: "bedrock",
+    providerDisplay: "Alibaba (Bedrock)",
+    capabilities: ["text", "coding"],
+    contextWindow: 262144,
+    maxOutput: 16384,
+    recommended: true,
+    category: "coding",
+    costPer1MTokens: { input: 0.22, output: 1.00 },
+    unitsPerCall: 1,
+    description: "Qwen3 Coder — agentic coding specialist (MoE 480B, 35B active) on Bedrock",
+  },
+
+  "qwen.qwen3-235b-a22b-2507-v1:0": {
+    id: "qwen.qwen3-235b-a22b-2507-v1:0",
+    name: "Qwen3 235B",
+    provider: "bedrock",
+    providerDisplay: "Alibaba (Bedrock)",
+    capabilities: ["text", "reasoning"],
+    contextWindow: 131072,
+    maxOutput: 8192,
+    category: "flagship",
+    costPer1MTokens: { input: 0.30, output: 1.20 },
+    unitsPerCall: 1,
+    description: "Qwen3 flagship reasoning model (MoE 235B, 22B active) on Bedrock",
+    thinkingApiPath: "converse-reasoning",
   },
 };
 
@@ -872,10 +1013,26 @@ export const SHORT_NAME_TO_BEDROCK_ID: Record<string, string> = {
 
   // Moonshot Kimi
   "kimi-k2": "moonshot.kimi-k2-thinking",
+  "kimi-k2.5": "moonshot.kimi-k2-5-thinking",
+
+  // MiniMax
+  "minimax-m2": "minimax.minimax-m2",
+  "minimax-m2.1": "minimax.minimax-m2-1",
+
+  // Zhipu GLM
+  "glm-4.7": "zhipu.glm-4-7-v1:0",
+  "glm-4.7-flash": "zhipu.glm-4-7-flash-v1:0",
+
+  // Qwen
+  "qwen3-coder": "qwen.qwen3-coder-480b-a35b-v1:0",
+  "qwen3": "qwen.qwen3-235b-a22b-2507-v1:0",
+
+  // DeepSeek V3.2
+  "deepseek-v3.2": "deepseek.v3-0324-v1:0",
 };
 
 /** Bedrock provider prefixes used to identify already-qualified model IDs */
-const BEDROCK_PREFIXES = ["anthropic.", "amazon.", "meta.", "mistral.", "cohere.", "ai21.", "stability.", "deepseek.", "moonshot.", "qwen.", "us.", "eu.", "apac.", "global."];
+const BEDROCK_PREFIXES = ["anthropic.", "amazon.", "meta.", "mistral.", "cohere.", "ai21.", "stability.", "deepseek.", "moonshot.", "qwen.", "minimax.", "zhipu.", "us.", "eu.", "apac.", "global."];
 
 /**
  * Resolve a model name (short or full) to a valid Bedrock model ID.
@@ -910,6 +1067,28 @@ export function resolveBedrockModelId( modelName: string ): string {
 export function getUnitsForModel( modelId: string ): number {
   const model = BEDROCK_MODELS[modelId] ?? ALL_MODELS[modelId];
   return model?.unitsPerCall ?? 1;
+}
+
+/**
+ * Get the thinking/reasoning configuration for a Bedrock model.
+ * Used by workflow invokers to dispatch to the correct API path.
+ *
+ * - anthropic-invoke: InvokeModelCommand with anthropic_version header + thinking config
+ * - converse-reasoning: ConverseCommand with reasoningContent in response
+ * - converse-standard: ConverseCommand without thinking support
+ */
+export function getModelThinkingConfig( modelId: string ): {
+  supportsThinking: boolean;
+  apiPath: "anthropic-invoke" | "converse-reasoning" | "converse-standard";
+} {
+  const model = BEDROCK_MODELS[modelId];
+  if ( model?.thinkingApiPath === "anthropic-invoke" ) {
+    return { supportsThinking: true, apiPath: "anthropic-invoke" };
+  }
+  if ( model?.thinkingApiPath === "converse-reasoning" ) {
+    return { supportsThinking: true, apiPath: "converse-reasoning" };
+  }
+  return { supportsThinking: false, apiPath: "converse-standard" };
 }
 
 /**

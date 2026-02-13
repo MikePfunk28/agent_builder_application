@@ -243,6 +243,20 @@ const applicationTables = {
       minComplexityForOpus: v.optional( v.number() ),
     } ) ),
 
+    // Agent Skills — reusable capabilities the LLM can invoke during conversations
+    skills: v.optional( v.array( v.object( {
+      skillId: v.optional( v.id( "dynamicTools" ) ), // References extended dynamicTools table
+      name: v.string(),
+      enabled: v.optional( v.boolean() ),
+    } ) ) ),
+
+    // Thinking Level — controls model reasoning depth + optional pre-reasoning rounds
+    thinkingLevel: v.optional( v.union(
+      v.literal( "low" ),    // budget_tokens: 1024, 1 reasoning round
+      v.literal( "medium" ), // budget_tokens: 4096, 2 reasoning rounds
+      v.literal( "high" ),   // budget_tokens: 16384, 3 reasoning rounds
+    ) ),
+
     // Architecture & Deployment Metadata
     diagramUrl: v.optional( v.string() ),
     lastDeployedAt: v.optional( v.number() ),
@@ -664,12 +678,46 @@ const applicationTables = {
     // Status
     isActive: v.boolean(),
     isPublic: v.optional( v.boolean() ),
+
+    // ─── Skill Extension Fields (optional — transforms dynamicTools into skill registry) ───
+    // Skill Type — what backend executes this skill
+    skillType: v.optional( v.union(
+      v.literal( "code" ),       // Existing behavior: Python code with @tool decorator
+      v.literal( "internal" ),   // Maps to a tools.ts action (memory, reasoning, etc.)
+      v.literal( "mcp" ),        // Wraps an MCP server tool
+      v.literal( "agent" ),      // Wraps another agent as a tool
+      v.literal( "composite" ),  // Chains multiple skills
+      v.literal( "sandbox" ),    // Sandboxed shell/code execution
+    ) ),
+
+    // Routing config (shape depends on skillType)
+    // internal:  { actionName: "short_term_memory" }
+    // mcp:       { serverName: "my-server", toolName: "my-tool" }
+    // agent:     { agentId: Id<"agents"> }
+    // composite: { steps: [{ skillName: string, inputMapping?: Record<string,string> }] }
+    // sandbox:   { runtime: "e2b" | "docker", command: string, timeout?: number }
+    skillConfig: v.optional( v.any() ),
+
+    // What the LLM sees (tool definition for the Anthropic tools array)
+    toolDefinition: v.optional( v.object( {
+      name: v.string(),
+      description: v.string(),
+      inputSchema: v.any(),
+    } ) ),
+
+    // SKILL.md content — loaded only when skill is invoked, not upfront
+    skillInstructions: v.optional( v.string() ),
+
+    // Tags for discovery
+    tags: v.optional( v.array( v.string() ) ),
+    version: v.optional( v.string() ),
   } )
     .index( "by_user", ["userId", "createdAt"] )
     .index( "by_agent", ["agentId"] )
     .index( "by_name", ["name"] )
     .index( "by_active", ["isActive"] )
-    .index( "by_public", ["isPublic"] ),
+    .index( "by_public", ["isPublic"] )
+    .index( "by_skill_type", ["skillType"] ),
 
   // Rate Limiting System
   // NOTE: The requests array is bounded to MAX_RATE_LIMIT_REQUESTS (200) entries.

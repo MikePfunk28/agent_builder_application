@@ -180,17 +180,56 @@ async function executeViaAgentCore(
   message: string,
   history: ConversationMessage[]
 ): Promise<AgentExecutionResult> {
-  return await executeDirectBedrock( ctx, agent, message, history );
+  // Load agent's skills from dynamicTools table (if configured)
+  const { dispatchToolCall, buildToolsArray, mapThinkingLevelToPayload,
+    accumulateTokenUsage, MAX_TOOL_LOOP_ITERATIONS, buildToolResultMessages } = await import( "./lib/toolDispatch" );
+
+  let agentSkills: import( "./lib/toolDispatch" ).SkillDefinition[] = [];
+  const agentDoc = agent as any; // Access optional fields added to schema
+
+  if ( agentDoc.skills && Array.isArray( agentDoc.skills ) ) {
+    // Load full skill definitions for enabled skills
+    const enabledSkills = agentDoc.skills.filter(
+      ( s: any ) => s.enabled !== false,
+    );
+    for ( const skillRef of enabledSkills ) {
+      if ( skillRef.skillId ) {
+        // Load from dynamicTools table
+        const skillDoc = await ctx.runQuery( internal.metaTooling.getSkillById, {
+          skillId: skillRef.skillId,
+        } );
+        if ( skillDoc?.skillType && skillDoc?.toolDefinition ) {
+          agentSkills.push( {
+            skillType: skillDoc.skillType,
+            name: skillDoc.name,
+            skillConfig: skillDoc.skillConfig,
+            toolDefinition: skillDoc.toolDefinition,
+            skillInstructions: skillDoc.skillInstructions,
+          } );
+        }
+      }
+    }
+  }
+
+  const thinkingLevel = agentDoc.thinkingLevel as "low" | "medium" | "high" | undefined;
+
+  return await executeDirectBedrock( ctx, agent, message, history, agentSkills, thinkingLevel );
 }
 
 async function executeDirectBedrock(
   ctx: ActionCtx,
   agent: AgentDoc,
   message: string,
-  history: ConversationMessage[]
+  history: ConversationMessage[],
+  agentSkills: import( "./lib/toolDispatch" ).SkillDefinition[] = [],
+  thinkingLevel?: "low" | "medium" | "high",
 ): Promise<AgentExecutionResult> {
   const { BedrockRuntimeClient, InvokeModelCommand } =
     await import( "@aws-sdk/client-bedrock-runtime" );
+  const {
+    dispatchToolCall, buildToolsArray, mapThinkingLevelToPayload,
+    accumulateTokenUsage, MAX_TOOL_LOOP_ITERATIONS, buildToolResultMessages,
+  } = await import( "./lib/toolDispatch" );
 
   const client = new BedrockRuntimeClient( {
     region: process.env.AWS_REGION || "us-east-1",
@@ -200,18 +239,18 @@ async function executeDirectBedrock(
     },
   } );
 
-  const messages: Array<{ role: string; content: Array<{ text: string }> }> = [];
+  const messages: Array<{ role: string; content: any }> = [];
 
   for ( const msg of history ) {
     messages.push( {
       role: msg.role,
-      content: [{ text: msg.content }],
+      content: [{ type: "text", text: msg.content }],
     } );
   }
 
   messages.push( {
     role: "user",
-    content: [{ text: message }],
+    content: [{ type: "text", text: message }],
   } );
 
   const modelId = resolveBedrockModelId( agent.model );
@@ -221,17 +260,24 @@ async function executeDirectBedrock(
   let payload: Record<string, unknown>;
 
   if ( isAnthropicModel ) {
+    // Determine thinking config: use thinkingLevel if set, else default
+    const thinkingConfig = thinkingLevel
+      ? mapThinkingLevelToPayload( thinkingLevel, modelId )
+      : { thinking: { type: "enabled", budget_tokens: 3000 } };
+
     payload = {
       anthropic_version: "bedrock-2023-05-31",
       max_tokens: 4096,
       system: agent.systemPrompt,
       messages: messages,
       temperature: 1,
-      thinking: {
-        type: "enabled",
-        budget_tokens: 3000,
-      },
+      ...thinkingConfig,
     };
+
+    // Add tools array when agent has skills configured (Anthropic tool_use protocol)
+    if ( agentSkills.length > 0 ) {
+      payload.tools = buildToolsArray( agentSkills );
+    }
   } else {
     // Non-Anthropic Bedrock models (Llama, Mistral, etc.) use a plain
     // prompt-based payload compatible with InvokeModelCommand.
@@ -280,94 +326,133 @@ async function executeDirectBedrock(
     }
   }
 
-  const command = new InvokeModelCommand( {
-    modelId: modelId,
-    contentType: "application/json",
-    accept: "application/json",
-    body: JSON.stringify( payload ),
-  } );
+  // ─── Agent Loop: call model → execute tools → feed results back ────────
+  // When the agent has NO skills, this runs once (existing behavior).
+  // When the agent HAS skills, it loops until stop_reason is "end_turn"
+  // or MAX_TOOL_LOOP_ITERATIONS is reached.
+  const { extractTokenUsage, estimateTokenUsage } = await import( "./lib/tokenBilling" );
+  const accumulatedTokens = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+  let finalContent = "";
+  let finalReasoning = "";
+  let finalToolCalls: ToolCall[] = [];
+  const hasSkills = agentSkills.length > 0 && isAnthropicModel;
 
-  const response = await client.send( command );
-  const responseBody = JSON.parse(
-    new TextDecoder().decode( response.body )
-  ) as BedrockInvokeResponse;
+  for ( let iteration = 0; iteration < MAX_TOOL_LOOP_ITERATIONS; iteration++ ) {
+    const command = new InvokeModelCommand( {
+      modelId: modelId,
+      contentType: "application/json",
+      accept: "application/json",
+      body: JSON.stringify( payload ),
+    } );
 
-  let content = "";
-  let reasoning = "";
-  const toolCalls: ToolCall[] = [];
+    const response = await client.send( command );
+    const responseBody = JSON.parse(
+      new TextDecoder().decode( response.body )
+    ) as BedrockInvokeResponse;
 
-  if ( responseBody.content && Array.isArray( responseBody.content ) ) {
-    // Anthropic models: content is an array of typed blocks
-    for ( const block of responseBody.content ) {
-      if ( block.type === "text" ) {
-        content += block.text;
-      } else if ( block.type === "thinking" ) {
-        reasoning += block.thinking;
-      } else if ( block.type === "tool_use" ) {
-        const id = typeof block.id === "string" ? block.id : undefined;
-        const name = typeof block.name === "string" ? block.name : undefined;
-        toolCalls.push( {
-          id,
-          name,
-          input: block.input,
+    // ─── Token extraction per iteration ─────────────────────────────────
+    let iterationTokens = extractTokenUsage( responseBody, modelId );
+    if ( iterationTokens.totalTokens === 0 ) {
+      iterationTokens = estimateTokenUsage( JSON.stringify( payload ), "" );
+    }
+    accumulateTokenUsage( accumulatedTokens, iterationTokens );
+
+    // ─── Parse response ─────────────────────────────────────────────────
+    let content = "";
+    let reasoning = "";
+    const toolCalls: ToolCall[] = [];
+    const assistantContentBlocks: Array<{ type: string;[key: string]: any }> = [];
+
+    if ( responseBody.content && Array.isArray( responseBody.content ) ) {
+      // Anthropic models: content is an array of typed blocks
+      for ( const block of responseBody.content ) {
+        assistantContentBlocks.push( block );
+        if ( block.type === "text" ) {
+          content += block.text;
+        } else if ( block.type === "thinking" ) {
+          reasoning += block.thinking;
+        } else if ( block.type === "tool_use" ) {
+          const id = typeof block.id === "string" ? block.id : undefined;
+          const name = typeof block.name === "string" ? block.name : undefined;
+          toolCalls.push( {
+            id,
+            name,
+            input: block.input,
+          } );
+        }
+      }
+    } else if ( typeof responseBody.generation === "string" ) {
+      content = responseBody.generation;
+    } else if ( responseBody.outputs && Array.isArray( responseBody.outputs ) ) {
+      content = responseBody.outputs.map( ( o ) => o.text || "" ).join( "" );
+    } else if ( responseBody.generations && Array.isArray( responseBody.generations ) ) {
+      content = responseBody.generations.map( ( g ) => g.text || "" ).join( "" );
+    } else if ( responseBody.completions && Array.isArray( responseBody.completions ) ) {
+      content = responseBody.completions.map( ( c ) => c.data?.text || "" ).join( "" );
+    } else if ( responseBody.results && Array.isArray( responseBody.results ) ) {
+      content = responseBody.results.map( ( r ) => r.outputText || "" ).join( "" );
+    } else {
+      console.warn( `Unrecognized Bedrock response format for model ${modelId}. Response did not match expected fields.` );
+      try {
+        if ( typeof responseBody === "string" ) {
+          const parsed = JSON.parse( responseBody );
+          content = typeof parsed === "string" ? parsed : JSON.stringify( parsed );
+        } else if ( responseBody && typeof responseBody === "object" ) {
+          content = JSON.stringify( responseBody );
+        } else {
+          content = String( responseBody );
+        }
+      } catch {
+        try {
+          content = JSON.stringify( responseBody );
+        } catch {
+          content = String( responseBody );
+        }
+      }
+    }
+
+    // Accumulate text and reasoning across iterations
+    if ( content ) finalContent = content; // Last iteration's text wins
+    if ( reasoning ) finalReasoning += ( finalReasoning ? "\n---\n" : "" ) + reasoning;
+
+    // ─── Agent Loop: Execute tool calls if agent has skills ──────────────
+    if ( hasSkills && toolCalls.length > 0 ) {
+      // Execute each tool call via shared dispatch
+      const toolResults: import( "./lib/toolDispatch" ).ToolResult[] = [];
+      for ( const tc of toolCalls ) {
+        if ( !tc.id || !tc.name ) continue;
+        const result = await dispatchToolCall(
+          ctx, tc.name, ( tc.input as Record<string, any> ) || {},
+          agentSkills, String( agent.createdBy ),
+        );
+        toolResults.push( {
+          toolUseId: tc.id,
+          output: result.success ? result.output : ( result.error || "Tool execution failed" ),
+          isError: !result.success,
         } );
       }
-    }
-  } else if ( typeof responseBody.generation === "string" ) {
-    // Meta/Llama models: single generation string
-    content = responseBody.generation;
-  } else if ( responseBody.outputs && Array.isArray( responseBody.outputs ) ) {
-    // Mistral models: outputs array with text fields
-    content = responseBody.outputs.map( ( o ) => o.text || "" ).join( "" );
-  } else if ( responseBody.generations && Array.isArray( responseBody.generations ) ) {
-    // Cohere models: generations array
-    content = responseBody.generations.map( ( g ) => g.text || "" ).join( "" );
-  } else if ( responseBody.completions && Array.isArray( responseBody.completions ) ) {
-    // AI21 models: completions array
-    content = responseBody.completions.map( ( c ) => c.data?.text || "" ).join( "" );
-  } else if ( responseBody.results && Array.isArray( responseBody.results ) ) {
-    // Amazon Titan models: results array
-    content = responseBody.results.map( ( r ) => r.outputText || "" ).join( "" );
-  } else {
-    // Fallback: try to extract text from any field in the response
-    // Use the already-parsed `responseBody` and avoid logging raw/sensitive content.
-    console.warn( `Unrecognized Bedrock response format for model ${modelId}. Response did not match expected fields.` );
-    try {
-      if ( typeof responseBody === "string" ) {
-        const parsed = JSON.parse( responseBody );
-        content = typeof parsed === "string" ? parsed : JSON.stringify( parsed );
-      } else if ( responseBody && typeof responseBody === "object" ) {
-        // Preserve a JSON representation of the object as the fallback content
-        content = JSON.stringify( responseBody );
-      } else {
-        content = String( responseBody );
-      }
-    } catch {
-      // If JSON.parse fails for some reason, fall back to a best-effort string
-      try {
-        content = JSON.stringify( responseBody );
-      } catch {
-        content = String( responseBody );
-      }
-    }
-  }
 
-  // ─── Token extraction for billing ───────────────────────────────────────
-  const { extractTokenUsage, estimateTokenUsage } = await import( "./lib/tokenBilling" );
-  let tokenUsage = extractTokenUsage( responseBody, modelId );
+      // Build assistant + tool_result messages and append to conversation
+      const loopMessages = buildToolResultMessages( assistantContentBlocks, toolResults );
+      // Update payload messages for the next iteration
+      const currentMessages = ( payload.messages as any[] ) || [];
+      payload.messages = [...currentMessages, ...loopMessages];
 
-  // Fallback: estimate from text when provider doesn't return counts
-  if ( tokenUsage.totalTokens === 0 ) {
-    const inputText = JSON.stringify( payload );
-    tokenUsage = estimateTokenUsage( inputText, content );
+      // Continue the loop — model will see tool results and respond
+      continue;
+    }
+
+    // No tool calls (or no skills) — we're done, break out of loop
+    finalToolCalls = toolCalls;
+    break;
   }
 
   return {
     success: true,
-    content: content.trim(),
-    reasoning: reasoning.trim() || undefined,
-    toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-    tokenUsage,
+    content: finalContent.trim(),
+    reasoning: finalReasoning.trim() || undefined,
+    toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
+    tokenUsage: accumulatedTokens,
     metadata: {
       model: modelId,
       modelProvider: "bedrock",

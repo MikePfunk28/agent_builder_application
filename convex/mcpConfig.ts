@@ -249,13 +249,8 @@ export const getMCPServerByNameInternal = internalQuery( {
       if ( !serverRaw ) return null;
       return { ...serverRaw, source: "user" } as DbMcpServer;
     } else {
-      // Get first server by name (for other MCP servers)
-      const serverRaw = await ctx.db
-        .query( "mcpServers" )
-        .filter( ( q ) => q.eq( q.field( "name" ), args.serverName ) )
-        .first();
-      if ( !serverRaw ) return null;
-      return { ...serverRaw, source: "user" } as DbMcpServer;
+      // No userId provided — cannot query across users (would leak another user's server)
+      return null;
     }
   },
 } );
@@ -500,7 +495,7 @@ export const testMCPConnection = action( {
 } );
 
 /**
- * Get MCP server by ID (internal query)
+ * Get MCP server by ID (public query — requires auth + ownership check)
  */
 export const getMCPServerById = query( {
   args: {

@@ -106,6 +106,7 @@ export function AgentTester({ agentId, agentCode, requirements, dockerfile, agen
         testQuery,
         timeout: 180000, // 3 minutes
         priority: 2, // Normal priority
+        ...(modelId ? { testModelId: modelId } : {}), // Test with user's selected model
       });
 
       setCurrentTestId(result.testId);

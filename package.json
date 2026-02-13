@@ -11,6 +11,7 @@
     "lint": "tsc -p convex -noEmit --pretty false && tsc -p . -noEmit --pretty false && convex dev --once && vite build",
     "test": "vitest --run",
     "test:watch": "vitest",
+    "test:skills": "vitest --run convex/agentSkills.test.ts",
     "setup-diagram-mcp": "tsx scripts/setup-aws-diagram-mcp.ts",
     "generate-diagram": "tsx scripts/generate-architecture-diagram-simple.ts"
   },

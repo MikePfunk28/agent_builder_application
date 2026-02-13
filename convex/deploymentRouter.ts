@@ -10,9 +10,7 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 
-// Stripe mutations live in stripeMutations.ts. Cast bridges codegen gap.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const internalStripeMutations = ( internal as any ).stripeMutations;
+// stripeMutations is generated in internal API — use directly, no cast needed.
 // Direct import for mutation handlers (mutations cannot call ctx.runMutation)
 import { incrementUsageAndReportOverageImpl } from "./stripeMutations";
 
@@ -132,7 +130,7 @@ async function deployTier1(ctx: any, args: any, userId: Id<"users">): Promise<an
 
     // Increment usage counter (non-fatal: don't block deployment)
     try {
-      await ctx.runMutation( internalStripeMutations.incrementUsageAndReportOverage, {
+      await ctx.runMutation( internal.stripeMutations.incrementUsageAndReportOverage, {
         userId,
         modelId: agent.model,
       } );
@@ -161,7 +159,9 @@ async function deployTier1(ctx: any, args: any, userId: Id<"users">): Promise<an
 }
 
 // Tier 2: Deploy to USER's Fargate (Personal AWS Account)
-async function deployTier2(ctx: any, args: any, _userId: string): Promise<any> {
+// No per-deployment billing — user pays AWS directly for their own runtime.
+// We only charge the $5/month subscription for platform access.
+async function deployTier2(ctx: any, args: any, _userId: Id<"users">): Promise<any> {
   try {
     const result: any = await ctx.runAction(
       api.awsCrossAccount.deployToUserAccount,

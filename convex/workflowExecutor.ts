@@ -614,21 +614,11 @@ async function executeNode(
           return { success: false, error: error.message, toolType: "mcp" };
         }
       } else if ( toolConfig.kind === "internal" ) {
-        // Execute internal @tool
+        // Execute internal @tool — uses shared tool map (single source of truth)
         const toolName = toolConfig.name;
-        const toolMap: Record<string, any> = {
-          handoff_to_user: api.tools.handoffToUser,
-          short_term_memory: api.tools.shortTermMemory,
-          long_term_memory: api.tools.longTermMemory,
-          semantic_memory: api.tools.semanticMemory,
-          self_consistency: api.tools.selfConsistency,
-          tree_of_thoughts: api.tools.treeOfThoughts,
-          reflexion: api.tools.reflexion,
-          map_reduce: api.tools.mapReduce,
-          parallel_prompts: api.tools.parallelPrompts,
-        };
+        const { INTERNAL_TOOL_MAP } = await import( "./lib/toolDispatch" );
 
-        const toolAction = toolMap[toolName] || toolMap[toolName.toLowerCase().replace( / /g, "_" )];
+        const toolAction = INTERNAL_TOOL_MAP[toolName] || INTERNAL_TOOL_MAP[toolName.toLowerCase().replace( / /g, "_" )];
 
         if ( toolAction ) {
           try {

@@ -41,6 +41,12 @@ interface Tool {
   pipPackages?: string[];
 }
 
+interface SkillRef {
+  skillId?: string;
+  name: string;
+  enabled: boolean;
+}
+
 interface AgentConfig {
   name: string;
   description: string;
@@ -52,12 +58,15 @@ interface AgentConfig {
   mcpToolName?: string;
   mcpInputSchema?: any;
   mcpConfig?: { servers: Array<{ name: string; url: string }> };
+  skills?: SkillRef[];
+  thinkingLevel?: "low" | "medium" | "high";
 }
 
 const steps = [
   { id: "basic", title: "Basic Info", icon: Bot },
   { id: "model", title: "Model & Prompt", icon: Settings },
   { id: "tools", title: "Tools", icon: Code },
+  { id: "skills", title: "Skills", icon: Sparkles },
   { id: "architecture", title: "Architecture", icon: Network },
   { id: "test", title: "Test", icon: TestTube },
   { id: "deploy", title: "Deploy", icon: Rocket },
@@ -549,8 +558,9 @@ export function AgentBuilder() {
             {currentStep === 0 && <BasicInfoStep config={config} setConfig={setConfig} />}
             {currentStep === 1 && <ModelPromptStep config={config} setConfig={setConfig} />}
             {currentStep === 2 && <ToolsStep config={config} setConfig={setConfig} />}
-            {currentStep === 3 && <ArchitectureStep config={config} />}
-            {currentStep === 4 && (
+            {currentStep === 3 && <SkillsStep config={config} setConfig={setConfig} />}
+            {currentStep === 4 && <ArchitectureStep config={config} />}
+            {currentStep === 5 && (
               <TestStep
                 agentId={savedAgentId}
                 agentCode={generatedCode}
@@ -563,7 +573,7 @@ export function AgentBuilder() {
                 isGenerating={isGenerating}
               />
             )}
-            {currentStep === 5 && (
+            {currentStep === 6 && (
               <DeployStep
                 config={config}
                 setConfig={setConfig}
@@ -1248,6 +1258,128 @@ function DeployStep( {
           toast.success( "AWS access configured successfully" );
         }}
       />
+    </div>
+  );
+}
+
+function SkillsStep( { config, setConfig }: { config: AgentConfig; setConfig: ( config: AgentConfig ) => void } ) {
+  const availableSkills = useQuery( api.metaTooling.listSkills, {} );
+  const currentSkills = config.skills || [];
+
+  const toggleSkill = ( skill: any ) => {
+    const exists = currentSkills.find( ( s ) => s.name === skill.name );
+    if ( exists ) {
+      // Remove
+      setConfig( {
+        ...config,
+        skills: currentSkills.filter( ( s ) => s.name !== skill.name ),
+      } );
+    } else {
+      // Add
+      setConfig( {
+        ...config,
+        skills: [
+          ...currentSkills,
+          { skillId: skill._id, name: skill.name, enabled: true },
+        ],
+      } );
+    }
+  };
+
+  const setThinkingLevel = ( level: "low" | "medium" | "high" | undefined ) => {
+    setConfig( { ...config, thinkingLevel: level } );
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Thinking Level */}
+      <div>
+        <h3 className="text-lg font-semibold text-green-400 mb-2">Thinking Level</h3>
+        <p className="text-sm text-gray-400 mb-3">
+          Controls how deeply the agent reasons before responding. Higher levels use more tokens but produce better results for complex tasks.
+        </p>
+        <div className="grid grid-cols-4 gap-3">
+          {[
+            { value: undefined, label: "Default", desc: "Standard reasoning" },
+            { value: "low" as const, label: "Low", desc: "Quick, 1 reasoning round" },
+            { value: "medium" as const, label: "Medium", desc: "Balanced, 2 rounds" },
+            { value: "high" as const, label: "High", desc: "Deep, 3 rounds" },
+          ].map( ( opt ) => (
+            <button
+              key={opt.label}
+              onClick={() => setThinkingLevel( opt.value )}
+              className={`p-3 rounded-lg border text-left transition-colors ${
+                config.thinkingLevel === opt.value
+                  ? "border-green-500 bg-green-900/30 text-green-300"
+                  : "border-gray-700 bg-gray-800/50 text-gray-400 hover:border-gray-600"
+              }`}
+            >
+              <div className="font-medium text-sm">{opt.label}</div>
+              <div className="text-xs mt-1 opacity-75">{opt.desc}</div>
+            </button>
+          ) )}
+        </div>
+      </div>
+
+      {/* Skills Selection */}
+      <div>
+        <h3 className="text-lg font-semibold text-green-400 mb-2">Agent Skills</h3>
+        <p className="text-sm text-gray-400 mb-3">
+          Skills are reusable capabilities the agent can invoke during conversations. Select which skills this agent should have access to.
+        </p>
+
+        {!availableSkills ? (
+          <div className="text-gray-500 text-sm py-4">Loading skills...</div>
+        ) : availableSkills.length === 0 ? (
+          <div className="text-gray-500 text-sm py-4 border border-dashed border-gray-700 rounded-lg text-center">
+            No skills available yet. Skills will be seeded automatically on first use, or you can create custom skills.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-80 overflow-y-auto">
+            {availableSkills.map( ( skill ) => {
+              const isSelected = currentSkills.some( ( s ) => s.name === skill.name );
+              return (
+                <button
+                  key={skill._id}
+                  onClick={() => toggleSkill( skill )}
+                  className={`p-3 rounded-lg border text-left transition-colors ${
+                    isSelected
+                      ? "border-green-500 bg-green-900/20 text-green-300"
+                      : "border-gray-700 bg-gray-800/50 text-gray-400 hover:border-gray-600"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-sm">{skill.displayName || skill.name}</span>
+                    {skill.tags && skill.tags.length > 0 && (
+                      <span className="text-xs px-1.5 py-0.5 bg-gray-700 rounded text-gray-400">
+                        {skill.tags[0]}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-xs mt-1 opacity-75 line-clamp-2">{skill.description}</div>
+                  {isSelected && (
+                    <div className="mt-2 flex items-center gap-1 text-xs text-green-400">
+                      <CheckCircle className="w-3 h-3" /> Selected
+                    </div>
+                  )}
+                </button>
+              );
+            } )}
+          </div>
+        )}
+      </div>
+
+      {/* Summary */}
+      {currentSkills.length > 0 && (
+        <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700">
+          <div className="text-sm text-gray-300">
+            <span className="text-green-400 font-medium">{currentSkills.length}</span> skill{currentSkills.length !== 1 ? "s" : ""} selected
+            {config.thinkingLevel && (
+              <span className="ml-3 text-yellow-400">Thinking: {config.thinkingLevel}</span>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

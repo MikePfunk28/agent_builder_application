@@ -68,6 +68,7 @@ import type * as lib_roles from "../lib/roles.js";
 import type * as lib_strandsTools from "../lib/strandsTools.js";
 import type * as lib_tierConfig from "../lib/tierConfig.js";
 import type * as lib_tokenBilling from "../lib/tokenBilling.js";
+import type * as lib_toolDispatch from "../lib/toolDispatch.js";
 import type * as lib_unifiedModalitySwitching from "../lib/unifiedModalitySwitching.js";
 import type * as localModelDetector from "../localModelDetector.js";
 import type * as maintenance from "../maintenance.js";
@@ -179,6 +180,7 @@ declare const fullApi: ApiFromModules<{
   "lib/strandsTools": typeof lib_strandsTools;
   "lib/tierConfig": typeof lib_tierConfig;
   "lib/tokenBilling": typeof lib_tokenBilling;
+  "lib/toolDispatch": typeof lib_toolDispatch;
   "lib/unifiedModalitySwitching": typeof lib_unifiedModalitySwitching;
   localModelDetector: typeof localModelDetector;
   maintenance: typeof maintenance;

@@ -10,12 +10,8 @@
 import { v } from "convex/values";
 import { action } from "./_generated/server";
 import { api, internal } from "./_generated/api";
-import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
+import { BedrockRuntimeClient } from "@aws-sdk/client-bedrock-runtime";
 
-const WORKFLOW_MODEL_ID =
-  process.env.BEDROCK_WORKFLOW_MODEL_ID ||
-  process.env.DEFAULT_BEDROCK_MODEL_ID ||
-  "anthropic.claude-haiku-4-5-20251001-v1:0";
 const WORKFLOW_REGION =
   process.env.BEDROCK_REGION ||
   process.env.AWS_REGION ||
@@ -25,7 +21,12 @@ const bedrockClient = new BedrockRuntimeClient( {
   region: WORKFLOW_REGION,
 } );
 
+// Recommended default: Haiku 4.5 (cheapest Claude model — good for multi-stage workflows).
+// User can override with any Bedrock model from the UI.
+const DEFAULT_WORKFLOW_MODEL = "anthropic.claude-haiku-4-5-20251001-v1:0";
+
 type WorkflowModelPayload = {
+  modelId: string;
   stageName: string;
   systemPrompt: string;
   userPrompt: string;
@@ -179,6 +180,7 @@ Output:
  */
 export const executeWorkflowStage = action( {
   args: {
+    modelId: v.optional( v.string() ),
     stage: v.string(),
     userInput: v.string(),
     previousContext: v.optional( v.array( v.object( {
@@ -188,10 +190,12 @@ export const executeWorkflowStage = action( {
     conversationId: v.optional( v.string() )
   },
   handler: async ( ctx, args ) => {
+    const effectiveModelId = args.modelId || DEFAULT_WORKFLOW_MODEL;
+
     // Gate: enforce tier-based Bedrock access
     const { requireBedrockAccess } = await import( "./lib/bedrockGate" );
     const gateResult = await requireBedrockAccess(
-      ctx, WORKFLOW_MODEL_ID,
+      ctx, effectiveModelId,
       async ( lookupArgs ) => ctx.runQuery( internal.users.getInternal, lookupArgs ),
     );
     if ( !gateResult.allowed ) {
@@ -215,6 +219,7 @@ export const executeWorkflowStage = action( {
     const fullPrompt = `${contextPrompt}USER REQUEST:\n${args.userInput}\n\nYour task: ${stage.systemPrompt}`;
 
     const result = await invokeWorkflowModel( {
+      modelId: effectiveModelId,
       stageName: stage.name,
       systemPrompt: stage.systemPrompt,
       userPrompt: fullPrompt,
@@ -225,13 +230,13 @@ export const executeWorkflowStage = action( {
       try {
         await ctx.runMutation( internal.stripeMutations.incrementUsageAndReportOverage, {
           userId: gateResult.userId,
-          modelId: WORKFLOW_MODEL_ID,
+          modelId: effectiveModelId,
           inputTokens: result.inputTokens,
           outputTokens: result.outputTokens,
         } );
       } catch ( billingErr ) {
         console.error( "agentBuilderWorkflow: billing failed (non-fatal)", {
-          userId: gateResult.userId, modelId: WORKFLOW_MODEL_ID,
+          userId: gateResult.userId, modelId: effectiveModelId,
           inputTokens: result.inputTokens, outputTokens: result.outputTokens,
           error: billingErr instanceof Error ? billingErr.message : billingErr,
         } );
@@ -249,8 +254,32 @@ export const executeWorkflowStage = action( {
   }
 } );
 
+/**
+ * Model-aware workflow invocation.
+ * - Claude models → InvokeModelCommand with anthropic_version (supports thinking)
+ * - All other models → ConverseCommand (universal Bedrock API)
+ */
 async function invokeWorkflowModel( payload: WorkflowModelPayload ): Promise<WorkflowModelResult> {
-  const { stageName, systemPrompt, userPrompt } = payload;
+  const { modelId, stageName, systemPrompt, userPrompt } = payload;
+
+  const { resolveBedrockModelId, getModelThinkingConfig } = await import( "./modelRegistry.js" );
+  const resolvedModelId = resolveBedrockModelId( modelId );
+  const thinkingConfig = getModelThinkingConfig( resolvedModelId );
+
+  // Claude models: use InvokeModelCommand with anthropic_version for best results
+  if ( thinkingConfig.apiPath === "anthropic-invoke" ) {
+    return invokeViaClaude( resolvedModelId, stageName, systemPrompt, userPrompt );
+  }
+
+  // All other models: use ConverseCommand (universal Bedrock API)
+  return invokeViaConverse( resolvedModelId, stageName, systemPrompt, userPrompt );
+}
+
+/** Claude-specific path: InvokeModelCommand with anthropic_version header */
+async function invokeViaClaude(
+  resolvedModelId: string, stageName: string, systemPrompt: string, userPrompt: string,
+): Promise<WorkflowModelResult> {
+  const { InvokeModelCommand } = await import( "@aws-sdk/client-bedrock-runtime" );
 
   const requestBody = {
     anthropic_version: "bedrock-2023-05-31",
@@ -258,20 +287,12 @@ async function invokeWorkflowModel( payload: WorkflowModelPayload ): Promise<Wor
     max_tokens: 8000,
     temperature: 0.7,
     messages: [
-      {
-        role: "user",
-        content: [
-          {
-            type: "text",
-            text: userPrompt,
-          },
-        ],
-      },
+      { role: "user", content: [{ type: "text", text: userPrompt }] },
     ],
   };
 
   const command = new InvokeModelCommand( {
-    modelId: WORKFLOW_MODEL_ID,
+    modelId: resolvedModelId,
     contentType: "application/json",
     accept: "application/json",
     body: JSON.stringify( requestBody ),
@@ -293,20 +314,51 @@ async function invokeWorkflowModel( payload: WorkflowModelPayload ): Promise<Wor
     }
 
     const usage = json.usage ?? {};
-    const inputTokens = usage.input_tokens ?? usage.inputTokens ?? 0;
-    const outputTokens = usage.output_tokens ?? usage.outputTokens ?? 0;
-
     return {
       outputText,
-      inputTokens,
-      outputTokens,
+      inputTokens: usage.input_tokens ?? usage.inputTokens ?? 0,
+      outputTokens: usage.output_tokens ?? usage.outputTokens ?? 0,
     };
   } catch ( error: any ) {
-    console.error( "Bedrock workflow invocation failed", {
-      stageName,
-      modelId: WORKFLOW_MODEL_ID,
-      region: WORKFLOW_REGION,
-      error: error?.message,
+    console.error( "Bedrock workflow invocation failed (Claude path)", {
+      stageName, modelId: resolvedModelId, region: WORKFLOW_REGION, error: error?.message,
+    } );
+    throw new Error(
+      `Bedrock workflow stage "${stageName}" failed: ${error?.message || "Unknown error"}`
+    );
+  }
+}
+
+/** Universal path: ConverseCommand works with ALL Bedrock models */
+async function invokeViaConverse(
+  resolvedModelId: string, stageName: string, systemPrompt: string, userPrompt: string,
+): Promise<WorkflowModelResult> {
+  const { ConverseCommand } = await import( "@aws-sdk/client-bedrock-runtime" );
+
+  const command = new ConverseCommand( {
+    modelId: resolvedModelId,
+    messages: [{ role: "user", content: [{ text: userPrompt }] }],
+    system: [{ text: systemPrompt }],
+    inferenceConfig: { maxTokens: 8000, temperature: 0.7 },
+  } );
+
+  try {
+    const response = await bedrockClient.send( command );
+    const outputText = response.output?.message?.content?.[0]?.text || "";
+
+    if ( !outputText ) {
+      throw new Error( "Bedrock response did not include text content" );
+    }
+
+    const usage = response.usage ?? { inputTokens: 0, outputTokens: 0 };
+    return {
+      outputText,
+      inputTokens: usage.inputTokens ?? 0,
+      outputTokens: usage.outputTokens ?? 0,
+    };
+  } catch ( error: any ) {
+    console.error( "Bedrock workflow invocation failed (Converse path)", {
+      stageName, modelId: resolvedModelId, region: WORKFLOW_REGION, error: error?.message,
     } );
     throw new Error(
       `Bedrock workflow stage "${stageName}" failed: ${error?.message || "Unknown error"}`
@@ -319,14 +371,17 @@ async function invokeWorkflowModel( payload: WorkflowModelPayload ): Promise<Wor
  */
 export const executeCompleteWorkflow = action( {
   args: {
+    modelId: v.optional( v.string() ),
     userRequest: v.string(),
     conversationId: v.optional( v.string() )
   },
   handler: async ( ctx, args ) => {
+    const effectiveModelId = args.modelId || DEFAULT_WORKFLOW_MODEL;
+
     // Gate: enforce tier-based Bedrock access
     const { requireBedrockAccess } = await import( "./lib/bedrockGate" );
     const gateResult = await requireBedrockAccess(
-      ctx, WORKFLOW_MODEL_ID,
+      ctx, effectiveModelId,
       async ( lookupArgs ) => ctx.runQuery( internal.users.getInternal, lookupArgs ),
     );
     if ( !gateResult.allowed ) {
@@ -351,6 +406,7 @@ export const executeCompleteWorkflow = action( {
     // Execute each stage sequentially, passing context forward
     for ( const stageName of stages ) {
       const result = await ctx.runAction( api.agentBuilderWorkflow.executeWorkflowStage, {
+        modelId: effectiveModelId,
         stage: stageName,
         userInput: args.userRequest,
         previousContext: workflowResults.map( r => ( {
@@ -383,27 +439,30 @@ export const executeCompleteWorkflow = action( {
 
 /**
  * Stream workflow execution with real-time updates
+ * Uses Bedrock Converse API (works with ALL Bedrock models) with token billing.
  */
 export const streamWorkflowExecution = action( {
   args: {
     userRequest: v.string(),
-    conversationId: v.optional( v.string() )
+    modelId: v.optional( v.string() ), // User selects model; falls back to platform default
+    conversationId: v.optional( v.string() ),
   },
   handler: async ( ctx, args ) => {
+    const effectiveModelId = args.modelId || DEFAULT_WORKFLOW_MODEL;
+
     // Gate: enforce tier-based Bedrock access
     const { requireBedrockAccess } = await import( "./lib/bedrockGate" );
     const gateResult = await requireBedrockAccess(
-      ctx, WORKFLOW_MODEL_ID,
+      ctx, effectiveModelId,
       async ( lookupArgs ) => ctx.runQuery( internal.users.getInternal, lookupArgs ),
     );
     if ( !gateResult.allowed ) {
       throw new Error( gateResult.reason );
     }
 
-    const Anthropic = ( await import( "@anthropic-ai/sdk" ) ).default;
-    const anthropic = new Anthropic( {
-      apiKey: process.env.ANTHROPIC_API_KEY,
-    } );
+    const { ConverseCommand } = await import( "@aws-sdk/client-bedrock-runtime" );
+    const { resolveBedrockModelId } = await import( "./modelRegistry.js" );
+    const resolvedModelId = resolveBedrockModelId( effectiveModelId );
 
     const stages = [
       "REQUIREMENTS",
@@ -411,15 +470,17 @@ export const streamWorkflowExecution = action( {
       "TOOL_DESIGN",
       "IMPLEMENTATION",
       "CODE_GENERATION",
-      "VALIDATION"
+      "VALIDATION",
     ];
 
     const workflowContext: Array<{ stage: string; output: string }> = [];
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
 
     for ( const stageName of stages ) {
       const stage = WORKFLOW_STAGES[stageName as keyof typeof WORKFLOW_STAGES];
 
-      // Build context
+      // Build context from previous stages
       let contextPrompt = "";
       if ( workflowContext.length > 0 ) {
         contextPrompt = "\n\nPREVIOUS WORKFLOW OUTPUTS:\n\n";
@@ -430,37 +491,58 @@ export const streamWorkflowExecution = action( {
 
       const fullPrompt = `${contextPrompt}USER REQUEST:\n${args.userRequest}\n\nYour task: ${stage.systemPrompt}`;
 
-      // Stream this stage
-      const stream = await anthropic.messages.create( {
-        model: "claude-3-7-sonnet-20250219",
-        max_tokens: 8000,
-        temperature: 0.7,
-        system: stage.systemPrompt,
-        messages: [{
-          role: "user",
-          content: fullPrompt
-        }],
-        stream: true
+      // Use Converse API — works with ALL Bedrock models (Claude, DeepSeek, Kimi, Llama, etc.)
+      const command = new ConverseCommand( {
+        modelId: resolvedModelId,
+        messages: [{ role: "user", content: [{ text: fullPrompt }] }],
+        system: [{ text: stage.systemPrompt }],
+        inferenceConfig: {
+          maxTokens: 8000,
+          temperature: 0.7,
+        },
       } );
 
-      let stageOutput = "";
+      const response = await bedrockClient.send( command );
 
-      for await ( const event of stream ) {
-        if ( event.type === "content_block_delta" &&
-          event.delta.type === "text_delta" ) {
-          stageOutput += event.delta.text;
-        }
-      }
+      // Extract response text
+      const stageOutput = response.output?.message?.content?.[0]?.text || "";
+
+      // Accumulate tokens across all stages
+      const usage = response.usage ?? { inputTokens: 0, outputTokens: 0 };
+      totalInputTokens += usage.inputTokens || 0;
+      totalOutputTokens += usage.outputTokens || 0;
 
       workflowContext.push( {
         stage: stage.name,
-        output: stageOutput
+        output: stageOutput,
       } );
+    }
+
+    // Bill accumulated usage across all 6 stages (non-fatal)
+    if ( totalInputTokens > 0 || totalOutputTokens > 0 ) {
+      try {
+        await ctx.runMutation( internal.stripeMutations.incrementUsageAndReportOverage, {
+          userId: gateResult.userId,
+          modelId: resolvedModelId,
+          inputTokens: totalInputTokens,
+          outputTokens: totalOutputTokens,
+        } );
+      } catch ( error_ ) {
+        console.error( "streamWorkflowExecution: billing failed (non-fatal)", {
+          userId: gateResult.userId, modelId: resolvedModelId,
+          inputTokens: totalInputTokens, outputTokens: totalOutputTokens,
+          error: error_ instanceof Error ? error_.message : error_,
+        } );
+      }
     }
 
     return {
       success: true,
-      workflow: workflowContext
+      workflow: workflowContext,
+      totalUsage: {
+        inputTokens: totalInputTokens,
+        outputTokens: totalOutputTokens,
+      },
     };
-  }
+  },
 } );

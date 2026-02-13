@@ -78,10 +78,15 @@ export const executeAgentCoreTest = internalAction( {
         return { success: false, error: "Burst rate limit exceeded" };
       }
 
+      // Use test-level model override if set (allows designing with one model, testing with another).
+      // submitTest stores the user's testModelId in modelConfig.modelId.
+      const effectiveModel = testDetails.modelConfig?.modelId || agent.model;
+      const effectiveProvider = testDetails.modelProvider || agent.modelProvider;
+
       // PROVIDER TIER GATE: Enforce per-tier allowed provider rules
       // (mirrors strandsAgentExecution.ts, strandsAgentExecutionDynamic.ts,
       // and testExecution.ts logic).
-      const isOllama = agent.modelProvider === "ollama";
+      const isOllama = effectiveProvider === "ollama";
       if ( !isOllama && !isProviderAllowedForTier( tier, "bedrock" ) ) {
         await ctx.runMutation( internal.testExecution.updateStatus, {
           testId: args.testId,
@@ -98,13 +103,13 @@ export const executeAgentCoreTest = internalAction( {
       let result;
       let executionMethod = "bedrock";
 
-      // Check if agent uses Ollama
+      // Check if test uses Ollama (via override or agent config)
       if ( isOllama ) {
         result = await executeViaOllama( {
           input: args.input,
-          modelId: agent.model,
+          modelId: effectiveModel,
           systemPrompt: agent.systemPrompt,
-          ollamaEndpoint: agent.ollamaEndpoint || "http://localhost:11434",
+          ollamaEndpoint: agent.ollamaEndpoint || testDetails.modelConfig?.baseUrl || "http://localhost:11434",
           conversationHistory: args.conversationHistory,
         } );
         executionMethod = "ollama";
@@ -112,7 +117,7 @@ export const executeAgentCoreTest = internalAction( {
         // PRIMARY: Direct Bedrock API (cheapest)
         result = await executeViaDirectBedrock( {
           input: args.input,
-          modelId: agent.model,
+          modelId: effectiveModel,
           systemPrompt: agent.systemPrompt,
           conversationHistory: args.conversationHistory,
         } );
@@ -140,17 +145,29 @@ export const executeAgentCoreTest = internalAction( {
 
       const executionTime = Date.now() - startTime;
 
-      if ( result.success ) {
-        // TRACK USAGE: Only on successful completion
-        await ctx.runMutation( internal.testExecution.incrementUserUsage, {
-          userId: executionUserId,
-          testId: args.testId,
-          usage: result.result?.usage,
-          executionTime,
-          executionMethod,
-          modelId: agent.model,
-        } );
+      // TRACK USAGE: Bill for Bedrock usage regardless of success/failure —
+      // tokens are consumed even if the response was unusable.
+      // Ollama is free so skip billing. submitTest pre-bills flat; this tracks
+      // actual token usage for reconciliation.
+      if ( !isOllama && result.result?.usage ) {
+        try {
+          await ctx.runMutation( internal.testExecution.incrementUserUsage, {
+            userId: executionUserId,
+            testId: args.testId,
+            usage: result.result.usage,
+            executionTime,
+            executionMethod,
+            modelId: effectiveModel,
+          } );
+        } catch ( billingErr ) {
+          console.error( "agentcoreTestExecution: usage tracking failed (non-fatal)", {
+            testId: args.testId,
+            error: billingErr instanceof Error ? billingErr.message : billingErr,
+          } );
+        }
+      }
 
+      if ( result.success ) {
         // Update test with success
         await ctx.runMutation( internal.testExecution.updateStatus, {
           testId: args.testId,
@@ -166,7 +183,7 @@ export const executeAgentCoreTest = internalAction( {
           executionMethod,
         };
       } else {
-        // Update test with failure (no usage tracking for failures)
+        // Update test with failure
         await ctx.runMutation( internal.testExecution.updateStatus, {
           testId: args.testId,
           status: "FAILED",
@@ -405,12 +422,15 @@ async function executeViaLambda( params: {
   try {
     const { LambdaClient, InvokeCommand } = await import( "@aws-sdk/client-lambda" );
 
+    const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
+    const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
+    if ( !accessKeyId || !secretAccessKey ) {
+      return { success: false, error: "AWS credentials not configured for Lambda fallback" };
+    }
+
     const client = new LambdaClient( {
       region: process.env.AWS_REGION || "us-east-1",
-      credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-      },
+      credentials: { accessKeyId, secretAccessKey },
     } );
 
     const command = new InvokeCommand( {

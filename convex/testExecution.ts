@@ -59,6 +59,7 @@ export const submitTest = mutation({
       v.literal("agentcore"),
       v.literal("fargate")
     )),
+    testModelId: v.optional(v.string()), // Override: test with a different model than agent was designed with
   },
   handler: async (ctx, args) => {
     // Authentication - use getAuthUserId for Convex user document ID
@@ -85,7 +86,12 @@ export const submitTest = mutation({
 
     // Determine model provider EARLY to check if it's Ollama
     // Ollama models are FREE (run locally), so no rate limiting needed!
-    const isOllamaModel = agent.deploymentType === "ollama" || (!agent.deploymentType && agent.model.includes(':') && !agent.model.includes('.'));
+    // When testModelId is provided, check THAT model's provider (user may test with Ollama to save usage).
+    const testModel = args.testModelId || agent.model;
+    const testDeployType = args.testModelId
+      ? ( args.testModelId.includes( ":" ) && !args.testModelId.includes( "." ) ? "ollama" : agent.deploymentType )
+      : agent.deploymentType;
+    const isOllamaModel = testDeployType === "ollama" || (!testDeployType && testModel.includes(':') && !testModel.includes('.'));
 
     // RATE LIMITING: Only for Bedrock/cloud models (Ollama is FREE and unlimited!)
     if (!isOllamaModel) {
@@ -176,8 +182,13 @@ export const submitTest = mutation({
       throw new Error(`Dockerfile exceeds maximum size of ${MAX_DOCKERFILE_SIZE} bytes`);
     }
 
-    // Determine model provider and config
-    const { modelProvider, modelConfig } = extractModelConfig(agent.model, agent.deploymentType);
+    // Determine model provider and config — use testModelId override if provided,
+    // so the user can design with one model and test with another.
+    const effectiveModel = args.testModelId || agent.model;
+    const effectiveDeploymentType = args.testModelId
+      ? ( args.testModelId.includes( ":" ) && !args.testModelId.includes( "." ) ? "ollama" : agent.deploymentType )
+      : agent.deploymentType;
+    const { modelProvider, modelConfig } = extractModelConfig(effectiveModel, effectiveDeploymentType);
 
     // Get conversation history if conversationId provided
     if (args.conversationId) {
@@ -219,7 +230,7 @@ export const submitTest = mutation({
 
     // BILLING: Increment user's weighted execution units ONLY for cloud models (not Ollama)
     if (!isOllamaModel) {
-      await incrementUsageAndReportOverageImpl( ctx, userId, { updateLastTestAt: true, modelId: agent.model } );
+      await incrementUsageAndReportOverageImpl( ctx, userId, { updateLastTestAt: true, modelId: effectiveModel } );
     }
 
     // Trigger queue processor immediately (on-demand processing to save costs)

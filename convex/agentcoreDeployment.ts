@@ -204,10 +204,17 @@ export const invokeAgentCoreSandbox = action({
   },
   handler: async (ctx, args): Promise<any> => {
     try {
-      // Invoke agent in AgentCore sandbox via MCP
+      // Auth check — only authenticated users can invoke sandboxes
+      const userProfile = await ctx.runQuery(api.deploymentRouter.getUserTier);
+      if ( !userProfile ) {
+        throw new Error( "Not authenticated — sign in to invoke agent sandboxes" );
+      }
+
+      // Invoke agent in AgentCore sandbox via MCP (pass userId for billing readiness)
       const invocationResult = await ctx.runAction(api.mcpClient.invokeMCPTool, {
         serverName: "bedrock-agentcore-mcp-server",
         toolName: "invoke_sandbox",
+        userId: userProfile._id,
         parameters: {
           sandboxId: args.sandboxId,
           input: args.input,

@@ -36,8 +36,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          PROJECT_NAME="Agent Builder Application"
-          PROJECT_DESC="Agent Builder Application - AI agent creation, testing, and deployment platform"
+          PROJECT_NAME="@MikePfunk28's Agent Builder App"
+          PROJECT_DESC="Agent Builder Project"
 
           # Check if project exists
           proj_list=$(gh project list --owner ${{ github.repository_owner }} --format json 2>&1)
