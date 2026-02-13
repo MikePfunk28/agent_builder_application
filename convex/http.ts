@@ -517,19 +517,44 @@ http.route({
         }
 
         case "charge.dispute.created": {
-          // Stripe Dispute: customer is on the linked charge, not top-level.
-          // Use the raw event data which includes customer as a string.
+          // Stripe Dispute: customer may be top-level, on expanded charge, or
+          // require a charge lookup when charge is a string ID (not expanded).
           const disputeData = event.data.object as any;
-          const disputeCustomer: string | undefined =
-            typeof disputeData.customer === "string"
-              ? disputeData.customer
-              : typeof disputeData.charge === "string"
-                ? undefined // charge ID only — need to look up; skip for now
-                : disputeData.charge?.customer;
+          let disputeCustomer: string | undefined;
+
+          if ( typeof disputeData.customer === "string" ) {
+            // Customer is directly on the dispute object
+            disputeCustomer = disputeData.customer;
+          } else if ( typeof disputeData.charge === "string" ) {
+            // Charge is an unexpanded string ID — fetch it to get customer
+            try {
+              const chargeObj = await stripe.charges.retrieve( disputeData.charge );
+              disputeCustomer = typeof chargeObj.customer === "string"
+                ? chargeObj.customer
+                : typeof chargeObj.customer === "object" && chargeObj.customer !== null
+                  ? chargeObj.customer.id
+                  : undefined;
+            } catch ( chargeErr ) {
+              console.error( "Failed to retrieve charge for dispute", {
+                chargeId: disputeData.charge,
+                error: chargeErr instanceof Error ? chargeErr.message : chargeErr,
+              } );
+            }
+          } else if ( disputeData.charge?.customer ) {
+            // Charge is an expanded object with customer
+            disputeCustomer = typeof disputeData.charge.customer === "string"
+              ? disputeData.charge.customer
+              : disputeData.charge.customer?.id;
+          }
+
           if ( disputeCustomer ) {
             await ctx.runMutation(internal.stripeMutations.restrictAccountForDispute, {
               stripeCustomerId: disputeCustomer,
             });
+          } else {
+            console.error( "charge.dispute.created: could not resolve customer", {
+              disputeId: disputeData.id,
+            } );
           }
           break;
         }

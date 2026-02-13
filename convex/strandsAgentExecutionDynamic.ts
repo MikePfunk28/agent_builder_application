@@ -162,14 +162,24 @@ export const executeAgentWithDynamicModel = action( {
         } );
       }
 
-      // ─── Token-based metering ───────────────────────────────────────────
+      // ─── Token-based metering (non-fatal) ────────────────────────────────
       if ( result.tokenUsage ) {
-        await ctx.runMutation( internal.stripeMutations.incrementUsageAndReportOverage, {
-          userId: agent.createdBy,
-          modelId: agent.model,
-          inputTokens: result.tokenUsage.inputTokens,
-          outputTokens: result.tokenUsage.outputTokens,
-        } );
+        const executedModel = result.metadata?.model ?? agent.model;
+        try {
+          await ctx.runMutation( internal.stripeMutations.incrementUsageAndReportOverage, {
+            userId: agent.createdBy,
+            modelId: executedModel,
+            inputTokens: result.tokenUsage.inputTokens,
+            outputTokens: result.tokenUsage.outputTokens,
+          } );
+        } catch ( billingErr ) {
+          console.error( "strandsAgentExecutionDynamic: billing failed (non-fatal)", {
+            userId: agent.createdBy, modelId: executedModel,
+            inputTokens: result.tokenUsage.inputTokens,
+            outputTokens: result.tokenUsage.outputTokens,
+            error: billingErr instanceof Error ? billingErr.message : billingErr,
+          } );
+        }
       }
 
       return result;
@@ -388,9 +398,11 @@ async function executeDirectBedrock(
   const { extractTokenUsage, estimateTokenUsage } = await import( "./lib/tokenBilling" );
   let tokenUsage = extractTokenUsage( responseBody, modelId );
 
-  // Fallback: estimate from text when provider doesn't return counts
+  // Fallback: estimate from user-facing text (not full JSON payload which inflates counts)
   if ( tokenUsage.totalTokens === 0 ) {
-    const inputText = JSON.stringify( payload );
+    const systemText = agent.systemPrompt || "";
+    const historyText = history.map( ( m ) => m.content ).join( "\n" );
+    const inputText = [systemText, historyText, message].filter( Boolean ).join( "\n" );
     tokenUsage = estimateTokenUsage( inputText, content );
   }
 

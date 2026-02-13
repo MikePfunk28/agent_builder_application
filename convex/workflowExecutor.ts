@@ -25,15 +25,14 @@ async function getUserScope( ctx: any ): Promise<string> {
   }
 
   // subject and tokenIdentifier are always unique per user in Convex auth.
-  // email is a reasonable fallback. Do NOT use identity.provider alone —
-  // it is just the provider name (e.g., "github") and is the same for all users.
+  // Do NOT use identity.email — emails can collide across providers.
+  // Do NOT use identity.provider alone — it is just the provider name.
   const scope =
     identity.subject ||
-    identity.tokenIdentifier ||
-    identity.email;
+    identity.tokenIdentifier;
 
   if ( !scope ) {
-    throw new Error( "Unable to resolve user identity." );
+    throw new Error( "Unable to resolve stable user identity: subject and tokenIdentifier both missing." );
   }
 
   return scope;
@@ -164,7 +163,7 @@ async function executePromptModelWorkflow(
     } );
 
     // Gate: enforce tier-based Bedrock access before executing
-    let gateResult: { allowed: true; userId: string; tier: string } | undefined;
+    let gateResult: { allowed: true; userId: import("./_generated/dataModel").Id<"users">; tier: string } | undefined;
     if ( composed.kind === "bedrock" ) {
       const { requireBedrockAccess } = await import( "./lib/bedrockGate" );
       const gate = await requireBedrockAccess(
@@ -181,14 +180,22 @@ async function executePromptModelWorkflow(
     // Execute composed messages with actual API calls
     const result = await executeComposedMessages( composed );
 
-    // Meter token usage for billing
+    // Meter token usage for billing (non-fatal: don't kill workflow execution)
     if ( result.tokenUsage && gateResult ) {
-      await ctx.runMutation( internal.stripeMutations.incrementUsageAndReportOverage, {
-        userId: gateResult.userId as any,
-        modelId: composed.bedrock?.modelId,
-        inputTokens: result.tokenUsage.inputTokens,
-        outputTokens: result.tokenUsage.outputTokens,
-      } );
+      try {
+        await ctx.runMutation( internal.stripeMutations.incrementUsageAndReportOverage, {
+          userId: gateResult.userId,
+          modelId: composed.bedrock?.modelId,
+          inputTokens: result.tokenUsage.inputTokens,
+          outputTokens: result.tokenUsage.outputTokens,
+        } );
+      } catch ( billingErr ) {
+        console.error( "workflowExecutor: billing failed (non-fatal)", {
+          userId: gateResult.userId, modelId: composed.bedrock?.modelId,
+          inputTokens: result.tokenUsage.inputTokens, outputTokens: result.tokenUsage.outputTokens,
+          error: billingErr instanceof Error ? billingErr.message : billingErr,
+        } );
+      }
     }
 
     return {

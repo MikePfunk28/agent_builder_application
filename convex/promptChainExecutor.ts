@@ -43,7 +43,7 @@ export const executePromptChain = action({
   }> => {
     // Gate: enforce tier-based Bedrock access if any prompt uses a Bedrock model
     const hasBedrock = args.prompts.some( ( p ) => p.model.startsWith( "bedrock:" ) );
-    let gateUserId: any = null;
+    let gateUserId: import("./_generated/dataModel").Id<"users"> | null = null;
     let gateModelId: string | undefined;
     if ( hasBedrock ) {
       const { requireBedrockAccess } = await import( "./lib/bedrockGate" );
@@ -119,14 +119,22 @@ export const executePromptChain = action({
         }
       }
 
-      // Meter: token-based billing for the entire chain
+      // Meter: token-based billing for the entire chain (non-fatal)
       if ( gateUserId && ( totalInputTokens > 0 || totalOutputTokens > 0 ) ) {
-        await ctx.runMutation( internal.stripeMutations.incrementUsageAndReportOverage, {
-          userId: gateUserId,
-          modelId: gateModelId,
-          inputTokens: totalInputTokens,
-          outputTokens: totalOutputTokens,
-        } );
+        try {
+          await ctx.runMutation( internal.stripeMutations.incrementUsageAndReportOverage, {
+            userId: gateUserId,
+            modelId: gateModelId,
+            inputTokens: totalInputTokens,
+            outputTokens: totalOutputTokens,
+          } );
+        } catch ( billingErr ) {
+          console.error( "promptChainExecutor: billing failed (non-fatal)", {
+            userId: gateUserId, modelId: gateModelId,
+            inputTokens: totalInputTokens, outputTokens: totalOutputTokens,
+            error: billingErr instanceof Error ? billingErr.message : billingErr,
+          } );
+        }
       }
 
       const totalLatency = Date.now() - startTime;
@@ -173,10 +181,11 @@ export const executeParallelPrompts = action({
       error?: string;
     }>;
     totalLatency: number;
+    error?: string;
   }> => {
     // Gate: enforce tier-based Bedrock access if any prompt uses a Bedrock model
     const hasBedrock = args.prompts.some( ( p ) => p.model.startsWith( "bedrock:" ) );
-    let gateUserId: any = null;
+    let gateUserId: import("./_generated/dataModel").Id<"users"> | null = null;
     let gateModelId: string | undefined;
     if ( hasBedrock ) {
       const { requireBedrockAccess } = await import( "./lib/bedrockGate" );
@@ -191,6 +200,7 @@ export const executeParallelPrompts = action({
           success: false,
           results: [],
           totalLatency: 0,
+          error: gateResult.reason,
         };
       }
       gateUserId = gateResult.userId;
@@ -431,7 +441,7 @@ export const testPrompt = action({
     error?: string;
   }> => {
     // Gate: enforce tier-based Bedrock access
-    let gateUserId: any = null;
+    let gateUserId: import("./_generated/dataModel").Id<"users"> | null = null;
     let gateModelId: string | undefined;
     if ( args.model.startsWith( "bedrock:" ) ) {
       const { requireBedrockAccess } = await import( "./lib/bedrockGate" );
@@ -455,14 +465,22 @@ export const testPrompt = action({
       // Execute
       const modelResult = await invokeModel(args.model, renderedPrompt, ctx);
 
-      // Meter: token-based billing
+      // Meter: token-based billing (non-fatal)
       if ( gateUserId && ( modelResult.inputTokens > 0 || modelResult.outputTokens > 0 ) ) {
-        await ctx.runMutation( internal.stripeMutations.incrementUsageAndReportOverage, {
-          userId: gateUserId,
-          modelId: gateModelId,
-          inputTokens: modelResult.inputTokens,
-          outputTokens: modelResult.outputTokens,
-        } );
+        try {
+          await ctx.runMutation( internal.stripeMutations.incrementUsageAndReportOverage, {
+            userId: gateUserId,
+            modelId: gateModelId,
+            inputTokens: modelResult.inputTokens,
+            outputTokens: modelResult.outputTokens,
+          } );
+        } catch ( billingErr ) {
+          console.error( "promptChainExecutor: billing failed (non-fatal)", {
+            userId: gateUserId, modelId: gateModelId,
+            inputTokens: modelResult.inputTokens, outputTokens: modelResult.outputTokens,
+            error: billingErr instanceof Error ? billingErr.message : billingErr,
+          } );
+        }
       }
 
       return {

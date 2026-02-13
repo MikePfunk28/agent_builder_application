@@ -190,7 +190,7 @@ export const submitTest = mutation({
     // Create test execution record
     const testId = await ctx.db.insert("testExecutions", {
       agentId: args.agentId,
-      userId: effectiveUserId as any,
+      userId: effectiveUserId,
       testQuery: args.testQuery,
       agentCode: agent.generatedCode,
       requirements,
@@ -445,7 +445,7 @@ export const retryTest = mutation({
     // Create new test with same configuration
     const newTestId = await ctx.db.insert("testExecutions", {
       agentId: originalTest.agentId,
-      userId: effectiveUserId as any,
+      userId: effectiveUserId,
       testQuery: args.modifyQuery || originalTest.testQuery,
       agentCode: originalTest.agentCode,
       requirements: originalTest.requirements,

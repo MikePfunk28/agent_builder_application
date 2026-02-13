@@ -10,7 +10,10 @@ import { Id } from "../../convex/_generated/dataModel";
 import { Server, CheckCircle, Circle, Info, Wrench } from "lucide-react";
 
 interface MCPServer {
-  _id: Id<"mcpServers">;
+  // Built-in servers use string synthetic ids (e.g. "system_ollama");
+  // DB-backed servers use Convex Id<"mcpServers">. Accept both.
+  _id: Id<"mcpServers"> | string;
+  source?: "system" | "user";
   name: string;
   command: string;
   args: string[];

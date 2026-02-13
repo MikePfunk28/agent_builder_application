@@ -97,6 +97,14 @@ export const executeUnifiedAgent = action({
       const isBedrock = agent.deploymentType === "bedrock"
         || ( !agent.deploymentType && /^(us\.|eu\.|apac\.|global\.)?(anthropic|amazon|meta|mistral|cohere|ai21|deepseek|moonshot)\./.test( agent.model ) );
       if ( isBedrock ) {
+        if ( !user ) {
+          return {
+            success: false,
+            modality: "text",
+            content: "",
+            error: "User record not found for agent owner. Cannot verify Bedrock access.",
+          };
+        }
         const { requireBedrockAccessForUser } = await import( "./lib/bedrockGate" );
         const gateResult = await requireBedrockAccessForUser( user, agent.model );
         if ( !gateResult.allowed ) {
@@ -105,7 +113,7 @@ export const executeUnifiedAgent = action({
             modality: "text",
             content: "",
             error: gateResult.reason,
-          } as UnifiedExecutionResult;
+          };
         }
       }
 
@@ -246,12 +254,21 @@ async function executeText(
     tokenUsage = estimateTokenUsage( message, content );
   }
   if ( tokenUsage.inputTokens > 0 || tokenUsage.outputTokens > 0 ) {
-    await ctx.runMutation( internal.stripeMutations.incrementUsageAndReportOverage, {
-      userId: agent.createdBy as any,
-      modelId: config.modelId,
-      inputTokens: tokenUsage.inputTokens,
-      outputTokens: tokenUsage.outputTokens,
-    } );
+    try {
+      await ctx.runMutation( internal.stripeMutations.incrementUsageAndReportOverage, {
+        userId: agent.createdBy,
+        modelId: config.modelId,
+        inputTokens: tokenUsage.inputTokens,
+        outputTokens: tokenUsage.outputTokens,
+      } );
+    } catch ( billingErr ) {
+      console.error( "unifiedAgentExecution: billing failed (non-fatal)", {
+        userId: agent.createdBy, modelId: config.modelId,
+        inputTokens: tokenUsage.inputTokens,
+        outputTokens: tokenUsage.outputTokens,
+        error: billingErr instanceof Error ? billingErr.message : billingErr,
+      } );
+    }
   }
 
   return {

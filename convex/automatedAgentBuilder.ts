@@ -154,14 +154,23 @@ export const processResponse = action( {
     const systemPrompt = buildSystemPrompt( session.agentRequirements );
     const response = await analyzeAndAskNext( systemPrompt, updatedHistory );
 
-    // Meter token usage for billing
+    // Meter token usage for billing (non-fatal: don't kill agent generation)
     if ( response.tokenUsage && gateResult.allowed ) {
-      await ctx.runMutation( internal.stripeMutations.incrementUsageAndReportOverage, {
-        userId: gateResult.userId as any,
-        modelId,
-        inputTokens: response.tokenUsage.inputTokens,
-        outputTokens: response.tokenUsage.outputTokens,
-      } );
+      try {
+        await ctx.runMutation( internal.stripeMutations.incrementUsageAndReportOverage, {
+          userId: gateResult.userId,
+          modelId,
+          inputTokens: response.tokenUsage.inputTokens,
+          outputTokens: response.tokenUsage.outputTokens,
+        } );
+      } catch ( billingErr ) {
+        console.error( "automatedAgentBuilder: billing failed (non-fatal)", {
+          userId: gateResult.userId, modelId,
+          inputTokens: response.tokenUsage.inputTokens,
+          outputTokens: response.tokenUsage.outputTokens,
+          error: billingErr instanceof Error ? billingErr.message : billingErr,
+        } );
+      }
     }
 
     // Parse response to extract:

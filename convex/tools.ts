@@ -361,7 +361,7 @@ export const selfConsistency = action({
   handler: async (ctx, args) => {
     // Gate: enforce tier-based Bedrock access for cloud models
     const isOllamaModel = args.model.includes(":") && !args.model.includes(".");
-    let gateResult: { allowed: true; userId: string; tier: string } | undefined;
+    let gateResult: { allowed: true; userId: import("./_generated/dataModel").Id<"users">; tier: string } | undefined;
     if (!isOllamaModel) {
       const { requireBedrockAccess } = await import("./lib/bedrockGate");
       const gate = await requireBedrockAccess(
@@ -398,14 +398,22 @@ export const selfConsistency = action({
       }
     }
 
-    // Meter accumulated token usage
+    // Meter accumulated token usage (non-fatal: don't kill tool response)
     if ((totalInputTokens > 0 || totalOutputTokens > 0) && gateResult) {
-      await ctx.runMutation(internal.stripeMutations.incrementUsageAndReportOverage, {
-        userId: gateResult.userId as any,
-        modelId: args.model,
-        inputTokens: totalInputTokens,
-        outputTokens: totalOutputTokens,
-      });
+      try {
+        await ctx.runMutation(internal.stripeMutations.incrementUsageAndReportOverage, {
+          userId: gateResult.userId,
+          modelId: args.model,
+          inputTokens: totalInputTokens,
+          outputTokens: totalOutputTokens,
+        });
+      } catch ( billingErr ) {
+        console.error( "tools: billing failed (non-fatal)", {
+          userId: gateResult.userId, modelId: args.model,
+          inputTokens: totalInputTokens, outputTokens: totalOutputTokens,
+          error: billingErr instanceof Error ? billingErr.message : billingErr,
+        } );
+      }
     }
 
     // Count votes
@@ -442,7 +450,7 @@ export const treeOfThoughts = action({
   handler: async (ctx, args) => {
     // Gate: enforce tier-based Bedrock access for cloud models
     const isOllamaModel = args.model.includes(":") && !args.model.includes(".");
-    let gateResult: { allowed: true; userId: string; tier: string } | undefined;
+    let gateResult: { allowed: true; userId: import("./_generated/dataModel").Id<"users">; tier: string } | undefined;
     if (!isOllamaModel) {
       const { requireBedrockAccess } = await import("./lib/bedrockGate");
       const gate = await requireBedrockAccess(
@@ -500,14 +508,22 @@ export const treeOfThoughts = action({
       frontier = nextFrontier;
     }
 
-    // Meter accumulated token usage
+    // Meter accumulated token usage (non-fatal: don't kill tool response)
     if ((totalInputTokens > 0 || totalOutputTokens > 0) && gateResult) {
-      await ctx.runMutation(internal.stripeMutations.incrementUsageAndReportOverage, {
-        userId: gateResult.userId as any,
-        modelId: args.model,
-        inputTokens: totalInputTokens,
-        outputTokens: totalOutputTokens,
-      });
+      try {
+        await ctx.runMutation(internal.stripeMutations.incrementUsageAndReportOverage, {
+          userId: gateResult.userId,
+          modelId: args.model,
+          inputTokens: totalInputTokens,
+          outputTokens: totalOutputTokens,
+        });
+      } catch ( billingErr ) {
+        console.error( "tools: billing failed (non-fatal)", {
+          userId: gateResult.userId, modelId: args.model,
+          inputTokens: totalInputTokens, outputTokens: totalOutputTokens,
+          error: billingErr instanceof Error ? billingErr.message : billingErr,
+        } );
+      }
     }
 
     return {
@@ -533,7 +549,7 @@ export const reflexion = action({
   handler: async (ctx, args) => {
     // Gate: enforce tier-based Bedrock access for cloud models
     const isOllamaModel = args.model.includes(":") && !args.model.includes(".");
-    let gateResult: { allowed: true; userId: string; tier: string } | undefined;
+    let gateResult: { allowed: true; userId: import("./_generated/dataModel").Id<"users">; tier: string } | undefined;
     if (!isOllamaModel) {
       const { requireBedrockAccess } = await import("./lib/bedrockGate");
       const gate = await requireBedrockAccess(
@@ -597,14 +613,22 @@ export const reflexion = action({
       }
     }
 
-    // Meter accumulated token usage
+    // Meter accumulated token usage (non-fatal: don't kill tool response)
     if ((totalInputTokens > 0 || totalOutputTokens > 0) && gateResult) {
-      await ctx.runMutation(internal.stripeMutations.incrementUsageAndReportOverage, {
-        userId: gateResult.userId as any,
-        modelId: args.model,
-        inputTokens: totalInputTokens,
-        outputTokens: totalOutputTokens,
-      });
+      try {
+        await ctx.runMutation(internal.stripeMutations.incrementUsageAndReportOverage, {
+          userId: gateResult.userId,
+          modelId: args.model,
+          inputTokens: totalInputTokens,
+          outputTokens: totalOutputTokens,
+        });
+      } catch ( billingErr ) {
+        console.error( "tools: billing failed (non-fatal)", {
+          userId: gateResult.userId, modelId: args.model,
+          inputTokens: totalInputTokens, outputTokens: totalOutputTokens,
+          error: billingErr instanceof Error ? billingErr.message : billingErr,
+        } );
+      }
     }
 
     return {
@@ -631,7 +655,7 @@ export const mapReduce = action({
   handler: async (ctx, args) => {
     // Gate: enforce tier-based Bedrock access for cloud models
     const isOllamaModel = args.model.includes(":") && !args.model.includes(".");
-    let gateResult: { allowed: true; userId: string; tier: string } | undefined;
+    let gateResult: { allowed: true; userId: import("./_generated/dataModel").Id<"users">; tier: string } | undefined;
     if (!isOllamaModel) {
       const { requireBedrockAccess } = await import("./lib/bedrockGate");
       const gate = await requireBedrockAccess(
@@ -689,14 +713,22 @@ export const mapReduce = action({
       finalResult = `Reduce phase failed: ${error.message}. Intermediate: ${mapResults.join(" | ")}`;
     }
 
-    // Meter accumulated token usage
+    // Meter accumulated token usage (non-fatal: don't kill tool response)
     if ((totalInputTokens > 0 || totalOutputTokens > 0) && gateResult) {
-      await ctx.runMutation(internal.stripeMutations.incrementUsageAndReportOverage, {
-        userId: gateResult.userId as any,
-        modelId: args.model,
-        inputTokens: totalInputTokens,
-        outputTokens: totalOutputTokens,
-      });
+      try {
+        await ctx.runMutation(internal.stripeMutations.incrementUsageAndReportOverage, {
+          userId: gateResult.userId,
+          modelId: args.model,
+          inputTokens: totalInputTokens,
+          outputTokens: totalOutputTokens,
+        });
+      } catch ( billingErr ) {
+        console.error( "tools: billing failed (non-fatal)", {
+          userId: gateResult.userId, modelId: args.model,
+          inputTokens: totalInputTokens, outputTokens: totalOutputTokens,
+          error: billingErr instanceof Error ? billingErr.message : billingErr,
+        } );
+      }
     }
 
     return {
@@ -726,7 +758,7 @@ export const parallelPrompts = action({
   handler: async (ctx, args) => {
     // Gate: enforce tier-based Bedrock access for cloud models
     const isOllamaModel = args.model.includes(":") && !args.model.includes(".");
-    let gateResult: { allowed: true; userId: string; tier: string } | undefined;
+    let gateResult: { allowed: true; userId: import("./_generated/dataModel").Id<"users">; tier: string } | undefined;
     if (!isOllamaModel) {
       const { requireBedrockAccess } = await import("./lib/bedrockGate");
       const gate = await requireBedrockAccess(
@@ -773,14 +805,22 @@ export const parallelPrompts = action({
       });
     }
 
-    // Meter accumulated token usage
+    // Meter accumulated token usage (non-fatal: don't kill tool response)
     if ((totalInputTokens > 0 || totalOutputTokens > 0) && gateResult) {
-      await ctx.runMutation(internal.stripeMutations.incrementUsageAndReportOverage, {
-        userId: gateResult.userId as any,
-        modelId: args.model,
-        inputTokens: totalInputTokens,
-        outputTokens: totalOutputTokens,
-      });
+      try {
+        await ctx.runMutation(internal.stripeMutations.incrementUsageAndReportOverage, {
+          userId: gateResult.userId,
+          modelId: args.model,
+          inputTokens: totalInputTokens,
+          outputTokens: totalOutputTokens,
+        });
+      } catch ( billingErr ) {
+        console.error( "tools: billing failed (non-fatal)", {
+          userId: gateResult.userId, modelId: args.model,
+          inputTokens: totalInputTokens, outputTokens: totalOutputTokens,
+          error: billingErr instanceof Error ? billingErr.message : billingErr,
+        } );
+      }
     }
 
     return {
