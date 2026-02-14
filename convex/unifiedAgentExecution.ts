@@ -131,10 +131,6 @@ export const executeUnifiedAgent = action({
         }
       );
 
-      console.log(`[UnifiedExecution] ${decision.reasoning}`);
-      console.log(`[UnifiedExecution] Selected: ${decision.selectedModel.name}`);
-      console.log(`[UnifiedExecution] Estimated cost: $${decision.estimatedCost.toFixed(4)}`);
-
       // Execute based on modality
       let result: UnifiedExecutionResult;
 

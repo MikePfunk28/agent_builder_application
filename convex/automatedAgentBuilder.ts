@@ -76,7 +76,7 @@ export const getBuildSession = query( {
     if ( !userId ) return null;
 
     const session = await ctx.db.get( args.sessionId );
-    if ( !session || session.userId !== userId ) {
+    if ( session?.userId !== userId ) {
       return null;
     }
 
@@ -163,12 +163,12 @@ export const processResponse = action( {
           inputTokens: response.tokenUsage.inputTokens,
           outputTokens: response.tokenUsage.outputTokens,
         } );
-      } catch ( billingErr ) {
+      } catch ( error_ ) {
         console.error( "automatedAgentBuilder: billing failed (non-fatal)", {
           userId: gateResult.userId, modelId,
           inputTokens: response.tokenUsage.inputTokens,
           outputTokens: response.tokenUsage.outputTokens,
-          error: billingErr instanceof Error ? billingErr.message : billingErr,
+          error: error_ instanceof Error ? error_.message : error_,
         } );
       }
     }
@@ -225,11 +225,26 @@ export const getBuildSessionInternal = internalQuery( {
 export const updateBuildSession = internalMutation( {
   args: {
     sessionId: v.id( "agentBuildSessions" ),
-    conversationHistory: v.any(),
-    agentRequirements: v.any(),
+    conversationHistory: v.array( v.object( {
+      role: v.union( v.literal( "user" ), v.literal( "assistant" ) ),
+      content: v.string(),
+      reasoning: v.optional( v.string() ),
+      timestamp: v.number(),
+    } ) ),
+    agentRequirements: v.object( {
+      agentType: v.union( v.string(), v.null() ),
+      targetUsers: v.union( v.string(), v.null() ),
+      problems: v.array( v.string() ),
+      tools: v.array( v.string() ),
+      tone: v.union( v.string(), v.null() ),
+      testingPreference: v.union( v.string(), v.null() ),
+      domainKnowledge: v.union( v.string(), v.null() ),
+      knowledgeBase: v.union( v.string(), v.null() ),
+      documentUrls: v.array( v.string() ),
+    } ),
     currentQuestion: v.number(),
     status: v.string(),
-    generatedAgentConfig: v.optional( v.any() ),
+    generatedAgentConfig: v.optional( v.any() ), // v.any(): LLM-generated agent config — shape varies by builder step
   },
   handler: async ( ctx, args ) => {
     await ctx.db.patch( args.sessionId, {
@@ -315,25 +330,17 @@ async function analyzeAndAskNext(
   requirements: any;
   nextQuestion: string | null;
   readyToGenerate: boolean;
-  agentConfig: any | null;
+  agentConfig: { name: string; model: string; systemPrompt: string; tools: any[] } | null;
   tokenUsage: { inputTokens: number; outputTokens: number; totalTokens: number };
 }> {
   const { BedrockRuntimeClient, InvokeModelCommand } = await import( "@aws-sdk/client-bedrock-runtime" );
 
-  const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
-  const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
+  const creds = (await import("./lib/aws/credentials")).requireAwsCredentials();
   const region = process.env.AWS_REGION || "us-east-1";
-
-  if ( !accessKeyId || !secretAccessKey ) {
-    throw new Error( "Missing AWS credentials: ensure AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are set in the environment" );
-  }
 
   const client = new BedrockRuntimeClient( {
     region,
-    credentials: {
-      accessKeyId,
-      secretAccessKey,
-    },
+    credentials: creds,
   } );
 
   // Build messages in Bedrock format
@@ -366,9 +373,9 @@ async function analyzeAndAskNext(
     const decoded = new TextDecoder().decode( response.body );
     try {
       responseBody = JSON.parse( decoded );
-    } catch ( parseErr: any ) {
-      console.error( "Failed to parse Bedrock response body", { modelId, error: parseErr.message, responseLength: decoded.length, responsePreview: decoded.slice( 0, 100 ) + ( decoded.length > 100 ? "..." : "" ) } );
-      throw new Error( `Failed to parse Bedrock response body: ${parseErr.message}` );
+    } catch ( error_: any ) {
+      console.error( "Failed to parse Bedrock response body", { modelId, error: error_.message, responseLength: decoded.length, responsePreview: decoded.slice( 0, 100 ) + ( decoded.length > 100 ? "..." : "" ) } );
+      throw new Error( `Failed to parse Bedrock response body: ${error_.message}` );
     }
   } catch ( err: any ) {
     console.error( "Bedrock model invocation failed", { modelId, err } );
@@ -422,6 +429,7 @@ async function analyzeAndAskNext(
       };
     }
   } catch ( error ) {
+    console.error( "Failed to parse AI response as JSON", { error: error instanceof Error ? error.message : error, textResponse } );
     // Fallback if JSON parsing fails - treat as next question
     return {
       thinking: "Processing user input...",
@@ -458,7 +466,7 @@ export const generateAgentFromSession = action( {
       sessionId: args.sessionId,
     } );
 
-    if ( !session || session.status !== "ready_to_generate" || !session.generatedAgentConfig ) {
+    if ( session?.status !== "ready_to_generate" || !session.generatedAgentConfig ) {
       throw new Error( "Session not ready to generate agent" );
     }
 

@@ -15,6 +15,7 @@
 
 import { query } from "./_generated/server";
 import { v } from "convex/values";
+import { BEDROCK_MODELS, OLLAMA_MODELS } from "./modelRegistry";
 
 export interface ModelBenchmarks {
   model: string;
@@ -57,127 +58,37 @@ export interface ModelBenchmarks {
 }
 
 /**
- * Comprehensive model database with real benchmark data
+ * Helper: look up a model from the authoritative registry and extract cost/context.
+ * Returns undefined if the model ID is not in the registry so we can skip stale entries.
+ */
+function registryCost(modelId: string): { input: number; output: number } | undefined {
+  const meta = BEDROCK_MODELS[modelId] ?? OLLAMA_MODELS[modelId];
+  return meta?.costPer1MTokens;
+}
+
+function registryContext(modelId: string): number | undefined {
+  const meta = BEDROCK_MODELS[modelId] ?? OLLAMA_MODELS[modelId];
+  return meta ? meta.contextWindow : undefined;
+}
+
+/**
+ * Comprehensive model database with real benchmark data.
+ *
+ * Cost and context-window values are derived from the authoritative
+ * modelRegistry.ts rather than hardcoded here.
+ *
+ * NOTE: Only models that still exist in modelRegistry.ts are included.
+ * Removed models (Claude 3.x, old Ollama entries) were pruned because
+ * they no longer appear in the registry.
  */
 export const MODEL_BENCHMARKS: ModelBenchmarks[] = [
   // ============================================================================
-  // ANTHROPIC CLAUDE (Bedrock)
-  // ============================================================================
-  {
-    model: "anthropic.claude-3-5-sonnet-20241022-v2:0",
-    provider: "bedrock",
-    
-    // Benchmarks (from Anthropic's published results)
-    mmlu: 88.7,
-    humaneval: 92.0,
-    gsm8k: 96.4,
-    bbh: 93.1,
-    gpqa: 65.0,
-    hellaswag: 89.0,
-    truthfulqa: 75.0,
-    mtbench: 9.0,
-    
-    // Composite scores
-    overallAbility: 88.5,
-    codeAbility: 92.0,
-    reasoningAbility: 94.8,
-    knowledgeAbility: 85.0,
-    
-    // Cost
-    costPerMToken: 3.00,
-    costPerMTokenOutput: 15.00,
-    costScore: 85,
-    
-    // Size
-    parameters: "~200B",
-    contextWindow: 200000,
-    sizeScore: 95,
-    
-    // Metadata
-    releaseDate: "2024-10-22",
-    recencyScore: 100,
-    
-    // Final
-    totalScore: 268.5,
-    valueScore: 2609.4, // 88.5² / 3.00 - Quality-adjusted
-    efficiencyScore: 29.5, // 88.5 / 3.00 - Raw efficiency
-  },
-  
-  {
-    model: "anthropic.claude-3-opus-20240229-v1:0",
-    provider: "bedrock",
-    
-    mmlu: 86.8,
-    humaneval: 84.9,
-    gsm8k: 95.0,
-    bbh: 86.7,
-    gpqa: 50.4,
-    hellaswag: 95.4,
-    truthfulqa: 55.0,
-    mtbench: 8.8,
-    
-    overallAbility: 82.3,
-    codeAbility: 84.9,
-    reasoningAbility: 90.9,
-    knowledgeAbility: 80.0,
-    
-    costPerMToken: 15.00,
-    costPerMTokenOutput: 75.00,
-    costScore: 100,
-    
-    parameters: "~200B",
-    contextWindow: 200000,
-    sizeScore: 95,
-    
-    releaseDate: "2024-02-29",
-    recencyScore: 85,
-    
-    totalScore: 262.3,
-    valueScore: 451.4, // 82.3² / 15.00
-    efficiencyScore: 5.5, // 82.3 / 15.00
-  },
-  
-  {
-    model: "anthropic.claude-3-haiku-20240307-v1:0",
-    provider: "bedrock",
-    
-    mmlu: 75.2,
-    humaneval: 75.9,
-    gsm8k: 88.9,
-    bbh: 73.7,
-    gpqa: 35.0,
-    hellaswag: 85.9,
-    truthfulqa: 50.0,
-    mtbench: 7.5,
-    
-    overallAbility: 70.3,
-    codeAbility: 75.9,
-    reasoningAbility: 81.3,
-    knowledgeAbility: 65.0,
-    
-    costPerMToken: 0.25,
-    costPerMTokenOutput: 1.25,
-    costScore: 15,
-    
-    parameters: "~40B",
-    contextWindow: 200000,
-    sizeScore: 50,
-    
-    releaseDate: "2024-03-07",
-    recencyScore: 87,
-    
-    totalScore: 135.3,
-    valueScore: 19768.4, // 70.3² / 0.25 - Excellent value!
-    efficiencyScore: 281.2, // 70.3 / 0.25
-  },
-  
-  // ============================================================================
-  // AMAZON NOVA (Bedrock)
+  // AMAZON NOVA (Bedrock) — sourced from modelRegistry.ts
   // ============================================================================
   {
     model: "amazon.nova-pro-v1:0",
     provider: "bedrock",
-    
+
     mmlu: 78.0,
     humaneval: 70.0,
     gsm8k: 85.0,
@@ -186,32 +97,32 @@ export const MODEL_BENCHMARKS: ModelBenchmarks[] = [
     hellaswag: 82.0,
     truthfulqa: 60.0,
     mtbench: 7.8,
-    
+
     overallAbility: 73.5,
     codeAbility: 70.0,
     reasoningAbility: 80.0,
     knowledgeAbility: 72.0,
-    
-    costPerMToken: 0.80,
-    costPerMTokenOutput: 3.20,
+
+    costPerMToken: registryCost("amazon.nova-pro-v1:0")?.input ?? 0.80,
+    costPerMTokenOutput: registryCost("amazon.nova-pro-v1:0")?.output ?? 3.20,
     costScore: 35,
-    
+
     parameters: "~100B",
-    contextWindow: 300000,
+    contextWindow: registryContext("amazon.nova-pro-v1:0") ?? 300000,
     sizeScore: 75,
-    
+
     releaseDate: "2024-12-03",
     recencyScore: 98,
-    
-    totalScore: 183.5,
-    valueScore: 6754.7, // 73.5² / 0.80
-    efficiencyScore: 91.9, // 73.5 / 0.80
+
+    totalScore: 0,    // computed below
+    valueScore: 0,    // computed below
+    efficiencyScore: 0, // computed below
   },
-  
+
   {
     model: "amazon.nova-lite-v1:0",
     provider: "bedrock",
-    
+
     mmlu: 65.0,
     humaneval: 55.0,
     gsm8k: 70.0,
@@ -220,167 +131,35 @@ export const MODEL_BENCHMARKS: ModelBenchmarks[] = [
     hellaswag: 75.0,
     truthfulqa: 45.0,
     mtbench: 6.5,
-    
+
     overallAbility: 57.6,
     codeAbility: 55.0,
     reasoningAbility: 65.0,
     knowledgeAbility: 55.0,
-    
-    costPerMToken: 0.06,
-    costPerMTokenOutput: 0.24,
+
+    costPerMToken: registryCost("amazon.nova-lite-v1:0")?.input ?? 0.06,
+    costPerMTokenOutput: registryCost("amazon.nova-lite-v1:0")?.output ?? 0.24,
     costScore: 8,
-    
+
     parameters: "~20B",
-    contextWindow: 300000,
+    contextWindow: registryContext("amazon.nova-lite-v1:0") ?? 300000,
     sizeScore: 35,
-    
+
     releaseDate: "2024-12-03",
     recencyScore: 98,
-    
-    totalScore: 100.6,
-    valueScore: 55296.0, // 57.6² / 0.06 - Good for simple tasks
-    efficiencyScore: 960.0, // 57.6 / 0.06
-  },
-  
-  // ============================================================================
-  // OLLAMA MODELS (Free but requires compute)
-  // ============================================================================
-  {
-    model: "llama3.1:70b",
-    provider: "ollama",
-    
-    mmlu: 79.3,
-    humaneval: 80.5,
-    gsm8k: 83.0,
-    bbh: 81.0,
-    gpqa: 46.0,
-    hellaswag: 85.0,
-    truthfulqa: 52.0,
-    mtbench: 8.1,
-    
-    overallAbility: 74.4,
-    codeAbility: 80.5,
-    reasoningAbility: 82.0,
-    knowledgeAbility: 70.0,
-    
-    costPerMToken: 0.00, // Free (but compute costs)
-    costPerMTokenOutput: 0.00,
-    costScore: 0,
-    
-    parameters: "70B",
-    contextWindow: 128000,
-    sizeScore: 85,
-    
-    releaseDate: "2024-07-23",
-    recencyScore: 92,
-    
-    totalScore: 159.4,
-    valueScore: -1, // Free model — sentinel for "not applicable"
-    efficiencyScore: -1,
-  },
 
-  {
-    model: "llama3:8b",
-    provider: "ollama",
-    
-    mmlu: 66.6,
-    humaneval: 62.2,
-    gsm8k: 79.6,
-    bbh: 61.1,
-    gpqa: 34.2,
-    hellaswag: 82.0,
-    truthfulqa: 45.0,
-    mtbench: 7.2,
-    
-    overallAbility: 62.2,
-    codeAbility: 62.2,
-    reasoningAbility: 70.4,
-    knowledgeAbility: 58.0,
-    
-    costPerMToken: 0.00,
-    costPerMTokenOutput: 0.00,
-    costScore: 0,
-    
-    parameters: "8B",
-    contextWindow: 8192,
-    sizeScore: 25,
-    
-    releaseDate: "2024-04-18",
-    recencyScore: 88,
-    
-    totalScore: 87.2,
-    valueScore: -1,
-    efficiencyScore: -1,
-  },
-
-  {
-    model: "gemma2:27b",
-    provider: "ollama",
-    
-    mmlu: 75.2,
-    humaneval: 51.8,
-    gsm8k: 74.0,
-    bbh: 65.0,
-    gpqa: 35.0,
-    hellaswag: 86.0,
-    truthfulqa: 48.0,
-    mtbench: 7.5,
-    
-    overallAbility: 64.1,
-    codeAbility: 51.8,
-    reasoningAbility: 69.5,
-    knowledgeAbility: 65.0,
-    
-    costPerMToken: 0.00,
-    costPerMTokenOutput: 0.00,
-    costScore: 0,
-    
-    parameters: "27B",
-    contextWindow: 8192,
-    sizeScore: 45,
-    
-    releaseDate: "2024-06-27",
-    recencyScore: 90,
-    
-    totalScore: 109.1,
-    valueScore: -1,
-    efficiencyScore: -1,
-  },
-
-  {
-    model: "gemma2:2b",
-    provider: "ollama",
-    
-    mmlu: 52.2,
-    humaneval: 32.3,
-    gsm8k: 23.9,
-    bbh: 35.0,
-    gpqa: 20.0,
-    hellaswag: 71.0,
-    truthfulqa: 40.0,
-    mtbench: 5.5,
-    
-    overallAbility: 37.5,
-    codeAbility: 32.3,
-    reasoningAbility: 29.5,
-    knowledgeAbility: 45.0,
-    
-    costPerMToken: 0.00,
-    costPerMTokenOutput: 0.00,
-    costScore: 0,
-    
-    parameters: "2B",
-    contextWindow: 8192,
-    sizeScore: 10,
-    
-    releaseDate: "2024-06-27",
-    recencyScore: 90,
-    
-    totalScore: 47.5,
-    valueScore: -1,
-    efficiencyScore: -1,
+    totalScore: 0,    // computed below
+    valueScore: 0,    // computed below
+    efficiencyScore: 0, // computed below
   },
 ];
+
+// Derive composite scores from dynamic cost values at module load time
+for ( const m of MODEL_BENCHMARKS ) {
+  m.totalScore = m.overallAbility + m.costScore + m.recencyScore;
+  m.valueScore = m.costPerMToken > 0 ? ( m.overallAbility ** 2 ) / m.costPerMToken : 0;
+  m.efficiencyScore = m.costPerMToken > 0 ? m.overallAbility / m.costPerMToken : 0;
+}
 
 /**
  * Get model by ID

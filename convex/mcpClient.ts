@@ -5,6 +5,7 @@ import { v } from "convex/values";
 import { api, internal } from "./_generated/api";
 import { isDbMcpServer } from "./mcpConfig";
 import type { Id } from "./_generated/dataModel";
+import { getAuthUserId } from "@convex-dev/auth/server";
 
 /**
  * MCP Client for invoking tools from configured MCP servers
@@ -91,7 +92,7 @@ export const invokeMCPToolInternal = internalAction( {
   args: {
     serverName: v.string(),
     toolName: v.string(),
-    parameters: v.any(),
+    parameters: v.record( v.string(), v.any() ), // v.any(): tool parameter values are heterogeneous (strings, numbers, objects)
     userId: v.optional( v.id( "users" ) ),
     timeout: v.optional( v.number() ),
   },
@@ -183,11 +184,25 @@ export const invokeMCPTool = action( {
   args: {
     serverName: v.string(),
     toolName: v.string(),
-    parameters: v.any(),
+    parameters: v.record( v.string(), v.any() ), // v.any(): tool parameter values are heterogeneous (strings, numbers, objects)
+    userId: v.optional( v.id( "users" ) ), // Pass userId to enable billing for callers
     timeout: v.optional( v.number() ), // Override timeout in milliseconds
   },
   handler: async ( ctx, args ) => {
     const startTime = Date.now();
+
+    // Resolve billing user from auth (prevents spoofing via args.userId)
+    // Public action: NEVER trust client-supplied userId — only use auth-resolved identity
+    let billingUserId: Id<"users"> | undefined = undefined;
+    try {
+      const authUserId = await getAuthUserId( ctx );
+      if ( authUserId ) billingUserId = authUserId;
+    } catch ( authErr ) {
+      console.error( "mcpClient invokeMCPTool: auth resolution failed", {
+        error: authErr instanceof Error ? authErr.message : String( authErr ),
+      } );
+      // billingUserId stays undefined — billing will be skipped for unauthenticated callers
+    }
 
     try {
       // Get MCP server configuration from database
@@ -279,6 +294,29 @@ export const invokeMCPTool = action( {
             toolName: args.toolName,
           },
         } );
+
+        // Meter Bedrock usage if billing user resolved and token data available (non-fatal)
+        if (
+          billingUserId &&
+          result.result?.tokenUsage &&
+          ( result.result.tokenUsage.inputTokens > 0 || result.result.tokenUsage.outputTokens > 0 )
+        ) {
+          try {
+            await ctx.runMutation( internal.stripeMutations.incrementUsageAndReportOverage, {
+              userId: billingUserId,
+              modelId: result.result.model_id,
+              inputTokens: result.result.tokenUsage.inputTokens,
+              outputTokens: result.result.tokenUsage.outputTokens,
+            } );
+          } catch ( billingErr ) {
+            console.error( "mcpClient invokeMCPTool: billing failed (non-fatal)", {
+              userId: billingUserId, modelId: result.result.model_id,
+              inputTokens: result.result.tokenUsage.inputTokens,
+              outputTokens: result.result.tokenUsage.outputTokens,
+              error: billingErr instanceof Error ? billingErr.message : billingErr,
+            } );
+          }
+        }
       } else {
         // Log failed invocation
         await ctx.runMutation( api.errorLogging.logError, {
@@ -437,10 +475,10 @@ async function invokeMCPToolDirect(
     const transport = new StdioClientTransport( {
       command: server.command,
       args: server.args || [],
-      env: {
-        ...process.env,
-        ...( server.env || {} ),
-      },
+      env: Object.fromEntries(
+        Object.entries( { ...process.env, ...( server.env || {} ) } )
+          .filter( ( entry ): entry is [string, string] => entry[1] !== undefined ),
+      ),
     } );
 
     // Create MCP client
@@ -519,9 +557,7 @@ async function invokeBedrockAgentCore( parameters: any, timeout: number ): Promi
     }
 
     // Get Cognito JWT token
-    const { api } = await import( "./_generated/api.js" );
-
-    // Import action runner - this is a workaround since we're in a non-Convex context
+    // Note: previously imported { api } here but it was unused — removed to avoid shadowing module-level api
     // In production, you'd inject the ctx or use a proper service
     const tokenResult = await fetch( `${process.env.CONVEX_SITE_URL}/api/cognitoAuth/getCachedCognitoToken`, {
       method: "POST",
@@ -578,17 +614,11 @@ async function invokeBedrockDirect( parameters: any, timeout: number ): Promise<
   try {
     const { BedrockRuntimeClient, InvokeModelCommand } = await import( "@aws-sdk/client-bedrock-runtime" );
 
-    const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
-    const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
-    if ( ( accessKeyId && !secretAccessKey ) || ( secretAccessKey && !accessKeyId ) ) {
-      throw new Error( "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must both be set or both be unset" );
-    }
+    const creds = (await import("./lib/aws/credentials")).validateAwsCredentials();
 
     const client = new BedrockRuntimeClient( {
       region: process.env.AWS_REGION || "us-east-1",
-      credentials: accessKeyId && secretAccessKey
-        ? { accessKeyId, secretAccessKey }
-        : undefined,
+      credentials: creds || undefined,
     } );
 
     const modelId = parameters.model_id || process.env.AGENT_BUILDER_MODEL_ID || "deepseek.v3-v1:0";
@@ -775,10 +805,10 @@ export const testMCPServerConnection = action( {
         const transport = new StdioClientTransport( {
           command: server.command,
           args: server.args || [],
-          env: {
-            ...process.env,
-            ...( server.env || {} ),
-          },
+          env: Object.fromEntries(
+            Object.entries( { ...process.env, ...( server.env || {} ) } )
+              .filter( ( entry ): entry is [string, string] => entry[1] !== undefined ),
+          ),
         } );
 
         client = new Client(

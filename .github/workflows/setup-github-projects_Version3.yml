@@ -19,68 +19,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up GitHub CLI
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gh
-          # Verify gh CLI version is compatible (>=2.21.0) for native 'gh project' commands
-          version=$(gh --version | head -n1 | awk '{print $3}' 2>/dev/null || echo "0.0.0")
-          major=$(echo "$version" | cut -d. -f1)
-          minor=$(echo "$version" | cut -d. -f2)
-          if [ "$major" -lt 2 ] || { [ "$major" -eq 2 ] && [ "$minor" -lt 21 ]; }; then
-            echo "gh CLI >= 2.21.0 required. Current: $version" >&2
-            exit 1
-          fi
-
-      - name: Create Project with description
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          PROJECT_NAME="Agent Builder Application"
-          PROJECT_DESC="Agent Builder Application - AI agent creation, testing, and deployment platform"
-
-          # Check if project exists
-          proj_list=$(gh project list --owner ${{ github.repository_owner }} --format json 2>&1)
-          rc=$?
-          if [ $rc -ne 0 ]; then
-            echo "gh project list failed: $proj_list" >&2
-            exit $rc
-          fi
-          PROJECT_ID=$(echo "$proj_list" | jq -r "[.[] | select(.title == \"$PROJECT_NAME\") | .number] | first // empty")
-
-          if [ -z "$PROJECT_ID" ]; then
-            echo "Creating new project..."
-            gh project create "$PROJECT_NAME" --owner ${{ github.repository_owner }} --body "$PROJECT_DESC"
-
-            # Re-check to ensure we obtained an ID, fail explicitly if not found
-            proj_list=$(gh project list --owner ${{ github.repository_owner }} --format json 2>&1)
-            rc=$?
-            if [ $rc -ne 0 ]; then
-              echo "gh project list failed after create: $proj_list" >&2
-              exit $rc
-            fi
-            PROJECT_ID=$(echo "$proj_list" | jq -r "[.[] | select(.title == \"$PROJECT_NAME\") | .number] | first // empty")
-            if [ -z "$PROJECT_ID" ]; then
-              echo "Failed to obtain PROJECT_ID for $PROJECT_NAME" >&2
-              exit 1
-            fi
-          fi
-
-          echo "PROJECT_ID=$PROJECT_ID" >> $GITHUB_ENV
-
-      - name: Reminder - Create views manually
-        run: |
-          echo "NOTE: GitHub Projects v2 views cannot be created via the gh CLI."
-          echo "Please create the following views manually in the GitHub web UI:"
-          echo "  1. 'Tasks Table' (Table view)"
-          echo "  2. 'Kanban Board' (Board view)"
-          echo "  3. 'Schedule Timeline' (Timeline view)"
-
       - name: Backfill existing open issues
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PROJECT_ID: "4"
         run: |
-          PROJECT_ID=${{ env.PROJECT_ID }}
           REPO="${{ github.repository }}"
 
           # Fetch all open issues via paginated API
@@ -109,8 +52,8 @@ jobs:
         if: github.event_name == 'issues' || github.event_name == 'pull_request'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PROJECT_ID: "4"
         run: |
-          PROJECT_ID=${{ env.PROJECT_ID }}
           REPO="${{ github.repository }}"
 
           if [ "${{ github.event_name }}" = "issues" ]; then

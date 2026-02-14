@@ -19,9 +19,7 @@ export function SignInForm() {
           setSubmitting(true);
           const formData = new FormData(e.target as HTMLFormElement);
           formData.set("flow", flow);
-          console.log("Form data being sent:", Object.fromEntries(formData));
           void signIn("password", formData).catch((error) => {
-            console.error("Sign in error:", error);
             let toastTitle = "";
             if (error.message.includes("Invalid password")) {
               toastTitle = "Invalid password. Please try again.";
@@ -134,12 +132,8 @@ export function SignInForm() {
         type="button"
         className="auth-button mt-3 bg-gray-600 hover:bg-gray-700 text-white"
         onClick={() => {
-          console.log("Anonymous sign-in clicked");
           setSubmitting(true);
           void signIn("anonymous")
-            .then(() => {
-              console.log("Anonymous sign-in successful");
-            })
             .catch((error: any) => {
               console.error("Anonymous sign-in error:", error);
               toast.error("Failed to sign in as guest", {

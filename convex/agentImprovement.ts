@@ -18,7 +18,7 @@ export const applyImprovementPlan = action({
   args: {
     agentId: v.id("agents"),
     conversationId: v.id("conversations"),
-    improvementPlan: v.any(),
+    improvementPlan: v.any(), // v.any(): LLM-generated improvement plan — structure varies
   },
   handler: async (ctx: any, args: { agentId: Id<"agents">; conversationId: Id<"conversations">; improvementPlan: any }): Promise<{ success: boolean; agentId: Id<"agents">; changes: string[]; message: string }> => {
     // Get current agent
@@ -38,8 +38,6 @@ export const applyImprovementPlan = action({
         `CRITICAL ERROR: Conversation belongs to agent ${conversation.agentId}, but trying to improve agent ${args.agentId}`
       );
     }
-
-    console.log(`✅ Verified: Improving agent ${args.agentId} using conversation ${args.conversationId}`);
 
     // Generate updated agent configuration
     const updatedConfig = generateUpdatedAgentConfig(agent, args.improvementPlan);
@@ -160,7 +158,7 @@ export const logImprovement = internalMutation({
   args: {
     agentId: v.id("agents"),
     conversationId: v.id("conversations"),
-    improvementPlan: v.any(),
+    improvementPlan: v.any(), // v.any(): LLM-generated improvement plan — structure varies
     changes: v.array(v.string()),
   },
   handler: async (ctx, args) => {
@@ -209,8 +207,6 @@ export const autoImproveAgent = action({
         `Cannot improve agent ${args.agentId} using conversation from agent ${conversation.agentId}`
       );
     }
-
-    console.log(`🤖 Auto-improving agent ${args.agentId} from conversation ${args.conversationId}`);
 
     // Generate improvement plan
     const improvementPlan: any = await ctx.runAction(

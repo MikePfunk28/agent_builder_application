@@ -66,7 +66,7 @@ export const create = mutation({
     tools: v.array(v.object({
       name: v.string(),
       type: v.string(),
-      config: v.optional(v.any()),
+      config: v.optional(v.any()), // v.any(): tool config shape varies per tool type
       requiresPip: v.optional(v.boolean()),
       pipPackages: v.optional(v.array(v.string())),
       extrasPip: v.optional(v.string()),
@@ -78,12 +78,12 @@ export const create = mutation({
     isPublic: v.optional(v.boolean()),
     exposableAsMCPTool: v.optional(v.boolean()),
     mcpToolName: v.optional(v.string()),
-    mcpInputSchema: v.optional(v.any()),
+    mcpInputSchema: v.optional(v.string()), // JSON-stringified JSON Schema for MCP tool input
     mcpServers: v.optional(v.array(v.object({
       name: v.string(),
       command: v.string(),
       args: v.array(v.string()),
-      env: v.optional(v.any()),
+      env: v.optional(v.record(v.string(), v.string())), // MCP server environment variables
       disabled: v.optional(v.boolean()),
     }))),
     sourceWorkflowId: v.optional(v.id("workflows")),
@@ -112,7 +112,7 @@ export const update = mutation({
     tools: v.optional(v.array(v.object({
       name: v.string(),
       type: v.string(),
-      config: v.optional(v.any()),
+      config: v.optional(v.any()), // v.any(): tool config shape varies per tool type
       requiresPip: v.optional(v.boolean()),
       pipPackages: v.optional(v.array(v.string())),
       extrasPip: v.optional(v.string()),
@@ -124,12 +124,12 @@ export const update = mutation({
     isPublic: v.optional(v.boolean()),
     exposableAsMCPTool: v.optional(v.boolean()),
     mcpToolName: v.optional(v.string()),
-    mcpInputSchema: v.optional(v.any()),
+    mcpInputSchema: v.optional(v.string()), // JSON-stringified JSON Schema for MCP tool input
     mcpServers: v.optional(v.array(v.object({
       name: v.string(),
       command: v.string(),
       args: v.array(v.string()),
-      env: v.optional(v.any()),
+      env: v.optional(v.record(v.string(), v.string())), // MCP server environment variables
       disabled: v.optional(v.boolean()),
     }))),
     modelProvider: v.optional(v.string()),

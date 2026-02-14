@@ -10,9 +10,13 @@
  * - Point system (300 max) to prevent over-provisioning
  */
 
+"use node";
+
 import { action } from "./_generated/server";
 import { v } from "convex/values";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
+import { BEDROCK_MODELS } from "./modelRegistry";
+import { requireBedrockAccess } from "./lib/bedrockGate";
 
 /**
  * Model scoring system (0-100 each category, 300 max total)
@@ -28,103 +32,37 @@ interface ModelScore {
 }
 
 /**
- * Model database with scoring
+ * Model database with scoring — derived from BEDROCK_MODELS registry (single source of truth).
+ * Scores are computed from cost/capability data rather than hardcoded.
  */
-const MODEL_DATABASE: ModelScore[] = [
-  // Anthropic Claude (Bedrock)
-  {
-    model: "anthropic.claude-3-5-sonnet-20241022-v2:0",
-    costScore: 100,
-    sizeScore: 100,
-    abilityScore: 100,
-    totalScore: 300,
-    costPerMToken: 15.00,
-    provider: "bedrock",
-  },
-  {
-    model: "anthropic.claude-3-5-sonnet-20240620-v1:0",
-    costScore: 95,
-    sizeScore: 95,
-    abilityScore: 95,
-    totalScore: 285,
-    costPerMToken: 15.00,
-    provider: "bedrock",
-  },
-  {
-    model: "anthropic.claude-3-opus-20240229-v1:0",
-    costScore: 98,
-    sizeScore: 90,
-    abilityScore: 90,
-    totalScore: 278,
-    costPerMToken: 75.00,
-    provider: "bedrock",
-  },
-  {
-    model: "anthropic.claude-3-haiku-20240307-v1:0",
-    costScore: 20,
-    sizeScore: 40,
-    abilityScore: 70,
-    totalScore: 130,
-    costPerMToken: 1.25,
-    provider: "bedrock",
-  },
-  // Amazon Nova (Bedrock)
-  {
-    model: "amazon.nova-pro-v1:0",
-    costScore: 30,
-    sizeScore: 70,
-    abilityScore: 80,
-    totalScore: 180,
-    costPerMToken: 2.00,
-    provider: "bedrock",
-  },
-  {
-    model: "amazon.nova-lite-v1:0",
-    costScore: 10,
-    sizeScore: 30,
-    abilityScore: 60,
-    totalScore: 100,
-    costPerMToken: 0.50,
-    provider: "bedrock",
-  },
-  // Ollama Models (Local/Fargate)
-  {
-    model: "llama3.1:70b",
-    costScore: 50,
-    sizeScore: 85,
-    abilityScore: 85,
-    totalScore: 220,
-    costPerMToken: 0.00, // Free but requires compute
-    provider: "ollama",
-  },
-  {
-    model: "llama3:8b",
-    costScore: 15,
-    sizeScore: 50,
-    abilityScore: 65,
-    totalScore: 130,
-    costPerMToken: 0.00,
-    provider: "ollama",
-  },
-  {
-    model: "gemma2:27b",
-    costScore: 35,
-    sizeScore: 65,
-    abilityScore: 70,
-    totalScore: 170,
-    costPerMToken: 0.00,
-    provider: "ollama",
-  },
-  {
-    model: "gemma2:2b",
-    costScore: 5,
-    sizeScore: 20,
-    abilityScore: 50,
-    totalScore: 75,
-    costPerMToken: 0.00,
-    provider: "ollama",
-  },
-];
+function buildModelDatabase(): ModelScore[] {
+  const scores: ModelScore[] = [];
+  for ( const [id, model] of Object.entries( BEDROCK_MODELS ) ) {
+    if ( !model.costPer1MTokens ) continue; // Skip non-text models (image, video, embedding)
+    const outputCost = model.costPer1MTokens.output;
+    // Score 0-100 based on cost (higher cost = higher score)
+    const costScore = Math.min( 100, Math.round( ( outputCost / 25.0 ) * 100 ) );
+    // Ability score based on capabilities and category
+    const hasReasoning = model.capabilities.includes( "reasoning" );
+    const hasCoding = model.capabilities.includes( "coding" );
+    const isPremium = model.category === "premium" || model.category === "flagship";
+    const abilityScore = Math.min( 100, 50 + ( hasReasoning ? 20 : 0 ) + ( hasCoding ? 15 : 0 ) + ( isPremium ? 15 : 0 ) );
+    // Size score approximated from context window
+    const sizeScore = Math.min( 100, Math.round( ( model.contextWindow / 300000 ) * 100 ) );
+    scores.push( {
+      model: id,
+      costScore,
+      sizeScore,
+      abilityScore,
+      totalScore: costScore + sizeScore + abilityScore,
+      costPerMToken: outputCost,
+      provider: "bedrock",
+    } );
+  }
+  return scores;
+}
+
+const MODEL_DATABASE: ModelScore[] = buildModelDatabase();
 
 /**
  * Meta-Agent: Analyze requirements and design optimal agent(s)
@@ -132,6 +70,7 @@ const MODEL_DATABASE: ModelScore[] = [
 export const designAgent = action({
   args: {
     userRequirement: v.string(),
+    modelId: v.string(), // The ANALYSIS model (used for designing agents, not the resulting agent's model)
     maxBudgetPoints: v.optional(v.number()), // Default 300
   },
   handler: async (ctx, args): Promise<{
@@ -142,16 +81,28 @@ export const designAgent = action({
     error?: string;
   }> => {
     try {
+      const modelId = args.modelId;
+
+      // Auth + billing gate
+      const gateResult = await requireBedrockAccess(
+        ctx, modelId,
+        async ( lookupArgs ) => ctx.runQuery( internal.users.getInternal, lookupArgs ),
+      );
+      if ( !gateResult.allowed ) {
+        throw new Error( gateResult.reason );
+      }
+      const userId = gateResult.userId;
+
       const maxBudget = args.maxBudgetPoints || 300;
 
-      // Step 1: Analyze requirements with Claude Haiku
-      const analysis = await analyzeRequirements(ctx, args.userRequirement);
+      // Step 1: Analyze requirements using the user's selected model
+      const analysis = await analyzeRequirements(ctx, args.userRequirement, userId, modelId);
 
       // Step 2: Select optimal models within budget
       const selectedModels = selectOptimalModels(analysis, maxBudget);
 
       // Step 3: Design tools and MCPs
-      const tools = await designTools(ctx, analysis);
+      const tools = designToolsFromAnalysis(analysis);
 
       // Step 4: Generate agent configurations
       const agents = selectedModels.map((modelSelection: any) => ({
@@ -186,7 +137,7 @@ export const designAgent = action({
 /**
  * Step 1: Analyze user requirements with Claude Haiku
  */
-async function analyzeRequirements(ctx: any, requirement: string): Promise<any> {
+async function analyzeRequirements(ctx: any, requirement: string, userId: any, modelId: string): Promise<any> {
   const prompt = `You are an expert AI agent architect. Analyze this user requirement and provide a structured analysis.
 
 User Requirement: "${requirement}"
@@ -204,12 +155,13 @@ Provide your analysis in JSON format:
   "reasoning": "string explaining your analysis"
 }`;
 
-  // Call Claude Haiku via Bedrock
+  // Call LLM via Bedrock MCP — uses env var model, passes userId for billing
   const response = await ctx.runAction(api.mcpClient.invokeMCPTool, {
     serverName: "bedrock-agentcore-mcp-server",
     toolName: "execute_agent",
+    userId,
     parameters: {
-      model_id: "anthropic.claude-3-haiku-20240307-v1:0",
+      model_id: modelId,
       input: prompt,
       system_prompt: "You are an expert AI agent architect. Always respond with valid JSON.",
     },
@@ -291,7 +243,7 @@ Coordinate with other agents using A2A communication.`;
 /**
  * Step 3: Design tools and MCPs
  */
-async function designTools(ctx: any, analysis: any): Promise<any[]> {
+function designToolsFromAnalysis(analysis: any): any[] {
   const tools: any[] = [];
 
   // Map required tools to available tools

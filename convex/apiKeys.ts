@@ -270,7 +270,10 @@ function generateSecureToken(length: number): string {
  */
 async function hashAPIKey(apiKey: string): Promise<string> {
   const encoder = new TextEncoder();
-  const secret = process.env.JWT_PRIVATE_KEY || 'default-secret';
+  const secret = process.env.JWT_PRIVATE_KEY;
+  if (!secret) {
+    throw new Error("JWT_PRIVATE_KEY environment variable is required for API key hashing");
+  }
   const data = encoder.encode(apiKey + secret);
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
   const hashArray = Array.from(new Uint8Array(hashBuffer));

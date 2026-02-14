@@ -11,10 +11,13 @@
  * 6. Return: Final agent design
  */
 
+"use node";
+
 import { action } from "./_generated/server";
 import { v } from "convex/values";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import { MODEL_BENCHMARKS, calculateTaskComplexity, recommendModelForComplexity, type ModelBenchmarks } from "./modelBenchmarks";
+import { requireBedrockAccess } from "./lib/bedrockGate";
 
 /**
  * Agent Templates
@@ -89,15 +92,27 @@ export const AGENT_TEMPLATES = {
 export const designAgentWithWorkflow = action({
   args: {
     userRequirement: v.string(),
+    modelId: v.string(), // User selects the model from the UI — required, no defaults
     useTemplate: v.optional(v.string()),
     maxBudgetPoints: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const conversationHistory: any[] = [];
-    
+    const modelId = args.modelId;
+
     try {
+      // Auth + billing gate using the user's selected model
+      const gateResult = await requireBedrockAccess(
+        ctx, modelId,
+        async ( lookupArgs ) => ctx.runQuery( internal.users.getInternal, lookupArgs ),
+      );
+      if ( !gateResult.allowed ) {
+        throw new Error( gateResult.reason );
+      }
+      const userId = gateResult.userId;
+
       // Step 1: Initial Thinking - Analyze requirement
-      const thinkingStep1 = await thinkStep(ctx, conversationHistory, `
+      const thinkingStep1 = await thinkStep(ctx, conversationHistory, userId, modelId, `
 Analyze this user requirement:
 "${args.userRequirement}"
 
@@ -117,7 +132,7 @@ Provide your analysis.
       );
       
       // Step 2: Research - Look up subject complexity
-      const researchResult = await researchStep(ctx, conversationHistory, args.userRequirement);
+      const researchResult = await researchStep(ctx, conversationHistory, userId, modelId, args.userRequirement);
 
       conversationHistory.push(
         { role: "user", content: "Research the subject matter" },
@@ -125,7 +140,7 @@ Provide your analysis.
       );
       
       // Step 3: Thinking - Determine architecture
-      const thinkingStep2 = await thinkStep(ctx, conversationHistory, `
+      const thinkingStep2 = await thinkStep(ctx, conversationHistory, userId, modelId, `
 Based on the research, think about:
 1. How complex is this task? (0-100)
 2. What type of task is it? (code/reasoning/knowledge/general)
@@ -142,10 +157,10 @@ Provide your architectural decisions.
       );
       
       // Step 4: Design - Create agent configuration
-      const design = await designStep(ctx, conversationHistory, args);
+      const design = await designStep(ctx, conversationHistory, userId, modelId, args);
       
       // Step 5: Final Thinking - Validate and optimize
-      const thinkingStep3 = await thinkStep(ctx, conversationHistory, `
+      const thinkingStep3 = await thinkStep(ctx, conversationHistory, userId, modelId, `
 Review the design:
 ${JSON.stringify(design, null, 2)}
 
@@ -188,12 +203,13 @@ Provide your validation.
 /**
  * Thinking step using Claude Haiku
  */
-async function thinkStep(ctx: any, history: any[], prompt: string): Promise<string> {
+async function thinkStep(ctx: any, history: any[], userId: any, modelId: string, prompt: string): Promise<string> {
   const response = await ctx.runAction(api.mcpClient.invokeMCPTool, {
     serverName: "bedrock-agentcore-mcp-server",
     toolName: "execute_agent",
+    userId,
     parameters: {
-      model_id: "anthropic.claude-3-haiku-20240307-v1:0",
+      model_id: modelId,
       input: prompt,
       system_prompt: "You are a thoughtful AI architect. Think step-by-step and reason carefully.",
       conversation_history: history,
@@ -210,7 +226,7 @@ async function thinkStep(ctx: any, history: any[], prompt: string): Promise<stri
 /**
  * Research step - Look up subject matter
  */
-async function researchStep(ctx: any, history: any[], requirement: string): Promise<string> {
+async function researchStep(ctx: any, history: any[], userId: any, modelId: string, requirement: string): Promise<string> {
   // Extract key terms from requirement
   const terms = requirement.toLowerCase();
   
@@ -236,8 +252,9 @@ async function researchStep(ctx: any, history: any[], requirement: string): Prom
   const response = await ctx.runAction(api.mcpClient.invokeMCPTool, {
     serverName: "bedrock-agentcore-mcp-server",
     toolName: "execute_agent",
+    userId,
     parameters: {
-      model_id: "anthropic.claude-3-haiku-20240307-v1:0",
+      model_id: modelId,
       input: `Research this domain: ${domain}
 
 Requirement: "${requirement}"
@@ -264,7 +281,7 @@ Provide a brief research summary.`,
 /**
  * Design step - Create agent configuration
  */
-async function designStep(ctx: any, history: any[], args: any): Promise<any> {
+async function designStep(ctx: any, history: any[], userId: any, modelId: string, args: any): Promise<any> {
   // Check if using template
   if (args.useTemplate && AGENT_TEMPLATES[args.useTemplate as keyof typeof AGENT_TEMPLATES]) {
     const template = AGENT_TEMPLATES[args.useTemplate as keyof typeof AGENT_TEMPLATES];
@@ -285,12 +302,13 @@ async function designStep(ctx: any, history: any[], args: any): Promise<any> {
     };
   }
   
-  // Custom design using Claude
+  // Custom design using user's selected model
   const response = await ctx.runAction(api.mcpClient.invokeMCPTool, {
     serverName: "bedrock-agentcore-mcp-server",
     toolName: "execute_agent",
+    userId,
     parameters: {
-      model_id: "anthropic.claude-3-haiku-20240307-v1:0",
+      model_id: modelId,
       input: `Design an agent for: "${args.userRequirement}"
 
 Based on our analysis, provide a JSON design:

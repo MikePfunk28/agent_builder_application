@@ -28,7 +28,11 @@ export const getOAuthConfig = query({
       },
     ];
 
-    // All 4 deployment environments that need OAuth callback URLs configured
+    // All deployment environments that need OAuth callback URLs configured
+    // Uses env vars where available, falls back to known deployment URLs
+    const convexSiteUrl = process.env.CONVEX_SITE_URL || "https://resolute-kudu-325.convex.site";
+    const cloudflareUrl = process.env.CLOUDFLARE_PAGES_URL || "https://633051e6.agent-builder-application.pages.dev";
+    const customDomainUrl = process.env.CUSTOM_DOMAIN_URL || "https://ai-forge.mikepfunk.com";
     const deploymentUrls = [
       {
         name: "Local Development",
@@ -37,17 +41,17 @@ export const getOAuthConfig = query({
       },
       {
         name: "Convex Production",
-        url: "https://resolute-kudu-325.convex.site",
+        url: convexSiteUrl,
         description: "Primary Convex backend deployment",
       },
       {
         name: "Cloudflare Pages",
-        url: "https://633051e6.agent-builder-application.pages.dev",
+        url: cloudflareUrl,
         description: "Cloudflare Pages deployment",
       },
       {
         name: "Custom Domain",
-        url: "https://ai-forge.mikepfunk.com",
+        url: customDomainUrl,
         description: "Production custom domain",
       },
     ];

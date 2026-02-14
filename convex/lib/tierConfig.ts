@@ -38,6 +38,8 @@ export interface TierConfig {
   allowedProviders: AllowedProvider[];
   /** Bedrock model families accessible (empty = none) */
   allowedBedrockFamilies: string[];
+  /** Whether this tier is not yet available for signup */
+  comingSoon?: boolean;
   /** Feature flags */
   features: {
     bedrockAccess: boolean;
@@ -103,6 +105,7 @@ export const TIER_CONFIGS: Record<TierName, TierConfig> = {
     allowOverage: false,
     allowedProviders: ["ollama", "lmstudio", "bedrock"],
     allowedBedrockFamilies: ["*"], // All models
+    comingSoon: true, // Enterprise tier is not yet available — SSO (WorkOS) needed
     features: {
       bedrockAccess: true,
       customDeployment: true,

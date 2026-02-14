@@ -20,12 +20,12 @@ export const executePromptChain = action({
       v.object({
         id: v.string(),
         template: v.string(),
-        variables: v.optional(v.any()),
+        variables: v.optional(v.record(v.string(), v.any())), // v.any(): template variable values are heterogeneous
         model: v.string(), // "ollama:llama3.2:3b" or "bedrock:claude-3-5-haiku"
         extractOutput: v.optional(v.string()), // JSONPath or regex
       })
     ),
-    initialInput: v.any(),
+    initialInput: v.any(), // v.any(): accepts dynamic user-provided initial input (string, object, array)
     passThroughContext: v.boolean(),
   },
   handler: async (ctx, args): Promise<{
@@ -166,11 +166,11 @@ export const executeParallelPrompts = action({
       v.object({
         id: v.string(),
         template: v.string(),
-        variables: v.optional(v.any()),
+        variables: v.optional(v.record(v.string(), v.any())), // v.any(): template variable values are heterogeneous
         model: v.string(),
       })
     ),
-    sharedContext: v.any(),
+    sharedContext: v.record(v.string(), v.any()), // v.any(): shared context values are heterogeneous
   },
   handler: async (ctx, args): Promise<{
     success: boolean;
@@ -378,17 +378,11 @@ async function invokeBedrock(
 ): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
   const { BedrockRuntimeClient, InvokeModelCommand } = await import("@aws-sdk/client-bedrock-runtime");
 
-  const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
-  const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
-  if ( ( accessKeyId && !secretAccessKey ) || ( secretAccessKey && !accessKeyId ) ) {
-    throw new Error( "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must both be set or both be unset" );
-  }
+  const creds = (await import("./lib/aws/credentials")).validateAwsCredentials();
 
   const client = new BedrockRuntimeClient({
     region: process.env.AWS_REGION || "us-east-1",
-    credentials: accessKeyId && secretAccessKey
-      ? { accessKeyId, secretAccessKey }
-      : undefined,
+    credentials: creds || undefined,
   });
 
   const command = new InvokeModelCommand({
@@ -430,7 +424,7 @@ async function invokeBedrock(
 export const testPrompt = action({
   args: {
     template: v.string(),
-    variables: v.optional(v.any()),
+    variables: v.optional(v.record(v.string(), v.any())), // v.any(): template variable values are heterogeneous
     model: v.string(),
   },
   handler: async (ctx, args): Promise<{
@@ -508,8 +502,8 @@ export const executeTool = action({
   args: {
     toolName: v.string(),
     toolType: v.string(), // "handoff_to_user", "short_term_memory", etc.
-    inputs: v.any(),
-    config: v.any(),
+    inputs: v.any(), // v.any(): accepts dynamic tool inputs — shape varies per tool type
+    config: v.any(), // v.any(): accepts dynamic tool config — shape varies per tool type
   },
   handler: async (_ctx, args): Promise<{
     success: boolean;

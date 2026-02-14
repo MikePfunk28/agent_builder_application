@@ -17,6 +17,7 @@ import { incrementUsageAndReportOverageImpl } from "./stripeMutations";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { assembleDeploymentPackageFiles } from "./deploymentPackageGenerator";
 import { sanitizeAgentName } from "./constants";
+import { isOllamaModelId } from "./modelRegistry";
 
 /**
  * Deploy agent - Routes to correct tier (Tier 1/2/3)
@@ -219,7 +220,7 @@ export const updateDeploymentStatus = mutation( {
     deploymentId: v.id( "deployments" ),
     status: v.string(),
     message: v.optional( v.string() ),
-    result: v.optional( v.any() ),
+    result: v.optional( v.record( v.string(), v.any() ) ), // Deployment result key-value pairs
     error: v.optional( v.string() ),
     progress: v.optional( v.number() ), // 0-100
     currentStep: v.optional( v.string() ),
@@ -307,7 +308,7 @@ export const addDeploymentLog = mutation( {
     deploymentId: v.id( "deployments" ),
     level: v.string(), // "info", "warn", "error", "debug"
     message: v.string(),
-    details: v.optional( v.any() ),
+    details: v.optional( v.record( v.string(), v.any() ) ), // Log detail key-value pairs
   },
   handler: async ( ctx, args ) => {
     const deployment = await ctx.db.get( args.deploymentId );
@@ -619,7 +620,7 @@ function generateAgentCoreRequirements( tools: any[] ): string {
 }
 
 function generateAgentCoreDockerfile( agent: any ): string {
-  const isOllamaModel = typeof agent.model === "string" && !agent.model.includes( "." );
+  const isOllamaModel = isOllamaModelId( agent.model, agent.deploymentType );
 
   if ( isOllamaModel ) {
     // Validate model name to prevent shell injection in entrypoint.sh
@@ -1462,12 +1463,10 @@ async function deployToUserAWS(
         scanOnPush: true
       }
     } ) );
-    console.log( `Created ECR repository: ${repoName}` );
   } catch ( error: any ) {
     if ( error.name !== "RepositoryAlreadyExistsException" ) {
       throw error;
     }
-    console.log( `ECR repository already exists: ${repoName}` );
   }
 
   // 2. Get ECR auth token for Docker push
@@ -1487,7 +1486,6 @@ async function deployToUserAWS(
         LocationConstraint: ( region !== "us-east-1" ? region : undefined ) as any
       }
     } ) );
-    console.log( `Created S3 bucket: ${bucketName}` );
   } catch ( error: any ) {
     if ( error.name !== "BucketAlreadyOwnedByYou" ) {
       throw error;
@@ -1514,7 +1512,6 @@ async function deployToUserAWS(
         weight: 1
       }]
     } ) );
-    console.log( `Created ECS cluster: ${clusterName}` );
   } catch ( error: any ) {
     if ( error.name !== "ClusterAlreadyExistsException" ) {
       throw error;
@@ -1553,8 +1550,6 @@ async function deployToUserAWS(
     }]
   } ) );
 
-  console.log( `Registered task definition: ${taskDefResponse.taskDefinition?.taskDefinitionArn}` );
-
   // 7. Create ECS service
   const serviceName = `agent-service-${agent._id}`;
   try {
@@ -1572,7 +1567,6 @@ async function deployToUserAWS(
         }
       }
     } ) );
-    console.log( `Created ECS service: ${serviceName}` );
   } catch ( error: any ) {
     if ( error.name !== "ServiceAlreadyExistsException" ) {
       throw error;

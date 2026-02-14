@@ -16,7 +16,7 @@ export const logError = mutation({
     category: v.string(), // "oauth" | "mcp" | "agent" | "deployment" | "general"
     severity: v.string(), // "info" | "warning" | "error" | "critical"
     message: v.string(),
-    details: v.optional(v.any()),
+    details: v.optional(v.record(v.string(), v.any())), // Error detail key-value pairs
     userId: v.optional(v.id("users")),
     stackTrace: v.optional(v.string()),
     metadata: v.optional(v.object({
@@ -62,7 +62,7 @@ export const logAuditEvent = mutation({
     resource: v.optional(v.string()),
     resourceId: v.optional(v.string()),
     success: v.boolean(),
-    details: v.optional(v.any()),
+    details: v.optional(v.record(v.string(), v.any())), // Audit event detail key-value pairs
     metadata: v.optional(v.object({
       provider: v.optional(v.string()),
       serverName: v.optional(v.string()),

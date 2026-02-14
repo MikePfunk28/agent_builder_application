@@ -13,8 +13,7 @@ export const seedWorkflowTemplates = internalMutation({
     // Check if already seeded
     const existing = await ctx.db.query("workflowTemplates").first();
     if (existing) {
-      console.log("Workflow templates already seeded");
-      return;
+      return; // Already seeded
     }
 
     const templates = [
@@ -510,6 +509,5 @@ export const seedWorkflowTemplates = internalMutation({
       await ctx.db.insert("workflowTemplates", template);
     }
 
-    console.log(`Seeded ${templates.length} workflow templates`);
   },
 });

@@ -74,6 +74,34 @@ export function sanitizePythonModuleName(name: string): string {
 }
 
 /**
+ * Escape a string for safe interpolation inside Python double-quoted strings.
+ * Handles: backslashes, double quotes, newlines, carriage returns, tabs.
+ */
+export function escapePythonString(s: string): string {
+  return s
+    .replaceAll('\\', String.raw`\\`)
+    .replaceAll('"', String.raw`\"`)
+    .replaceAll('\n', String.raw`\n`)
+    .replaceAll('\r', String.raw`\r`)
+    .replaceAll('\t', String.raw`\t`);
+}
+
+/**
+ * Escape a string for safe interpolation inside Python triple-quoted strings (""" ... """).
+ * Prevents breaking out of triple-quoted blocks.
+ */
+export function escapePythonTripleQuote(s: string): string {
+  let result = s
+    .replaceAll('\\', String.raw`\\`)
+    .replaceAll('"""', String.raw`\"\"\"`);
+  // Prevent trailing quotes from merging with closing """ delimiter
+  if ((result.endsWith('"') || result.endsWith('""')) && !result.endsWith(String.raw`\"`)) {
+    result = result.slice(0, -1) + String.raw`\"`;
+  }
+  return result;
+}
+
+/**
  * Check if deployment type is AWS-based
  */
 export function isAWSDeployment(deploymentType: string): boolean {

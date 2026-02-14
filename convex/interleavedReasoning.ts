@@ -264,19 +264,11 @@ async function invokeClaudeWithInterleavedThinking(
 ): Promise<{ content: string; reasoning?: string; toolCalls?: any[]; tokenUsage: { inputTokens: number; outputTokens: number; totalTokens: number } }> {
   const { BedrockRuntimeClient, InvokeModelCommand } = await import( "@aws-sdk/client-bedrock-runtime" );
 
-  const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
-  const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
-
-  if ( !accessKeyId || !secretAccessKey ) {
-    throw new Error( "Missing AWS credentials: ensure AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are set in the environment" );
-  }
+  const creds = (await import("./lib/aws/credentials")).requireAwsCredentials();
 
   const client = new BedrockRuntimeClient( {
     region: process.env.AWS_REGION || "us-east-1",
-    credentials: {
-      accessKeyId,
-      secretAccessKey,
-    },
+    credentials: creds,
   } );
 
   // Build messages array
@@ -363,7 +355,7 @@ export const addMessage = internalMutation( {
     role: v.union( v.literal( "user" ), v.literal( "assistant" ) ),
     content: v.string(),
     reasoning: v.optional( v.string() ),
-    toolCalls: v.optional( v.any() ),
+    toolCalls: v.optional( v.any() ), // v.any(): tool call format varies by provider (Anthropic, Bedrock, Ollama)
   },
   handler: async ( ctx, args ) => {
     const conversation = await ctx.db.get( args.conversationId );
@@ -401,7 +393,7 @@ export const addMessageBatch = internalMutation( {
       role: v.union( v.literal( "user" ), v.literal( "assistant" ) ),
       content: v.string(),
       reasoning: v.optional( v.string() ),
-      toolCalls: v.optional( v.any() ),
+      toolCalls: v.optional( v.any() ), // v.any(): tool call format varies by provider (Anthropic, Bedrock, Ollama)
     } ) ),
   },
   handler: async ( ctx, args ) => {
@@ -572,19 +564,11 @@ export const moveContextToS3 = internalAction( {
     // Upload to S3
     const { S3Client, PutObjectCommand } = await import( "@aws-sdk/client-s3" );
 
-    const s3AccessKeyId = process.env.AWS_ACCESS_KEY_ID;
-    const s3SecretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
-
-    if ( !s3AccessKeyId || !s3SecretAccessKey ) {
-      throw new Error( "Missing AWS credentials for S3: ensure AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are set" );
-    }
+    const s3Creds = (await import("./lib/aws/credentials")).requireAwsCredentials();
 
     const s3Client = new S3Client( {
       region: process.env.AWS_REGION || "us-east-1",
-      credentials: {
-        accessKeyId: s3AccessKeyId,
-        secretAccessKey: s3SecretAccessKey,
-      },
+      credentials: s3Creds,
     } );
 
     const s3Bucket = process.env.AWS_S3_BUCKET;

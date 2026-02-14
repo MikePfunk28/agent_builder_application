@@ -17,6 +17,7 @@ import { findToolMetadata, normalizeToolName } from "./lib/strandsTools";
 import { executeComposedMessages } from "./lib/messageExecutor";
 import type { ComposedMessages } from "../src/engine/messageComposer";
 import type { TokenUsage } from "./lib/tokenBilling";
+import { isOllamaModelId } from "./modelRegistry";
 
 /** Shape of entries returned from internal.lib.memoryStore queries */
 interface MemoryEntry {
@@ -47,15 +48,9 @@ async function resolveUserId(ctx: any): Promise<string> {
 
 /* ──────────────────────────────────────────────────────────────
  * Helper: safely parse JSON from memory store values.
- * Returns raw string if parsing fails (corrupted data).
+ * Canonical implementation in convex/lib/jsonUtils.ts
  * ────────────────────────────────────────────────────────────── */
-function safeJsonParse(value: string): unknown {
-  try {
-    return JSON.parse(value);
-  } catch {
-    return value;
-  }
-}
+import { safeJsonParse } from "./lib/jsonUtils";
 
 /* ──────────────────────────────────────────────────────────────
  * Helper: invoke a model and return the text response.
@@ -67,7 +62,7 @@ async function invokeLLM(
   prompt: string,
   options?: { temperature?: number; maxTokens?: number }
 ): Promise<{ text: string; tokenUsage?: TokenUsage }> {
-  const isOllama = model.includes(":") && !model.includes(".");
+  const isOllama = isOllamaModelId(model);
 
   const composed: ComposedMessages = isOllama
     ? {
@@ -108,7 +103,7 @@ export const handoffToUser = action({
   args: {
     question: v.string(),
     options: v.optional(v.array(v.string())),
-    currentState: v.optional(v.record(v.string(), v.any())),
+    currentState: v.optional(v.record(v.string(), v.any())), // v.any(): state values are heterogeneous (strings, numbers, objects)
     requireConfirmation: v.optional(v.boolean()),
     timeoutSeconds: v.optional(v.number()),
   },
@@ -141,7 +136,7 @@ export const shortTermMemory = action({
   args: {
     operation: v.union(v.literal("store"), v.literal("retrieve"), v.literal("search"), v.literal("clear")),
     key: v.string(),
-    value: v.optional(v.any()),
+    value: v.optional(v.any()), // v.any(): accepts dynamic user-provided memory values (strings, objects, arrays)
     maxItems: v.optional(v.number()),
     ttl: v.optional(v.number()),
   },
@@ -220,8 +215,8 @@ export const longTermMemory = action({
   args: {
     operation: v.union(v.literal("store"), v.literal("retrieve"), v.literal("search"), v.literal("delete")),
     key: v.string(),
-    value: v.optional(v.any()),
-    metadata: v.optional(v.any()),
+    value: v.optional(v.any()), // v.any(): accepts dynamic user-provided memory values (strings, objects, arrays)
+    metadata: v.optional(v.record(v.string(), v.any())), // Memory metadata key-value pairs
     enableVersioning: v.optional(v.boolean()), // Reserved: version history not yet implemented
   },
   handler: async (ctx, args): Promise<unknown> => {
@@ -360,7 +355,7 @@ export const selfConsistency = action({
   },
   handler: async (ctx, args) => {
     // Gate: enforce tier-based Bedrock access for cloud models
-    const isOllamaModel = args.model.includes(":") && !args.model.includes(".");
+    const isOllamaModel = isOllamaModelId(args.model);
     let gateResult: { allowed: true; userId: import("./_generated/dataModel").Id<"users">; tier: string } | undefined;
     if (!isOllamaModel) {
       const { requireBedrockAccess } = await import("./lib/bedrockGate");
@@ -449,7 +444,7 @@ export const treeOfThoughts = action({
   },
   handler: async (ctx, args) => {
     // Gate: enforce tier-based Bedrock access for cloud models
-    const isOllamaModel = args.model.includes(":") && !args.model.includes(".");
+    const isOllamaModel = isOllamaModelId(args.model);
     let gateResult: { allowed: true; userId: import("./_generated/dataModel").Id<"users">; tier: string } | undefined;
     if (!isOllamaModel) {
       const { requireBedrockAccess } = await import("./lib/bedrockGate");
@@ -548,7 +543,7 @@ export const reflexion = action({
   },
   handler: async (ctx, args) => {
     // Gate: enforce tier-based Bedrock access for cloud models
-    const isOllamaModel = args.model.includes(":") && !args.model.includes(".");
+    const isOllamaModel = isOllamaModelId(args.model);
     let gateResult: { allowed: true; userId: import("./_generated/dataModel").Id<"users">; tier: string } | undefined;
     if (!isOllamaModel) {
       const { requireBedrockAccess } = await import("./lib/bedrockGate");
@@ -646,7 +641,7 @@ export const reflexion = action({
  */
 export const mapReduce = action({
   args: {
-    data: v.array(v.any()),
+    data: v.array(v.any()), // v.any(): accepts heterogeneous data items for map-reduce processing
     model: v.string(),
     mapPrompt: v.string(),
     reducePrompt: v.string(),
@@ -654,7 +649,7 @@ export const mapReduce = action({
   },
   handler: async (ctx, args) => {
     // Gate: enforce tier-based Bedrock access for cloud models
-    const isOllamaModel = args.model.includes(":") && !args.model.includes(".");
+    const isOllamaModel = isOllamaModelId(args.model);
     let gateResult: { allowed: true; userId: import("./_generated/dataModel").Id<"users">; tier: string } | undefined;
     if (!isOllamaModel) {
       const { requireBedrockAccess } = await import("./lib/bedrockGate");
@@ -752,12 +747,12 @@ export const parallelPrompts = action({
       priority: v.optional(v.number()),
     })),
     model: v.string(),
-    inputData: v.optional(v.record(v.string(), v.any())),
+    inputData: v.optional(v.record(v.string(), v.any())), // v.any(): prompt variable values are heterogeneous
     maxParallelism: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     // Gate: enforce tier-based Bedrock access for cloud models
-    const isOllamaModel = args.model.includes(":") && !args.model.includes(".");
+    const isOllamaModel = isOllamaModelId(args.model);
     let gateResult: { allowed: true; userId: import("./_generated/dataModel").Id<"users">; tier: string } | undefined;
     if (!isOllamaModel) {
       const { requireBedrockAccess } = await import("./lib/bedrockGate");
@@ -839,8 +834,8 @@ export const parallelPrompts = action({
 export const executeStrandsTool = action({
   args: {
     toolName: v.string(),
-    params: v.optional(v.record(v.string(), v.any())),
-    context: v.optional(v.record(v.string(), v.any())),
+    params: v.optional(v.record(v.string(), v.any())), // v.any(): tool param values are heterogeneous
+    context: v.optional(v.record(v.string(), v.any())), // v.any(): context values are heterogeneous
   },
   handler: async (_ctx, args) => {
     const normalized = normalizeToolName(args.toolName);

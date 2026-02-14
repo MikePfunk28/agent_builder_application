@@ -49,7 +49,7 @@ export const insertMemoryRecord = internalMutation({
     summary: v.optional(v.string()),
     content: v.optional(v.string()),
     s3Key: v.optional(v.string()),
-    metadata: v.optional(v.any()),
+    metadata: v.optional(v.record(v.string(), v.any())), // Memory metadata key-value pairs
     tokenCount: v.optional(v.number()),
     createdAt: v.number(),
   },

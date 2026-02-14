@@ -233,7 +233,7 @@ export const storeAnalysis = internalMutation({
   args: {
     conversationId: v.id("conversations"),
     agentId: v.id("agents"),
-    analysis: v.any(),
+    analysis: v.any(), // v.any(): analysis structure varies by analysis type
   },
   handler: async (ctx, { conversationId, agentId, analysis }) => {
     const analysisId = await ctx.db.insert("conversationAnalyses", {

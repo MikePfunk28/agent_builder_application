@@ -2,8 +2,8 @@
  * Unified Modality Switching
  *
  * Dynamically selects optimal models for ALL modalities:
- * - Text (Claude: Haiku → Sonnet → Opus)
- * - Image (Titan → Nova Canvas → Stable Diffusion XL)
+ * - Text (Claude: Haiku → Sonnet)
+ * - Image (Titan V2 → Nova Canvas)
  * - Video (Nova Reel variants)
  * - Speech (Polly Standard → Neural)
  *
@@ -11,6 +11,7 @@
  */
 
 import type { Doc } from "../_generated/dataModel";
+import { BEDROCK_MODELS } from "../modelRegistry";
 
 type AgentDoc = Doc<"agents">;
 
@@ -33,67 +34,88 @@ export interface UnifiedModelTier {
   maxDimensions?: { width: number; height: number };
 }
 
+// ---------------------------------------------------------------------------
+// Registry model IDs — single source of truth for text & image Bedrock models
+// ---------------------------------------------------------------------------
+const HAIKU_ID = "anthropic.claude-haiku-4-5-20251001-v1:0";
+const SONNET_ID = "anthropic.claude-sonnet-4-5-20250929-v1:0";
+const TITAN_IMG_ID = "amazon.titan-image-generator-v2:0";
+const NOVA_CANVAS_ID = "amazon.nova-canvas-v1:0";
+const NOVA_REEL_ID = "amazon.nova-reel-v1:0";
+
 /**
- * All available models across modalities
+ * Helper: compute averaged cost-per-1K-tokens from registry costPer1MTokens.
+ * Average = (input + output) / 2 / 1000 — matches the original blended approach.
+ */
+function avgCostPer1K(modelId: string): number {
+  const meta = BEDROCK_MODELS[modelId];
+  if (meta?.costPer1MTokens) {
+    return (meta.costPer1MTokens.input + meta.costPer1MTokens.output) / 2 / 1000;
+  }
+  return 0;
+}
+
+/**
+ * All available models across modalities.
+ *
+ * Text and image model IDs / names are derived from the authoritative
+ * BEDROCK_MODELS registry.  Video (Nova Reel) uses the registry model ID but
+ * keeps per-second pricing (not per-token).  Speech (Polly) is an AWS service,
+ * not a Bedrock LLM, so its IDs are kept inline.
+ *
+ * NOTE: Stable Diffusion XL was removed because its model ID
+ * ("stability.stable-diffusion-xl-v1") no longer exists in modelRegistry.ts.
+ * Amazon Titan Image Generator updated from v1 to v2 to match the registry.
  */
 export const UNIFIED_MODEL_CATALOG: Record<string, Record<string, UnifiedModelTier>> = {
-  // TEXT MODELS
+  // TEXT MODELS — derived from BEDROCK_MODELS
   text: {
     haiku: {
       modality: "text",
-      name: "Claude 4.5 Haiku",
-      modelId: "anthropic.claude-haiku-4-5-20251001-v1:0",
-      costPer1KTokensOrUnit: 0.006, // $1/1M input + $5/1M output averaged
+      name: BEDROCK_MODELS[HAIKU_ID]?.name ?? "Claude 4.5 Haiku",
+      modelId: HAIKU_ID,
+      costPer1KTokensOrUnit: avgCostPer1K(HAIKU_ID),
       speedRating: 1,
       qualityRating: 1,
     },
     sonnet: {
       modality: "text",
-      name: "Claude 4.5 Sonnet",
-      modelId: "anthropic.claude-sonnet-4-5-20250929-v1:0",
-      costPer1KTokensOrUnit: 0.018, // $3/1M input + $15/1M output averaged
+      name: BEDROCK_MODELS[SONNET_ID]?.name ?? "Claude 4.5 Sonnet",
+      modelId: SONNET_ID,
+      costPer1KTokensOrUnit: avgCostPer1K(SONNET_ID),
       speedRating: 2,
       qualityRating: 3,
     },
   },
 
-  // IMAGE MODELS
+  // IMAGE MODELS — Titan V2 and Nova Canvas from registry
   image: {
     titan: {
       modality: "image",
-      name: "Amazon Titan Image Generator",
-      modelId: "amazon.titan-image-generator-v1",
-      costPer1KTokensOrUnit: 0.008, // $0.008 per image (512x512)
+      name: BEDROCK_MODELS[TITAN_IMG_ID]?.name ?? "Titan Image Generator V2",
+      modelId: TITAN_IMG_ID,
+      costPer1KTokensOrUnit: 0.008, // Per-image pricing (not per-token)
       speedRating: 1,
       qualityRating: 1,
       maxDimensions: { width: 512, height: 512 },
     },
     novaCanvas: {
       modality: "image",
-      name: "Amazon Nova Canvas",
-      modelId: "amazon.nova-canvas-v1:0",
-      costPer1KTokensOrUnit: 0.040, // $0.040 per image (1024x1024)
+      name: BEDROCK_MODELS[NOVA_CANVAS_ID]?.name ?? "Nova Canvas",
+      modelId: NOVA_CANVAS_ID,
+      costPer1KTokensOrUnit: 0.040, // Per-image pricing
       speedRating: 2,
       qualityRating: 2,
       maxDimensions: { width: 1024, height: 1024 },
     },
-    sdxl: {
-      modality: "image",
-      name: "Stable Diffusion XL",
-      modelId: "stability.stable-diffusion-xl-v1",
-      costPer1KTokensOrUnit: 0.018, // $0.018 per image (1024x1024)
-      speedRating: 2,
-      qualityRating: 3,
-      maxDimensions: { width: 1024, height: 1024 },
-    },
   },
 
-  // VIDEO MODELS
+  // VIDEO MODELS — Nova Reel ID from registry, pricing is per-second
   video: {
     novaReelStandard: {
       modality: "video",
       name: "Amazon Nova Reel (Standard)",
-      modelId: "amazon.nova-reel-v1:0",
+      modelId: NOVA_REEL_ID,
       costPer1KTokensOrUnit: 0.063, // $0.063 per second
       speedRating: 2,
       qualityRating: 2,
@@ -102,7 +124,7 @@ export const UNIFIED_MODEL_CATALOG: Record<string, Record<string, UnifiedModelTi
     novaReelPremium: {
       modality: "video",
       name: "Amazon Nova Reel (Premium)",
-      modelId: "amazon.nova-reel-v1:0", // Same model, different config
+      modelId: NOVA_REEL_ID, // Same model, different config
       costPer1KTokensOrUnit: 0.095, // $0.095 per second (higher quality settings)
       speedRating: 3,
       qualityRating: 3,
@@ -110,7 +132,7 @@ export const UNIFIED_MODEL_CATALOG: Record<string, Record<string, UnifiedModelTi
     },
   },
 
-  // SPEECH MODELS
+  // SPEECH MODELS — AWS Polly service IDs (not Bedrock LLMs, kept inline)
   speech: {
     pollyStandard: {
       modality: "speech",

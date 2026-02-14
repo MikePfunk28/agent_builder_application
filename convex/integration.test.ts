@@ -1136,13 +1136,13 @@ describe("Agent-to-Agent Communication via MCP", () => {
         deploymentType: "aws",
         exposableAsMCPTool: true,
         mcpToolName: "test_agent_tool",
-        mcpInputSchema: {
+        mcpInputSchema: JSON.stringify({
           type: "object",
           properties: {
             input: { type: "string", description: "Input message" },
           },
           required: ["input"],
-        },
+        }),
       });
     });
   });
@@ -1187,12 +1187,12 @@ describe("Agent-to-Agent Communication via MCP", () => {
       await ctx.db.patch(newAgentId, {
         exposableAsMCPTool: true,
         mcpToolName: "new_agent_tool",
-        mcpInputSchema: {
+        mcpInputSchema: JSON.stringify({
           type: "object",
           properties: {
             query: { type: "string" },
           },
-        },
+        }),
       });
     });
 

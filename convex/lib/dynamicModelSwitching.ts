@@ -10,6 +10,7 @@
  */
 
 import type { Doc } from "../_generated/dataModel";
+import { BEDROCK_MODELS } from "../modelRegistry";
 
 type AgentDoc = Doc<"agents">;
 
@@ -27,38 +28,62 @@ export interface ModelTier {
 }
 
 /**
- * Available model tiers
+ * Helper: derive cost-per-1K-tokens from the authoritative registry (costPer1MTokens).
+ */
+function costPer1K(modelId: string): { input: number; output: number } {
+  const meta = BEDROCK_MODELS[modelId];
+  if (meta?.costPer1MTokens) {
+    return {
+      input: meta.costPer1MTokens.input / 1000,
+      output: meta.costPer1MTokens.output / 1000,
+    };
+  }
+  // Fallback — should not happen for models listed below
+  return { input: 0, output: 0 };
+}
+
+// Registry model IDs — single source of truth
+const HAIKU_ID = "anthropic.claude-haiku-4-5-20251001-v1:0";
+const SONNET_ID = "anthropic.claude-sonnet-4-5-20250929-v1:0";
+
+/**
+ * Available model tiers.
+ *
+ * Model IDs and cost are derived from modelRegistry.ts (BEDROCK_MODELS).
+ * Claude 3.5 Sonnet was removed from the registry; the "sonnet" balanced
+ * tier now references Sonnet 4.5 with a capped capabilityRating of 2 to
+ * preserve the 3-tier routing logic (haiku=1, sonnet=2, sonnet45=3).
  */
 export const MODEL_TIERS: Record<string, ModelTier> = {
   // Fast & Cheap
   haiku: {
-    name: "Claude 4.5 Haiku",
-    modelId: "anthropic.claude-haiku-4-5-20251001-v1:0",
-    costPer1KInput: 0.001,
-    costPer1KOutput: 0.005,
-    maxTokens: 8000,
+    name: BEDROCK_MODELS[HAIKU_ID]?.name ?? "Claude 4.5 Haiku",
+    modelId: HAIKU_ID,
+    costPer1KInput: costPer1K(HAIKU_ID).input,
+    costPer1KOutput: costPer1K(HAIKU_ID).output,
+    maxTokens: BEDROCK_MODELS[HAIKU_ID]?.maxOutput ?? 8192,
     speedRating: 1,
     capabilityRating: 1,
   },
 
-  // Balanced
+  // Balanced (Sonnet 4.5 at capability-2 for tier routing)
   sonnet: {
-    name: "Claude 3.5 Sonnet",
-    modelId: "anthropic.claude-3-5-sonnet-20241022-v2:0",
-    costPer1KInput: 0.003,
-    costPer1KOutput: 0.015,
-    maxTokens: 8000,
+    name: BEDROCK_MODELS[SONNET_ID]?.name ?? "Claude 4.5 Sonnet",
+    modelId: SONNET_ID,
+    costPer1KInput: costPer1K(SONNET_ID).input,
+    costPer1KOutput: costPer1K(SONNET_ID).output,
+    maxTokens: BEDROCK_MODELS[SONNET_ID]?.maxOutput ?? 8192,
     speedRating: 2,
     capabilityRating: 2,
   },
 
   // Capable (highest auto-selectable tier — Opus is too expensive for auto-selection)
   sonnet45: {
-    name: "Claude Sonnet 4.5",
-    modelId: "anthropic.claude-sonnet-4-5-20250929-v1:0",
-    costPer1KInput: 0.003,
-    costPer1KOutput: 0.015,
-    maxTokens: 8192,
+    name: BEDROCK_MODELS[SONNET_ID]?.name ?? "Claude 4.5 Sonnet",
+    modelId: SONNET_ID,
+    costPer1KInput: costPer1K(SONNET_ID).input,
+    costPer1KOutput: costPer1K(SONNET_ID).output,
+    maxTokens: BEDROCK_MODELS[SONNET_ID]?.maxOutput ?? 8192,
     speedRating: 2,
     capabilityRating: 3,
   },
@@ -324,10 +349,6 @@ export function createModelSwitchingWrapper(
   ): Promise<{ response: any; decision: ModelSwitchDecision }> {
     // Make decision
     const decision = decideModelSwitch( message, conversationHistory, agent, options );
-
-    console.log( `[ModelSwitcher] ${decision.reasoning}` );
-    console.log( `[ModelSwitcher] Selected: ${decision.selectedModel.name}` );
-    console.log( `[ModelSwitcher] Estimated cost: $${decision.estimatedCost.toFixed( 4 )}` );
 
     // Call original model with selected model
     const response = await originalModelCall( decision.selectedModel.modelId, ...extraArgs );

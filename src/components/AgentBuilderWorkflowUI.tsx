@@ -30,6 +30,11 @@ const WORKFLOW_STAGES: Omit<WorkflowStage, "status">[] = [
     description: "Designing the optimal agent structure",
   },
   {
+    name: "ast_analysis",
+    title: "Codebase Analysis",
+    description: "Analyzing existing code patterns and dependencies",
+  },
+  {
     name: "tool_design",
     title: "Tool Design",
     description: "Creating necessary tools and integrations",
@@ -40,6 +45,11 @@ const WORKFLOW_STAGES: Omit<WorkflowStage, "status">[] = [
     description: "Planning the code structure",
   },
   {
+    name: "test_generation",
+    title: "Test Generation",
+    description: "Building tests from the plan to constrain code",
+  },
+  {
     name: "code_generation",
     title: "Code Generation",
     description: "Generating production-ready code",
@@ -48,6 +58,11 @@ const WORKFLOW_STAGES: Omit<WorkflowStage, "status">[] = [
     name: "validation",
     title: "Testing & Validation",
     description: "Validating the implementation",
+  },
+  {
+    name: "verification",
+    title: "Verification",
+    description: "Verifying build against tests and requirements",
   },
 ];
 

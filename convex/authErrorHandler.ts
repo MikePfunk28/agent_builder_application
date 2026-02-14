@@ -38,8 +38,7 @@ export const logOAuthAttempt = mutation({
     );
     
     if (recentLog) {
-      console.log(`[OAuth] Rate limited: Skipping duplicate log for ${args.provider}`);
-      return; // Skip logging to prevent quota exhaustion
+      return; // Rate limited — skip duplicate log for this provider
     }
 
     // Log audit event
@@ -84,12 +83,7 @@ export const logOAuthAttempt = mutation({
       });
     }
 
-    console.log(`[OAuth] ${args.provider} authentication ${args.success ? "succeeded" : "failed"}`, {
-      provider: args.provider,
-      success: args.success,
-      error: args.error,
-      userId: args.userId,
-    });
+    // Auth attempt already persisted to auditLogs + errorLogs tables above
   },
 });
 
@@ -120,8 +114,7 @@ export const logCallbackMismatch = mutation({
     );
     
     if (recentLog) {
-      console.log(`[OAuth] Rate limited: Skipping duplicate callback mismatch log for ${args.provider}`);
-      return;
+      return; // Rate limited — skip duplicate callback mismatch log
     }
 
     await ctx.db.insert("errorLogs", {

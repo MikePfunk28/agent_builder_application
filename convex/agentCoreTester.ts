@@ -122,7 +122,12 @@ export const createSandboxDeployment = action({
         agentCode: v.string(),
         requirements: v.string(),
         modelId: v.string(),
-        tools: v.array(v.any()),
+        tools: v.array(v.object({
+          name: v.string(),
+          type: v.string(),
+          requiresPip: v.optional(v.boolean()),
+          pipPackages: v.optional(v.array(v.string())),
+        })),
         systemPrompt: v.string(),
         region: v.optional(v.string()),
     },

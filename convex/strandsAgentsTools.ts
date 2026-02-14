@@ -173,7 +173,7 @@ export const promptTemplateTool = {
       required: v.boolean(),
     })),
     examples: v.array(v.object({
-      input: v.any(),
+      input: v.record(v.string(), v.any()), // v.any(): example input values are heterogeneous
       output: v.string(),
     })),
   }),
@@ -390,7 +390,7 @@ export const dataConnectorTool = {
 
   parameters: v.object({
     sourceType: v.union(v.literal("database"), v.literal("api"), v.literal("file"), v.literal("stream")),
-    connectionConfig: v.any(),
+    connectionConfig: v.any(), // v.any(): connection config varies by source type (database, api, file, stream)
     queryTemplate: v.optional(v.string()),
     transformations: v.array(v.string()),
   }),
@@ -631,7 +631,7 @@ export const handoffToUserTool = {
     options: v.optional(v.array(v.string())),
     requireConfirmation: v.boolean(),
     timeout: v.optional(v.number()), // seconds to wait
-    context: v.optional(v.any()),
+    context: v.optional(v.record(v.string(), v.any())), // v.any(): handoff context values are heterogeneous
   }),
 
   inputs: ["current_state"],

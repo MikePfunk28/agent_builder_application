@@ -55,8 +55,6 @@ export function ConversationChat({ agentId, agentName, modelId }: ConversationCh
   // CRITICAL: Reset conversation when agent changes
   useEffect(() => {
     if (currentAgentIdRef.current !== agentId) {
-      console.log(`🔄 Agent switched from ${currentAgentIdRef.current} to ${agentId}`);
-
       // Reset conversation state
       setConversationId(null);
       setShowAnalysis(false);
@@ -66,7 +64,6 @@ export function ConversationChat({ agentId, agentName, modelId }: ConversationCh
       if (recentConversations && recentConversations.length > 0) {
         const latestConv = recentConversations[0];
         if (latestConv.messages && latestConv.messages.length > 0) {
-          console.log(`📝 Loading existing conversation: ${latestConv._id}`);
           setConversationId(latestConv._id);
         }
       }
@@ -182,8 +179,6 @@ export function ConversationChat({ agentId, agentName, modelId }: ConversationCh
 
     setIsAnalyzing(true);
     try {
-      console.log(`🔧 Improving agent ${agentId} using conversation ${conversationId}`);
-
       // Auto-improve agent (analyzes + applies changes)
       const result = await autoImproveAgent({
         agentId,
@@ -194,8 +189,6 @@ export function ConversationChat({ agentId, agentName, modelId }: ConversationCh
         description: `Applied ${result.changes.length} improvements to ${agentName}`,
         duration: 5000,
       });
-
-      console.log("✅ Improvement Result:", result);
 
       // Show what changed
       if (result.changes.length > 0) {
