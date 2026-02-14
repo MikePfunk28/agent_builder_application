@@ -192,15 +192,16 @@ export const invokeMCPTool = action( {
     const startTime = Date.now();
 
     // Resolve billing user from auth (prevents spoofing via args.userId)
+    // Public action: NEVER trust client-supplied userId — only use auth-resolved identity
     let billingUserId: Id<"users"> | undefined = undefined;
     try {
       const authUserId = await getAuthUserId( ctx );
       if ( authUserId ) billingUserId = authUserId;
-    } catch {
-      // Auth resolution failed — fall back to args.userId for server-side callers
-    }
-    if ( !billingUserId && args.userId ) {
-      billingUserId = args.userId;
+    } catch ( authErr ) {
+      console.error( "mcpClient invokeMCPTool: auth resolution failed", {
+        error: authErr instanceof Error ? authErr.message : String( authErr ),
+      } );
+      // billingUserId stays undefined — billing will be skipped for unauthenticated callers
     }
 
     try {
@@ -474,10 +475,10 @@ async function invokeMCPToolDirect(
     const transport = new StdioClientTransport( {
       command: server.command,
       args: server.args || [],
-      env: {
-        ...process.env,
-        ...( server.env || {} ),
-      },
+      env: Object.fromEntries(
+        Object.entries( { ...process.env, ...( server.env || {} ) } )
+          .filter( ( entry ): entry is [string, string] => entry[1] !== undefined ),
+      ),
     } );
 
     // Create MCP client

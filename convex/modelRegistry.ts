@@ -1087,6 +1087,10 @@ export function isOllamaModelId(
   if ( deploymentType && deploymentType !== "ollama" ) return false;
   if ( modelId.toLowerCase().includes( "ollama" ) ) return true;
   if ( modelId.includes( ":" ) && !modelId.includes( "." ) ) return true;
+  // Registry fallback: check if modelId matches any OLLAMA_MODELS key (case-insensitive)
+  // Catches IDs without colons like "llama3.3", "deepseek-v3", "mistral-nemo"
+  const lower = modelId.toLowerCase();
+  if ( Object.keys( OLLAMA_MODELS ).some( k => k.toLowerCase() === lower ) ) return true;
   return false;
 }
 

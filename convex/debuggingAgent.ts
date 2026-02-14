@@ -84,6 +84,9 @@ export const getDebugSessions = query({
   },
 });
 
+// ─── Module state ────────────────────────────────────────────────────────────
+let warnedDebugSessionsStub = false;
+
 // Helper Functions
 
 async function gatherDiagnostics(ctx: any, args: any) {
@@ -396,7 +399,10 @@ export const createDebugSession = internalMutation({
   handler: async (_ctx, _args) => {
     // TODO: Persist to a debugSessions table once the schema migration is done.
     // Currently returns a stub ID — no data is stored.
-    console.warn( "debugSessions table not implemented — returning stub ID" );
+    if ( !warnedDebugSessionsStub ) {
+      console.warn( "debugSessions table not implemented — returning stub ID" );
+      warnedDebugSessionsStub = true;
+    }
     return `debug_${Date.now()}_${Math.random().toString( 36 ).substring( 2, 11 )}`;
   },
 });

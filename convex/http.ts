@@ -198,9 +198,12 @@ http.route({
 
       // Execute agent with provided arguments using event-driven strands-agents path
       // No polling - calls AgentCore directly
+      const rawInput = (args as Record<string, unknown>)?.input;
+      const message = typeof rawInput === "string" ? rawInput : JSON.stringify(args);
+
       const result = await ctx.runAction(api.strandsAgentExecution.executeAgentWithStrandsAgents, {
         agentId: agent._id,
-        message: (args as Record<string, unknown>)?.input as string || JSON.stringify(args),
+        message,
         // No conversationId for MCP tool invocations (stateless)
       });
 
