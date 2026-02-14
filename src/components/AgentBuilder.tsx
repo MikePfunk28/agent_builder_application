@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, type ChangeEvent } from "react";
+import { z } from "zod";
 import { motion, AnimatePresence } from "framer-motion";
 import { useMutation, useAction, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
@@ -148,6 +149,22 @@ export function AgentBuilder() {
   const handleSave = () => {
     if ( !generatedCode ) {
       toast.error( "Please generate the agent first" );
+      return;
+    }
+
+    // Validate config before saving
+    const saveSchema = z.object( {
+      name: z.string().min( 1, "Agent name is required" ).max( 200, "Agent name too long" ),
+      description: z.string().max( 2000, "Description too long" ),
+      model: z.string().min( 1, "Model selection is required" ),
+      systemPrompt: z.string().max( 50000, "System prompt too long" ),
+      deploymentType: z.string().min( 1 ),
+    } );
+
+    const validation = saveSchema.safeParse( config );
+    if ( !validation.success ) {
+      const firstError = validation.error.issues[0];
+      toast.error( firstError?.message || "Invalid agent configuration" );
       return;
     }
 

@@ -14,6 +14,13 @@ import type { ActionCtx } from "../_generated/server";
 /** Safety limit matching Anthropic's own server-side tool loop limit. */
 export const MAX_TOOL_LOOP_ITERATIONS = 10;
 
+/** Maximum depth for agent-dispatch-agent nesting (prevents infinite recursion). */
+export const MAX_AGENT_DISPATCH_DEPTH = 3;
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+import { safeJsonParse } from "./jsonUtils";
+
 // ─── Internal Tool Map ──────────────────────────────────────────────────────
 
 /**
@@ -72,9 +79,13 @@ export interface TokenUsage {
  */
 export function mapThinkingLevelToPayload(
   thinkingLevel: "low" | "medium" | "high" | undefined,
-  _modelId: string,
+  modelId: string,
 ): Record<string, any> {
   if ( !thinkingLevel ) return {};
+
+  // Only Claude models support thinking blocks — return empty for non-Claude models
+  const isClaude = modelId.includes( "anthropic" ) || modelId.includes( "claude" );
+  if ( !isClaude ) return {};
 
   const budgetMap: Record<string, number> = {
     low: 1024,
@@ -151,6 +162,7 @@ export async function dispatchToolCall(
   input: Record<string, any>,
   skills: SkillDefinition[],
   userId: string,
+  depth: number = 0,
 ): Promise<{ success: boolean; output: any; error?: string }> {
   // Priority 1: Internal tool map (tools.ts actions)
   const internalAction = INTERNAL_TOOL_MAP[toolName]
@@ -175,7 +187,7 @@ export async function dispatchToolCall(
           const result = await ctx.runAction( api.mcpClient.invokeMCPTool, {
             serverName: config.serverName,
             toolName: config.toolName,
-            userId: userId as any, // userId is Id<"users"> at runtime; cast for string param
+            userId: userId as any, // string → Id<"users">: dispatchToolCall receives serialized Id
             parameters: input,
           } );
           return {
@@ -191,6 +203,9 @@ export async function dispatchToolCall(
       }
 
       case "agent": {
+        if ( depth >= MAX_AGENT_DISPATCH_DEPTH ) {
+          return { success: false, output: "", error: `Agent dispatch depth limit (${MAX_AGENT_DISPATCH_DEPTH}) exceeded — possible infinite recursion` };
+        }
         const config = skill.skillConfig as { agentId: string };
         try {
           const result = await ctx.runAction( api.strandsAgentExecution.executeAgentWithStrandsAgents, {
@@ -221,10 +236,99 @@ export async function dispatchToolCall(
             return { success: false, output: "", error: error.message };
           }
         }
-        break;
+        return { success: false, output: "", error: `Internal skill "${toolName}" has no matching action for "${actionName}"` };
       }
 
-      // code, composite, sandbox — future implementations
+      case "code": {
+        // Code skills provide their implementation as tool output.
+        // The code is stored in skillConfig and returned for the agent to use/incorporate.
+        // Full ECS execution requires a testExecution record (use the Agent Tester for that).
+        const codeConfig = skill.skillConfig as { code?: string; language?: string };
+        const code = codeConfig?.code || "";
+        if ( !code ) {
+          return { success: false, output: "", error: "Code skill has no code to execute" };
+        }
+        const language = codeConfig?.language || "python";
+        return {
+          success: true,
+          output: JSON.stringify( {
+            code,
+            language,
+            toolName,
+            inputProvided: input,
+            note: "Code skill output — use Agent Tester for containerized execution",
+          } ),
+        };
+      }
+
+      case "composite": {
+        // Sequential execution: run each step's skill in order, mapping outputs
+        const compositeConfig = skill.skillConfig as {
+          steps?: Array<{ skillName: string; inputMapping?: Record<string, string> }>;
+        };
+        const steps = compositeConfig?.steps || [];
+        if ( steps.length === 0 ) {
+          return { success: false, output: "", error: "Composite skill has no steps" };
+        }
+        let stepInput = input;
+        let lastOutput = "";
+        for ( const step of steps ) {
+          const stepSkill = skills.find( s => ( s.toolDefinition?.name ?? s.name ) === step.skillName );
+          if ( !stepSkill ) {
+            return { success: false, output: lastOutput, error: `Composite step skill "${step.skillName}" not found` };
+          }
+          // Map outputs from previous step to inputs for this step
+          if ( step.inputMapping && lastOutput ) {
+            const parsed = safeJsonParse( lastOutput );
+            if ( parsed ) {
+              const mapped: Record<string, unknown> = { ...stepInput };
+              for ( const [targetKey, sourceKey] of Object.entries( step.inputMapping ) ) {
+                mapped[targetKey] = ( parsed as Record<string, unknown> )[sourceKey];
+              }
+              stepInput = mapped;
+            }
+          }
+          // Recursive dispatch to the step's skill
+          const stepResult = await dispatchToolCall( ctx, step.skillName, stepInput, skills, userId, depth + 1 );
+          if ( !stepResult.success ) {
+            return { success: false, output: lastOutput, error: `Composite step "${step.skillName}" failed: ${stepResult.error}` };
+          }
+          lastOutput = stepResult.output;
+          stepInput = safeJsonParse( lastOutput ) ?? { input: lastOutput };
+        }
+        return { success: true, output: lastOutput };
+      }
+
+      case "sandbox": {
+        // Sandbox execution: Docker via ECS, E2B is a future placeholder
+        const sandboxConfig = skill.skillConfig as {
+          runtime?: "docker" | "e2b";
+          command?: string;
+          timeout?: number;
+        };
+        const runtime = sandboxConfig?.runtime || "docker";
+        if ( runtime === "e2b" ) {
+          return { success: false, output: "", error: "E2B sandbox runtime is not yet supported. Use Docker runtime." };
+        }
+        // Docker runtime: return sandbox execution spec for the agent to incorporate.
+        // Full containerized execution requires the Agent Tester flow (AgentCore).
+        const command = sandboxConfig?.command || "";
+        if ( !command ) {
+          return { success: false, output: "", error: "Sandbox skill has no command to execute" };
+        }
+        return {
+          success: true,
+          output: JSON.stringify( {
+            runtime,
+            command,
+            timeout: sandboxConfig?.timeout || 60000,
+            toolName,
+            inputProvided: input,
+            note: "Sandbox spec — containerized execution via Agent Tester (AgentCore)",
+          } ),
+        };
+      }
+
       default:
         break;
     }

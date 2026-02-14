@@ -17,7 +17,15 @@ export const validateAgentConfig = mutation({
     name: v.string(),
     model: v.string(),
     systemPrompt: v.string(),
-    tools: v.array(v.any()),
+    tools: v.array(v.object({
+      name: v.string(),
+      type: v.string(),
+      config: v.optional(v.any()), // v.any(): tool config shape varies per tool type
+      requiresPip: v.optional(v.boolean()),
+      pipPackages: v.optional(v.array(v.string())),
+      extrasPip: v.optional(v.string()),
+      notSupportedOn: v.optional(v.array(v.string())),
+    })),
     deploymentType: v.string(),
   },
   handler: async (ctx, args) => {
@@ -117,7 +125,11 @@ function validateTools(tools: any[], validDeploymentTypes: string[]): string[] {
  */
 export const checkToolCompatibility = mutation({
   args: {
-    tools: v.array(v.any()),
+    tools: v.array(v.object({
+      name: v.string(),
+      type: v.string(),
+      notSupportedOn: v.optional(v.array(v.string())),
+    })),
     deploymentType: v.string(),
   },
   handler: async (ctx, args) => {

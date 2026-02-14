@@ -1070,6 +1070,39 @@ export function getUnitsForModel( modelId: string ): number {
 }
 
 /**
+ * Determine if a model ID represents an Ollama model.
+ * Single source of truth — replaces 11+ inconsistent inline heuristics.
+ *
+ * Logic (sourced from strandsAgentExecutionDynamic.ts — most robust variant):
+ *   1. deploymentType === "ollama" — explicit config always wins
+ *   2. model ID contains "ollama" (case-insensitive) — explicit naming
+ *   3. model has colon but no dot, AND deploymentType is not set — heuristic
+ *      (Bedrock IDs like "anthropic.claude-haiku-4-5-20251001-v1:0" have dots)
+ */
+export function isOllamaModelId(
+  modelId: string,
+  deploymentType?: string,
+): boolean {
+  if ( deploymentType === "ollama" ) return true;
+  if ( deploymentType && deploymentType !== "ollama" ) return false;
+  if ( modelId.toLowerCase().includes( "ollama" ) ) return true;
+  if ( modelId.includes( ":" ) && !modelId.includes( "." ) ) return true;
+  return false;
+}
+
+/**
+ * Derive the deployment type from a model ID when not explicitly set.
+ * Returns "ollama" if the model looks like an Ollama ID, the explicit type otherwise.
+ */
+export function deriveDeploymentType(
+  modelId: string,
+  explicitType?: string,
+): string {
+  if ( explicitType ) return explicitType;
+  return isOllamaModelId( modelId ) ? "ollama" : "bedrock";
+}
+
+/**
  * Get the thinking/reasoning configuration for a Bedrock model.
  * Used by workflow invokers to dispatch to the correct API path.
  *

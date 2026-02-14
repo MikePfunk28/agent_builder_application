@@ -29,7 +29,7 @@ import { checkRateLimitInMutation, buildTierRateLimitConfig } from "./rateLimite
 import { incrementUsageAndReportOverageImpl } from "./stripeMutations";
 
 // Model registry — authoritative source for cost data
-import { BEDROCK_MODELS } from "./modelRegistry";
+import { BEDROCK_MODELS, isOllamaModelId } from "./modelRegistry";
 
 // Cost calculation helper — reads pricing from the authoritative model registry.
 // Falls back to Haiku 4.5 pricing ($1/$5 per 1M tokens) for unknown models.
@@ -56,8 +56,7 @@ export const submitTest = mutation({
     conversationId: v.optional(v.id("conversations")),
     testEnvironment: v.optional(v.union(
       v.literal("lambda"),
-      v.literal("agentcore"),
-      v.literal("fargate")
+      v.literal("agentcore")
     )),
     testModelId: v.optional(v.string()), // Override: test with a different model than agent was designed with
   },
@@ -89,9 +88,9 @@ export const submitTest = mutation({
     // When testModelId is provided, check THAT model's provider (user may test with Ollama to save usage).
     const testModel = args.testModelId || agent.model;
     const testDeployType = args.testModelId
-      ? ( args.testModelId.includes( ":" ) && !args.testModelId.includes( "." ) ? "ollama" : agent.deploymentType )
+      ? ( isOllamaModelId( args.testModelId ) ? "ollama" : agent.deploymentType )
       : agent.deploymentType;
-    const isOllamaModel = testDeployType === "ollama" || (!testDeployType && testModel.includes(':') && !testModel.includes('.'));
+    const isOllamaModel = isOllamaModelId( testModel, testDeployType );
 
     // RATE LIMITING: Only for Bedrock/cloud models (Ollama is FREE and unlimited!)
     if (!isOllamaModel) {
@@ -359,15 +358,8 @@ export const cancelTest = mutation({
       return { success: true, message: "Test removed from queue" };
     }
 
-    // If building or running, stop ECS task
+    // If building or running, cancel immediately
     if (test.status === "BUILDING" || test.status === "RUNNING") {
-      if (test.ecsTaskArn) {
-        await ctx.scheduler.runAfter(0, internal.containerOrchestrator.stopTestContainer, {
-          testId: args.testId,
-          taskArn: test.ecsTaskArn,
-        });
-      }
-
       // Mark as cancelled immediately
       await ctx.db.patch(args.testId, {
         status: "FAILED",
@@ -419,7 +411,7 @@ export const retryTest = mutation({
 
     // Check if this is an Ollama test (FREE and unlimited!)
     const agent = await ctx.db.get(originalTest.agentId);
-    const isOllamaModel = agent ? (agent.model.includes(':') || agent.deploymentType === "ollama") : false;
+    const isOllamaModel = agent ? isOllamaModelId( agent.model, agent.deploymentType ) : false;
 
     // RATE LIMITING: Only for cloud models (Ollama is FREE!)
     if (!isOllamaModel) {
@@ -832,7 +824,7 @@ function extractModelConfig(model: string, deploymentType: string): {
   }
 
   // Ollama models: contain colon (e.g., "llama3:8b", "qwen3:4b")
-  if (model.includes(':')) {
+  if (isOllamaModelId(model)) {
     return {
       modelProvider: "ollama",
       modelConfig: {

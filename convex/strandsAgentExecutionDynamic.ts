@@ -15,7 +15,7 @@ import {
   decideModelSwitch,
   type ModelSwitchDecision,
 } from "./lib/dynamicModelSwitching";
-import { resolveBedrockModelId } from "./modelRegistry";
+import { resolveBedrockModelId, isOllamaModelId } from "./modelRegistry";
 
 type AgentDoc = Doc<"agents">;
 
@@ -121,9 +121,24 @@ export const executeAgentWithDynamicModel = action( {
       const user = await ctx.runQuery( internal.users.getInternal, { id: agent.createdBy } );
       const userTier = ( user?.tier as "freemium" | "personal" | "enterprise" ) || "freemium";
 
+      // Positively detect Ollama models so Bedrock IDs with colons (e.g.
+      // "anthropic.claude-haiku-4-5-20251001-v1:0") are not misclassified.
+      const isOllamaModel = isOllamaModelId( agent.model, agent.deploymentType );
+      const isBedrock = !isOllamaModel;
+
+      // PAYMENT + TIER GATE: Full payment status verification via bedrockGate
+      // (checks: anonymous, subscription status, expiration, provider, model family, limits)
+      if ( isBedrock ) {
+        const { requireBedrockAccessForUser } = await import( "./lib/bedrockGate" );
+        const gateResult = await requireBedrockAccessForUser( user, agent.model );
+        if ( !gateResult.allowed ) {
+          return { success: false, error: gateResult.reason };
+        }
+      }
+
       // Burst rate limit: enforce tier-aware per-minute ceiling
       const { checkRateLimit, buildTierRateLimitConfig } = await import( "./rateLimiter" );
-      const { isProviderAllowedForTier, getTierConfig: getTierCfg } = await import( "./lib/tierConfig" );
+      const { getTierConfig: getTierCfg } = await import( "./lib/tierConfig" );
       const tierCfg = getTierCfg( userTier );
       const rlCfg = buildTierRateLimitConfig( tierCfg.maxConcurrentTests, "agentExecution" );
       const rlResult = await checkRateLimit( ctx, String( agent.createdBy ), "agentExecution", rlCfg );
@@ -131,21 +146,6 @@ export const executeAgentWithDynamicModel = action( {
         return {
           success: false,
           error: rlResult.reason || "Rate limit exceeded. Please wait before running more executions.",
-        };
-      }
-
-      // Model gating: Block freemium users from Bedrock models.
-      // Positively detect Ollama models so Bedrock IDs with colons (e.g.
-      // "anthropic.claude-haiku-4-5-20251001-v1:0") are not misclassified.
-      const isOllamaModel = agent.deploymentType === "ollama"
-        || agent.model.toLowerCase().includes( "ollama" )
-        || ( !agent.deploymentType && !agent.model.includes( "." ) && agent.model.includes( ":" ) );
-      const isBedrock = !isOllamaModel;
-      if ( isBedrock && !isProviderAllowedForTier( userTier, "bedrock" ) ) {
-        return {
-          success: false,
-          error: "Bedrock models require a Personal subscription ($5/month). " +
-            "Use local Ollama models for free, or upgrade in Settings → Billing.",
         };
       }
 
@@ -217,11 +217,6 @@ async function executeWithModelSwitching(
 
   // Make model switching decision
   const decision = decideModelSwitch( message, historyForAnalysis, agent, options );
-
-  console.log( `[ModelSwitcher] Complexity: ${decision.complexityScore}/100` );
-  console.log( `[ModelSwitcher] Selected: ${decision.selectedModel.name}` );
-  console.log( `[ModelSwitcher] Reasoning: ${decision.reasoning}` );
-  console.log( `[ModelSwitcher] Estimated cost: $${decision.estimatedCost.toFixed( 4 )}` );
 
   // Execute with selected model
   const result = await executeDirectBedrock(

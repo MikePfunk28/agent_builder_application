@@ -389,20 +389,14 @@ export const createDebugSession = internalMutation({
   args: {
     userId: v.id("users"),
     issueType: v.string(),
-    analysis: v.any(),
-    recommendations: v.any(),
-    diagnostics: v.any(),
+    analysis: v.any(), // v.any(): debug analysis structure varies by issue type
+    recommendations: v.any(), // v.any(): recommendation structure varies by issue type
+    diagnostics: v.any(), // v.any(): diagnostic data varies by issue type
   },
-  handler: async (_ctx, args) => {
-    // For now, we'll just log the debug session
-    // In a full implementation, you might want to store this in a debugSessions table
-    console.log("Debug session created:", {
-      userId: args.userId,
-      issueType: args.issueType,
-      timestamp: Date.now(),
-    });
-    
-    // Return a mock debug session ID
-    return `debug_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+  handler: async (_ctx, _args) => {
+    // TODO: Persist to a debugSessions table once the schema migration is done.
+    // Currently returns a stub ID — no data is stored.
+    console.warn( "debugSessions table not implemented — returning stub ID" );
+    return `debug_${Date.now()}_${Math.random().toString( 36 ).substring( 2, 11 )}`;
   },
 });

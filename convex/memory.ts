@@ -23,7 +23,7 @@ export const appendAgentMemory = action({
     title: v.optional(v.string()),
     summary: v.optional(v.string()),
     content: v.string(),
-    metadata: v.optional(v.any()),
+    metadata: v.optional(v.record(v.string(), v.any())), // Memory metadata key-value pairs
     tokenCount: v.optional(v.number()),
   },
   handler: async (ctx, args): Promise<{ memoryId: string; s3Key?: string; createdAt: number }> => {
@@ -93,7 +93,7 @@ export const recordMemory = internalAction({
     title: v.optional(v.string()),
     summary: v.optional(v.string()),
     content: v.string(),
-    metadata: v.optional(v.any()),
+    metadata: v.optional(v.record(v.string(), v.any())), // Memory metadata key-value pairs
     tokenCount: v.optional(v.number()),
   },
   handler: async (ctx, args): Promise<{ memoryId: any; s3Key?: string; createdAt: number }> => {

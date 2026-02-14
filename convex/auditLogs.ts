@@ -19,7 +19,7 @@ export const logEvent = internalMutation( {
     resource: v.optional( v.string() ),
     resourceId: v.optional( v.string() ),
     success: v.boolean(),
-    details: v.optional( v.any() ),
+    details: v.optional( v.record( v.string(), v.any() ) ), // Audit event detail key-value pairs
     metadata: v.optional( v.object( {
       provider: v.optional( v.string() ),
       serverName: v.optional( v.string() ),

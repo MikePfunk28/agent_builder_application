@@ -625,11 +625,11 @@ export const listUserSwarms = query({
 
 export const storeSwarm = internalAction({
   args: {
-    swarm: v.any(),
+    swarm: v.any(), // v.any(): swarm definition structure varies by topology and communication protocol
   },
-  handler: async (ctx, args) => {
+  handler: async (_ctx, _args) => {
     // Store swarm definition (in-memory for now)
-    console.log("Storing swarm:", args.swarm);
+    // TODO: Persist to swarmDefinitions table
   },
 });
 
@@ -637,9 +637,8 @@ export const getSwarm = internalQuery({
   args: {
     swarmId: v.string(),
   },
-  handler: async (ctx, args): Promise<SwarmDefinition | null> => {
-    // Retrieve swarm definition (mock implementation)
-    console.log("Retrieving swarm:", args.swarmId);
+  handler: async (_ctx, _args): Promise<SwarmDefinition | null> => {
+    // Retrieve swarm definition (stub — needs swarmDefinitions table)
     return null;
   },
 });
@@ -653,7 +652,7 @@ export const createSwarmFromToolInvocation = internalAction({
     parentAgentId: v.id("agents"),
     toolInvocation: v.object({
       toolName: v.string(), // "swarm", "graph", or "workflow"
-      parameters: v.any(), // Tool parameters from Strands Agents
+      parameters: v.any(), // v.any(): tool parameters from Strands Agents — shape varies per tool
       conversationId: v.optional(v.id("interleavedConversations")),
     }),
   },
@@ -738,7 +737,7 @@ export const executeSwarmFromTool = internalAction({
     swarmId: v.string(),
     toolInvocation: v.object({
       toolName: v.string(),
-      parameters: v.any(),
+      parameters: v.any(), // v.any(): tool parameters from Strands Agents — shape varies per tool
       executionMode: v.union(v.literal("parallel"), v.literal("sequential"), v.literal("orchestrated")),
     }),
     parentConversationId: v.optional(v.id("interleavedConversations")),

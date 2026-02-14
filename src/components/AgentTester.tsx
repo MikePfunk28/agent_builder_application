@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useMutation, useQuery } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { toast } from "sonner";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -75,9 +75,23 @@ export function AgentTester({ agentId, agentCode, requirements, dockerfile, agen
   const [showDiagram, setShowDiagram] = useState(false);
   const [showSetupGuide, setShowSetupGuide] = useState(false);
   const [showOllamaGuide, setShowOllamaGuide] = useState(false);
+  const [iterativeMode, setIterativeMode] = useState(false);
+  const [maxIterations, setMaxIterations] = useState(10);
+  const [completionCriteria, setCompletionCriteria] = useState<"tests_pass" | "no_errors" | "llm_judgment" | "max_iterations">("no_errors");
+  const [iterativeResult, setIterativeResult] = useState<{
+    success: boolean;
+    iterations: Array<{ iteration: number; content: string; success: boolean }>;
+    totalIterations: number;
+    completionReason: string;
+    finalContent: string;
+    totalTokenUsage: { inputTokens: number; outputTokens: number; totalTokens: number };
+    maxIterationsUsed: number;
+  } | null>(null);
+  const [iterativeRunning, setIterativeRunning] = useState(false);
 
   const submitTest = useMutation(api.testExecution.submitTest);
   const cancelTest = useMutation(api.testExecution.cancelTest);
+  const executeIterative = useAction(api.strandsAgentExecution.executeIterativeAgent);
 
   // Poll test status while running
   const testStatus = useQuery(
@@ -88,7 +102,7 @@ export function AgentTester({ agentId, agentCode, requirements, dockerfile, agen
   // Get test history
   const testHistoryData = useQuery(api.testExecution.getUserTests, { limit: 10 });
 
-  const isRunning = testStatus?.status === "RUNNING" || testStatus?.status === "QUEUED" || testStatus?.status === "BUILDING";
+  const isRunning = iterativeRunning || testStatus?.status === "RUNNING" || testStatus?.status === "QUEUED" || testStatus?.status === "BUILDING";
   const currentLogs = testStatus?.logs || [];
 
   const handleTest = async () => {
@@ -98,7 +112,42 @@ export function AgentTester({ agentId, agentCode, requirements, dockerfile, agen
     }
 
     setTestResult(null);
+    setIterativeResult(null);
 
+    // --- Iterative mode: call executeIterativeAgent action ---
+    if (iterativeMode) {
+      setIterativeRunning(true);
+      try {
+        const result = await executeIterative({
+          agentId,
+          message: testQuery,
+          maxIterations,
+          completionCriteria: { type: completionCriteria },
+        });
+        setIterativeResult({ ...result, maxIterationsUsed: maxIterations });
+        if (result.success) {
+          toast.success(`Iterative loop completed in ${result.totalIterations} iteration(s)`);
+        } else {
+          toast.error(`Iterative loop ended: ${result.completionReason}`);
+        }
+      } catch (error: any) {
+        toast.error(`Iterative execution failed: ${error.message}`);
+        setIterativeResult({
+          success: false,
+          iterations: [],
+          totalIterations: 0,
+          completionReason: `Error: ${error.message}`,
+          finalContent: "",
+          totalTokenUsage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+          maxIterationsUsed: maxIterations,
+        });
+      } finally {
+        setIterativeRunning(false);
+      }
+      return;
+    }
+
+    // --- Standard single-test mode ---
     try {
       // Submit test to queue
       const result = await submitTest({
@@ -139,7 +188,7 @@ export function AgentTester({ agentId, agentCode, requirements, dockerfile, agen
             buildTime: testStatus.buildTime || 0,
           } : undefined,
           modelUsed: modelId,
-          testEnvironment: 'ECS Fargate'
+          testEnvironment: 'agentcore'
         });
         if (testStatus.success) {
           toast.success("🎉 Agent test completed successfully!");
@@ -153,7 +202,7 @@ export function AgentTester({ agentId, agentCode, requirements, dockerfile, agen
           logs: testStatus.logs,
           stage: testStatus.errorStage as any || 'runtime',
           modelUsed: modelId,
-          testEnvironment: 'ECS Fargate'
+          testEnvironment: 'agentcore'
         });
         toast.error(`❌ Test failed: ${testStatus.error}`);
       }
@@ -310,8 +359,63 @@ export function AgentTester({ agentId, agentCode, requirements, dockerfile, agen
             disabled={isRunning}
           />
           <p className="text-xs text-green-600 mt-1">
-            💡 Try asking about capabilities, requesting calculations, or testing specific tools
+            Try asking about capabilities, requesting calculations, or testing specific tools
           </p>
+        </div>
+
+        {/* Iterative Mode Toggle */}
+        <div className="bg-gray-900/50 border border-green-900/30 rounded-lg p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <label className="flex items-center gap-2 text-sm font-medium text-green-400 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={iterativeMode}
+                onChange={(e) => setIterativeMode(e.target.checked)}
+                disabled={isRunning}
+                className="rounded border-green-600 bg-black text-green-500 focus:ring-green-400"
+              />
+              Iterative Mode (Ralphy Loop)
+            </label>
+            {iterativeMode && (
+              <span className="text-xs text-green-600">
+                Agent will iterate until completion criteria met
+              </span>
+            )}
+          </div>
+          {iterativeMode && (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs text-green-600 mb-1">Max Iterations</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={maxIterations}
+                  onChange={(e) => setMaxIterations(Math.min(100, Math.max(1, parseInt(e.target.value) || 10)))}
+                  disabled={isRunning}
+                  title="Max Iterations"
+                  aria-label="Max Iterations"
+                  className="w-full px-3 py-2 bg-black border border-green-900/30 rounded text-green-400 text-sm focus:border-green-400 outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-green-600 mb-1">Completion Criteria</label>
+                <select
+                  value={completionCriteria}
+                  onChange={(e) => setCompletionCriteria(e.target.value as typeof completionCriteria)}
+                  disabled={isRunning}
+                  title="Completion Criteria"
+                  aria-label="Completion Criteria"
+                  className="w-full px-3 py-2 bg-black border border-green-900/30 rounded text-green-400 text-sm focus:border-green-400 outline-none"
+                >
+                  <option value="no_errors">No Errors</option>
+                  <option value="tests_pass">Tests Pass</option>
+                  <option value="llm_judgment">LLM Judgment</option>
+                  <option value="max_iterations">Max Iterations</option>
+                </select>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="flex gap-3">
@@ -322,7 +426,7 @@ export function AgentTester({ agentId, agentCode, requirements, dockerfile, agen
               className="flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               <Play className="w-4 h-4" />
-              Execute Real Docker Test
+              {iterativeMode ? `Run Iterative Loop (${maxIterations} max)` : "Execute Real Docker Test"}
             </button>
           ) : (
             <button
@@ -549,9 +653,125 @@ export function AgentTester({ agentId, agentCode, requirements, dockerfile, agen
         </div>
       )}
 
+      {/* Iterative Mode Results */}
+      {(iterativeRunning || iterativeResult) && (
+        <div className="bg-gray-900/50 border border-green-900/30 rounded-xl p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              {iterativeRunning ? (
+                <Loader2 className="w-5 h-5 text-yellow-400 animate-spin" />
+              ) : iterativeResult?.success ? (
+                <CheckCircle className="w-5 h-5 text-green-400" />
+              ) : (
+                <XCircle className="w-5 h-5 text-red-400" />
+              )}
+              <h4 className="font-medium text-green-400">
+                {iterativeRunning
+                  ? "Iterative Loop Running..."
+                  : iterativeResult?.success
+                    ? "Iterative Loop Completed"
+                    : "Iterative Loop Failed"}
+              </h4>
+              <span className="text-xs bg-purple-900/30 text-purple-400 px-2 py-1 rounded">
+                Ralphy Loop
+              </span>
+            </div>
+          </div>
+
+          {/* Completion Summary */}
+          {iterativeResult && (
+            <div className="bg-black border border-green-900/30 rounded-lg p-4 mb-4">
+              <div className="grid grid-cols-3 gap-4 text-sm">
+                <div>
+                  <span className="text-green-600">Iterations:</span>
+                  <span className="text-green-400 ml-2 font-semibold">
+                    {iterativeResult.totalIterations} / {iterativeResult.maxIterationsUsed}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-green-600">Status:</span>
+                  <span className={`ml-2 font-semibold ${iterativeResult.success ? "text-green-400" : "text-red-400"}`}>
+                    {iterativeResult.success ? "SUCCESS" : "FAILED"}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-green-600">Tokens:</span>
+                  <span className="text-green-400 ml-2">
+                    {iterativeResult.totalTokenUsage.totalTokens.toLocaleString()}
+                  </span>
+                </div>
+              </div>
+              <div className="mt-2 text-xs text-green-600">
+                Reason: {iterativeResult.completionReason}
+              </div>
+            </div>
+          )}
+
+          {/* Iteration Timeline */}
+          {iterativeResult && iterativeResult.iterations.length > 0 && (
+            <div className="space-y-3">
+              <h5 className="text-sm font-medium text-green-400 flex items-center gap-2">
+                <RefreshCw className="w-4 h-4" />
+                Iteration History
+              </h5>
+              <div className="space-y-2 max-h-96 overflow-y-auto">
+                {iterativeResult.iterations.map((iter) => (
+                  <motion.div
+                    key={`iter-${iter.iteration}`}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: iter.iteration * 0.05 }}
+                    className={`bg-black border rounded-lg p-3 ${
+                      iter.success
+                        ? "border-green-900/30"
+                        : "border-red-900/30"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        {iter.success ? (
+                          <CheckCircle className="w-3.5 h-3.5 text-green-400" />
+                        ) : (
+                          <XCircle className="w-3.5 h-3.5 text-red-400" />
+                        )}
+                        <span className="text-xs font-medium text-green-400">
+                          Iteration {iter.iteration}
+                        </span>
+                      </div>
+                      <span className={`text-xs px-2 py-0.5 rounded ${
+                        iter.success
+                          ? "bg-green-900/30 text-green-400"
+                          : "bg-red-900/30 text-red-400"
+                      }`}>
+                        {iter.success ? "OK" : "FAIL"}
+                      </span>
+                    </div>
+                    <p className="text-xs text-green-300 font-mono whitespace-pre-wrap line-clamp-4">
+                      {iter.content || "(no output)"}
+                    </p>
+                  </motion.div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Final Content */}
+          {iterativeResult?.finalContent && (
+            <div className="mt-4">
+              <h5 className="text-sm font-medium text-green-400 mb-2">Final Output</h5>
+              <div className="bg-green-900/20 border border-green-700/30 rounded-lg p-4">
+                <p className="text-green-300 whitespace-pre-wrap text-sm">
+                  {iterativeResult.finalContent}
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Setup Guide Modals */}
       {showSetupGuide && (
-        <DockerSetupGuide 
+        <DockerSetupGuide
           modelId={modelId}
           onClose={() => setShowSetupGuide(false)}
         />

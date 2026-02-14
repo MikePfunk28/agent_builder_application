@@ -139,6 +139,31 @@ const BUILT_IN_MCP_SERVERS: BuiltInMcpServer[] = [
     createdAt: Date.now(),
     updatedAt: Date.now(),
   },
+
+  {
+    source: "system" as const,
+    _id: "system_taskmaster",
+    _creationTime: Date.now(),
+    name: "task-master-ai",
+    userId: "system",
+    command: "npx",
+    args: ["task-master-ai", "mcp"],
+    env: {},
+    disabled: false,
+    timeout: 30000,
+    status: "connected",
+    availableTools: [
+      { name: "parse_prd", description: "Parse a PRD document into structured tasks" },
+      { name: "next_task", description: "Get the next task to work on based on priority and dependencies" },
+      { name: "list_tasks", description: "List all tasks with their current status" },
+      { name: "set_task_status", description: "Update the status of a task" },
+      { name: "expand_task", description: "Expand a task into detailed subtasks with AI research" },
+      { name: "generate_task_files", description: "Generate individual task files from the task list" },
+      { name: "analyze_complexity", description: "Analyze task complexity and effort estimates" },
+    ],
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  },
 ];
 
 /**
@@ -424,7 +449,7 @@ export const updateMCPServerStatus = mutation( {
     availableTools: v.optional( v.array( v.object( {
       name: v.string(),
       description: v.optional( v.string() ),
-      inputSchema: v.optional( v.any() ),
+      inputSchema: v.optional( v.any() ), // v.any(): JSON Schema object for tool input — shape defined by MCP protocol
     } ) ) ),
   },
   handler: async ( ctx, args ) => {

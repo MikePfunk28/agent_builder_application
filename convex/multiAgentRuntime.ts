@@ -29,7 +29,7 @@ export const executeMultiAgentPattern = action({
       role: v.optional(v.string()),
     })),
     executionMode: v.union(v.literal("parallel"), v.literal("sequential")),
-    sharedContext: v.optional(v.any()),
+    sharedContext: v.optional(v.record(v.string(), v.any())), // v.any(): shared context values are heterogeneous
   },
   handler: async (ctx: any, args: any): Promise<any> => {
     // Auth check: verify caller identity before executing multi-agent patterns
@@ -43,8 +43,6 @@ export const executeMultiAgentPattern = action({
     if (!parentAgent) {
       throw new Error(`Forbidden: parent agent ${args.parentAgentId} not found or access denied`);
     }
-
-    console.log(`Multi-agent execution requested: ${args.pattern} mode with ${args.agents.length} agents`);
 
     try {
       // INTEGRATION: Use swarmTestingOrchestrator for actual execution
@@ -252,7 +250,7 @@ export const recordAgentResult = internalMutation({
     sessionId: v.id("multiAgentSessions"),
     agentId: v.id("agents"),
     conversationId: v.id("interleavedConversations"),
-    result: v.any(),
+    result: v.any(), // v.any(): individual agent result — shape varies by agent type
     status: v.string(),
     startedAt: v.optional(v.number()),
   },
@@ -273,7 +271,7 @@ export const recordAgentResult = internalMutation({
 export const completeSession = internalMutation({
   args: {
     sessionId: v.id("multiAgentSessions"),
-    results: v.any(),
+    results: v.any(), // v.any(): aggregated multi-agent results — shape varies by pattern
   },
   handler: async (ctx, args) => {
     await ctx.db.patch(args.sessionId, {

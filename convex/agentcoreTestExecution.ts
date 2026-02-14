@@ -12,6 +12,7 @@
 import { internalAction } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
+import { deriveDeploymentType } from "./modelRegistry";
 
 /**
  * Execute agent test with cost-optimized approach
@@ -24,7 +25,10 @@ export const executeAgentCoreTest = internalAction( {
     testId: v.id( "testExecutions" ),
     agentId: v.id( "agents" ),
     input: v.string(),
-    conversationHistory: v.optional( v.array( v.any() ) ),
+    conversationHistory: v.optional( v.array( v.object( {
+      role: v.union( v.literal( "user" ), v.literal( "assistant" ), v.literal( "system" ) ),
+      content: v.string(),
+    } ) ) ),
   },
   handler: async ( ctx, args ) => {
     const startTime = Date.now();
@@ -59,9 +63,31 @@ export const executeAgentCoreTest = internalAction( {
 
       const executionUserId = testDetails.userId;
       const user = await ctx.runQuery( internal.users.getInternal, { id: executionUserId } );
-      const tier = user?.tier || "freemium";
 
-      const { getTierConfig, isProviderAllowedForTier } = await import( "./lib/tierConfig" );
+      // Use test-level model override if set (allows designing with one model, testing with another).
+      // submitTest stores the user's testModelId in modelConfig.modelId.
+      const effectiveModel = testDetails.modelConfig?.modelId || agent.model;
+      const effectiveProvider = testDetails.modelProvider || agent.modelProvider || deriveDeploymentType( effectiveModel );
+      const isOllama = effectiveProvider === "ollama";
+
+      // PAYMENT + TIER GATE: Full payment status verification via bedrockGate
+      // (checks: anonymous, subscription status, expiration, provider, model family, limits)
+      if ( !isOllama ) {
+        const { requireBedrockAccessForUser } = await import( "./lib/bedrockGate" );
+        const gateResult = await requireBedrockAccessForUser( user, effectiveModel );
+        if ( !gateResult.allowed ) {
+          await ctx.runMutation( internal.testExecution.updateStatus, {
+            testId: args.testId,
+            status: "FAILED",
+            success: false,
+            error: gateResult.reason,
+          } );
+          return { success: false, error: gateResult.reason };
+        }
+      }
+
+      const tier = user?.tier || "freemium";
+      const { getTierConfig } = await import( "./lib/tierConfig" );
       const tierCfg = getTierConfig( tier );
 
       // Burst rate limit: enforce tier-aware per-minute ceiling
@@ -76,27 +102,6 @@ export const executeAgentCoreTest = internalAction( {
           error: rlResult.reason || "Rate limit exceeded. Please wait before submitting more tests.",
         } );
         return { success: false, error: "Burst rate limit exceeded" };
-      }
-
-      // Use test-level model override if set (allows designing with one model, testing with another).
-      // submitTest stores the user's testModelId in modelConfig.modelId.
-      const effectiveModel = testDetails.modelConfig?.modelId || agent.model;
-      const effectiveProvider = testDetails.modelProvider || agent.modelProvider;
-
-      // PROVIDER TIER GATE: Enforce per-tier allowed provider rules
-      // (mirrors strandsAgentExecution.ts, strandsAgentExecutionDynamic.ts,
-      // and testExecution.ts logic).
-      const isOllama = effectiveProvider === "ollama";
-      if ( !isOllama && !isProviderAllowedForTier( tier, "bedrock" ) ) {
-        await ctx.runMutation( internal.testExecution.updateStatus, {
-          testId: args.testId,
-          status: "FAILED",
-          success: false,
-          error: `${tierCfg.displayName} tier does not allow Bedrock models. ` +
-            `Allowed providers: ${tierCfg.allowedProviders.join( ", " )}. ` +
-            `Use Ollama models for free, or upgrade your subscription.`,
-        } );
-        return { success: false, error: "Provider not allowed for tier" };
       }
 
       // Route based on model provider
@@ -232,12 +237,7 @@ async function executeViaDirectBedrock( params: {
 
     const client = new BedrockRuntimeClient( {
       region: process.env.AWS_REGION || "us-east-1",
-      ...( process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY && {
-        credentials: {
-          accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-          secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-        },
-      } ),
+      // Use the SDK default credential provider chain (env vars, shared credentials file, EC2/ECS/Role, etc.).
     } );
 
     // Resolve model ID using authoritative shared registry

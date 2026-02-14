@@ -233,8 +233,8 @@ export const save = mutation( {
   args: {
     workflowId: v.optional( v.id( "workflows" ) ),
     name: v.string(),
-    nodes: v.array( v.any() ),
-    edges: v.array( v.any() ),
+    nodes: v.array( v.any() ), // v.any(): raw frontend nodes — sanitized by sanitizeWorkflowPayload before storage
+    edges: v.array( v.any() ), // v.any(): raw frontend edges — sanitized by sanitizeWorkflowPayload before storage
     templateId: v.optional( v.string() ),
     status: v.optional( v.string() ),
   },

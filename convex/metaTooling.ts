@@ -11,6 +11,7 @@
 import { mutation, query, internalMutation, internalAction, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
+import { INTERNAL_TOOL_MAP } from "./lib/toolDispatch";
 
 /**
  * Meta-tooling system prompt template
@@ -213,7 +214,7 @@ export const createTool = mutation({
     displayName: v.string(),
     description: v.string(),
     code: v.string(),
-    parameters: v.any(),
+    parameters: v.any(), // v.any(): JSON Schema object for tool parameters — shape varies per tool
     returnType: v.optional(v.string()),
     category: v.optional(v.string()),
     pipPackages: v.optional(v.array(v.string())),
@@ -225,6 +226,12 @@ export const createTool = mutation({
     const userId = await getAuthUserId(ctx);
     if (!userId) {
       throw new Error("Must be authenticated to create tools");
+    }
+
+    // Guard: reject names that conflict with built-in tools
+    const reservedNames = Object.keys( INTERNAL_TOOL_MAP );
+    if ( reservedNames.includes( args.name ) || reservedNames.includes( args.name.toLowerCase().replace( / /g, "_" ) ) ) {
+      throw new Error( `Tool name "${args.name}" conflicts with a built-in tool` );
     }
 
     // Validate tool code syntax first
@@ -282,7 +289,7 @@ export const createToolInternal = internalMutation({
     displayName: v.string(),
     description: v.string(),
     code: v.string(),
-    parameters: v.any(),
+    parameters: v.any(), // v.any(): JSON Schema object for tool parameters — shape varies per tool
     returnType: v.optional(v.string()),
     category: v.optional(v.string()),
     pipPackages: v.optional(v.array(v.string())),
@@ -541,7 +548,7 @@ export const updateTool = mutation({
     toolId: v.id("dynamicTools"),
     code: v.optional(v.string()),
     description: v.optional(v.string()),
-    parameters: v.optional(v.any()),
+    parameters: v.optional(v.any()), // v.any(): JSON Schema object for tool parameters — shape varies per tool
     isActive: v.optional(v.boolean()),
     isPublic: v.optional(v.boolean()),
   },
@@ -592,7 +599,7 @@ export const updateToolInternal = internalMutation({
     toolId: v.id("dynamicTools"),
     code: v.optional(v.string()),
     description: v.optional(v.string()),
-    parameters: v.optional(v.any()),
+    parameters: v.optional(v.any()), // v.any(): JSON Schema object for tool parameters — shape varies per tool
     isActive: v.optional(v.boolean()),
     isPublic: v.optional(v.boolean()),
   },
@@ -766,11 +773,11 @@ export const createSkill = mutation( {
       v.literal( "composite" ),
       v.literal( "sandbox" ),
     ),
-    skillConfig: v.optional( v.any() ),
+    skillConfig: v.optional( v.any() ), // v.any(): routing config varies by skillType (internal, mcp, agent, composite, sandbox)
     toolDefinition: v.object( {
       name: v.string(),
       description: v.string(),
-      inputSchema: v.any(),
+      inputSchema: v.any(), // v.any(): JSON Schema for tool input — shape defined by Anthropic tools API
     } ),
     skillInstructions: v.optional( v.string() ),
     tags: v.optional( v.array( v.string() ) ),
@@ -779,6 +786,12 @@ export const createSkill = mutation( {
     const userId = await getAuthUserId( ctx );
     if ( !userId ) {
       throw new Error( "Must be authenticated to create skills" );
+    }
+
+    // Guard: reject names that conflict with built-in tools
+    const reservedNames = Object.keys( INTERNAL_TOOL_MAP );
+    if ( reservedNames.includes( args.name ) || reservedNames.includes( args.name.toLowerCase().replace( / /g, "_" ) ) ) {
+      throw new Error( `Skill name "${args.name}" conflicts with a built-in tool` );
     }
 
     // Check for duplicate name

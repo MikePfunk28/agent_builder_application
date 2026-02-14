@@ -200,7 +200,7 @@ const updateAgentCoreMetadataInternal = async (
 export const invokeAgentCoreSandbox = action({
   args: {
     sandboxId: v.string(),
-    input: v.any(),
+    input: v.any(), // v.any(): accepts dynamic user-provided sandbox input (string, object, etc.)
   },
   handler: async (ctx, args): Promise<any> => {
     try {

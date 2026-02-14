@@ -183,7 +183,7 @@ export const addMessage = mutation({
     conversationId: v.id("conversations"),
     role: v.union(v.literal("user"), v.literal("assistant"), v.literal("system")),
     content: v.string(),
-    metadata: v.optional(v.any()),
+    metadata: v.optional(v.record(v.string(), v.any())), // Message metadata key-value pairs
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -222,7 +222,7 @@ export const addMessageInternal = internalMutation({
     conversationId: v.string(),
     role: v.union(v.literal("user"), v.literal("assistant"), v.literal("system")),
     content: v.string(),
-    metadata: v.optional(v.any()),
+    metadata: v.optional(v.record(v.string(), v.any())), // Message metadata key-value pairs
   },
   handler: async (ctx, args) => {
     const conversation = await ctx.db.get(args.conversationId as any);

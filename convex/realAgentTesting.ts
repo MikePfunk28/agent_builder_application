@@ -23,7 +23,12 @@ export const createTestContainer = action({
     requirements: v.string(),
     agentName: v.string(),
     modelId: v.string(),
-    tools: v.array(v.any()),
+    tools: v.array(v.object({
+      name: v.string(),
+      type: v.string(),
+      requiresPip: v.optional(v.boolean()),
+      pipPackages: v.optional(v.array(v.string())),
+    })),
     systemPrompt: v.string(),
   },
   handler: async (ctx, args): Promise<any> => {
@@ -103,7 +108,12 @@ export const deployToAWS = action({
     agentCode: v.string(),
     requirements: v.string(),
     modelId: v.string(),
-    tools: v.array(v.any()),
+    tools: v.array(v.object({
+      name: v.string(),
+      type: v.string(),
+      requiresPip: v.optional(v.boolean()),
+      pipPackages: v.optional(v.array(v.string())),
+    })),
     awsCredentials: v.object({
       accessKeyId: v.string(),
       secretAccessKey: v.string(),
@@ -539,5 +549,5 @@ async function deployToBedrock(deploymentPackage: any, awsCredentials: any): Pro
 
 async function cleanupContainer(containerId: string): Promise<void> {
   // In real implementation, this would stop and remove the ECS task
-  console.log(`Cleaning up container: ${containerId}`);
+  // Container cleanup — in real implementation would stop/remove ECS task
 }

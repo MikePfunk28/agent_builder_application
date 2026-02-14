@@ -46,7 +46,6 @@ describe( "INTERNAL_TOOL_MAP (toolDispatch.ts)", () => {
     for ( const [name, ref] of Object.entries( INTERNAL_TOOL_MAP ) ) {
       // Convex FunctionReference is a string like "tools:shortTermMemory"
       expect( ref ).toBeDefined();
-      expect( typeof ref ).not.toBe( "undefined" );
     }
   } );
 } );
@@ -76,6 +75,14 @@ describe( "Thinking level payload mapping", () => {
     const { mapThinkingLevelToPayload } = await import( "./lib/toolDispatch" );
     const result = mapThinkingLevelToPayload( undefined, "anthropic.claude-sonnet-4-5-20250929-v1:0" );
     expect( result ).toEqual( {} );
+  } );
+
+  test( "mapThinkingLevelToPayload returns empty for non-Claude models regardless of level", async () => {
+    const { mapThinkingLevelToPayload } = await import( "./lib/toolDispatch" );
+    // DeepSeek, Llama, Mistral should never get thinking config
+    expect( mapThinkingLevelToPayload( "high", "deepseek.v3-v1:0" ) ).toEqual( {} );
+    expect( mapThinkingLevelToPayload( "medium", "meta.llama3-3-70b-instruct-v1:0" ) ).toEqual( {} );
+    expect( mapThinkingLevelToPayload( "low", "mistral:latest" ) ).toEqual( {} );
   } );
 } );
 
@@ -459,5 +466,301 @@ describe( "Skill CRUD (metaTooling extensions)", () => {
     expect( skill ).not.toBeNull();
     expect( skill.name ).toBe( "findme_skill" );
     expect( skill.skillType ).toBe( "mcp" );
+  } );
+} );
+
+// ─── 9. Traycer-Pattern Workflow Stages (Phase 2) ────────────────────────────
+
+describe( "WORKFLOW_STAGES (agentBuilderWorkflow.ts)", () => {
+  test( "exports all 9 workflow stages (6 original + 3 Traycer)", async () => {
+    const { WORKFLOW_STAGES } = await import( "./agentBuilderWorkflow" );
+    const expectedStages = [
+      "REQUIREMENTS",
+      "ARCHITECTURE",
+      "AST_ANALYSIS",
+      "TOOL_DESIGN",
+      "IMPLEMENTATION",
+      "TEST_GENERATION",
+      "CODE_GENERATION",
+      "VALIDATION",
+      "VERIFICATION",
+    ];
+    for ( const stage of expectedStages ) {
+      expect( WORKFLOW_STAGES ).toHaveProperty( stage );
+    }
+    expect( Object.keys( WORKFLOW_STAGES ).length ).toBe( 9 );
+  } );
+
+  test( "AST_ANALYSIS stage has required fields", async () => {
+    const { WORKFLOW_STAGES } = await import( "./agentBuilderWorkflow" );
+    const stage = WORKFLOW_STAGES.AST_ANALYSIS;
+    expect( stage.name ).toBe( "ast_analysis" );
+    expect( stage.systemPrompt ).toBeDefined();
+    expect( stage.systemPrompt.length ).toBeGreaterThan( 50 );
+    expect( stage.outputFormat ).toBe( "ast_analysis_report" );
+  } );
+
+  test( "TEST_GENERATION stage has required fields", async () => {
+    const { WORKFLOW_STAGES } = await import( "./agentBuilderWorkflow" );
+    const stage = WORKFLOW_STAGES.TEST_GENERATION;
+    expect( stage.name ).toBe( "test_generation" );
+    expect( stage.systemPrompt ).toBeDefined();
+    expect( stage.systemPrompt.length ).toBeGreaterThan( 50 );
+    expect( stage.outputFormat ).toBe( "test_specifications" );
+  } );
+
+  test( "VERIFICATION stage has required fields", async () => {
+    const { WORKFLOW_STAGES } = await import( "./agentBuilderWorkflow" );
+    const stage = WORKFLOW_STAGES.VERIFICATION;
+    expect( stage.name ).toBe( "verification" );
+    expect( stage.systemPrompt ).toBeDefined();
+    expect( stage.systemPrompt.length ).toBeGreaterThan( 50 );
+    expect( stage.outputFormat ).toBe( "verification_report" );
+  } );
+
+  test( "all stages have name, systemPrompt, and outputFormat", async () => {
+    const { WORKFLOW_STAGES } = await import( "./agentBuilderWorkflow" );
+    for ( const [key, stage] of Object.entries( WORKFLOW_STAGES ) ) {
+      expect( stage.name ).toBeDefined();
+      expect( typeof stage.name ).toBe( "string" );
+      expect( stage.systemPrompt ).toBeDefined();
+      expect( typeof stage.systemPrompt ).toBe( "string" );
+      expect( stage.outputFormat ).toBeDefined();
+      expect( typeof stage.outputFormat ).toBe( "string" );
+    }
+  } );
+} );
+
+// ─── 10. Iterative Agent Loop Constants (Phase 3) ────────────────────────────
+
+describe( "Iterative agent loop types and constants", () => {
+  test( "MAX_TOOL_LOOP_ITERATIONS is 10", async () => {
+    const { MAX_TOOL_LOOP_ITERATIONS } = await import( "./lib/toolDispatch" );
+    expect( MAX_TOOL_LOOP_ITERATIONS ).toBe( 10 );
+  } );
+
+  test( "COMPLETION_CRITERIA_TYPES exports valid criteria types", async () => {
+    const { COMPLETION_CRITERIA_TYPES } = await import( "./lib/iterativeLoop" );
+    expect( COMPLETION_CRITERIA_TYPES ).toContain( "tests_pass" );
+    expect( COMPLETION_CRITERIA_TYPES ).toContain( "no_errors" );
+    expect( COMPLETION_CRITERIA_TYPES ).toContain( "llm_judgment" );
+    expect( COMPLETION_CRITERIA_TYPES ).toContain( "max_iterations" );
+    expect( COMPLETION_CRITERIA_TYPES.length ).toBe( 4 );
+  } );
+
+  test( "DEFAULT_MAX_ITERATIONS is 10", async () => {
+    const { DEFAULT_MAX_ITERATIONS } = await import( "./lib/iterativeLoop" );
+    expect( DEFAULT_MAX_ITERATIONS ).toBe( 10 );
+  } );
+
+  test( "checkCompletionCriteria returns false for incomplete response", async () => {
+    const { checkCompletionCriteria } = await import( "./lib/iterativeLoop" );
+    const result = checkCompletionCriteria(
+      { type: "no_errors" },
+      { success: true, content: "Error: something went wrong" },
+    );
+    expect( result.isComplete ).toBe( false );
+  } );
+
+  test( "checkCompletionCriteria returns true for clean response", async () => {
+    const { checkCompletionCriteria } = await import( "./lib/iterativeLoop" );
+    const result = checkCompletionCriteria(
+      { type: "no_errors" },
+      { success: true, content: "All tasks completed successfully." },
+    );
+    expect( result.isComplete ).toBe( true );
+  } );
+
+  test( "checkCompletionCriteria handles max_iterations type", async () => {
+    const { checkCompletionCriteria } = await import( "./lib/iterativeLoop" );
+    // max_iterations always returns false (handled by loop counter, not content)
+    const result = checkCompletionCriteria(
+      { type: "max_iterations" },
+      { success: true, content: "anything" },
+    );
+    expect( result.isComplete ).toBe( false );
+  } );
+
+  test( "checkCompletionCriteria handles tests_pass with success pattern", async () => {
+    const { checkCompletionCriteria } = await import( "./lib/iterativeLoop" );
+    const result = checkCompletionCriteria(
+      { type: "tests_pass", successPattern: "ALL TESTS PASSED" },
+      { success: true, content: "Output: ALL TESTS PASSED - 5/5 passing" },
+    );
+    expect( result.isComplete ).toBe( true );
+  } );
+
+  test( "checkCompletionCriteria handles tests_pass without success pattern", async () => {
+    const { checkCompletionCriteria } = await import( "./lib/iterativeLoop" );
+    const result = checkCompletionCriteria(
+      { type: "tests_pass" },
+      { success: true, content: "test results: 3 failed, 2 passed" },
+    );
+    expect( result.isComplete ).toBe( false );
+  } );
+
+  test( "buildContinuationPrompt includes previous output", async () => {
+    const { buildContinuationPrompt } = await import( "./lib/iterativeLoop" );
+    const prompt = buildContinuationPrompt(
+      "Build a REST API",
+      "I created the endpoints but tests are failing",
+      3,
+      10,
+    );
+    expect( prompt ).toContain( "Build a REST API" );
+    expect( prompt ).toContain( "tests are failing" );
+    expect( prompt ).toContain( "3" );
+    expect( prompt ).toContain( "10" );
+  } );
+} );
+
+// ─── 11. Skill Type Dispatch Handlers (Phase 4) ─────────────────────────────
+
+describe( "dispatchToolCall skill type routing", () => {
+  test( "code skill type returns result (not silent fail)", async () => {
+    const { dispatchToolCall } = await import( "./lib/toolDispatch" );
+    // Create a mock code skill
+    const codeSkill = {
+      skillType: "code" as const,
+      name: "python_tool",
+      toolDefinition: {
+        name: "python_tool",
+        description: "Runs Python code",
+        inputSchema: { type: "object", properties: {}, required: [] },
+      },
+      skillConfig: { code: "print('hello')", language: "python" },
+    };
+
+    // dispatchToolCall with a code skill should NOT fall through silently
+    // It should return a result (success or error) — not undefined
+    // Code handler should be reached (not silently skipped) and return a result.
+    const result = await dispatchToolCall(
+      {} as any,
+      "python_tool",
+      { input: "test" },
+      [codeSkill],
+      "test-user",
+    );
+
+    expect( result ).toBeDefined();
+    expect( result ).toHaveProperty( "success" );
+    expect( result.success ).toBe( true );
+  } );
+
+  test( "composite skill type returns result (not silent fail)", async () => {
+    const { dispatchToolCall } = await import( "./lib/toolDispatch" );
+    const compositeSkill = {
+      skillType: "composite" as const,
+      name: "chain_tool",
+      toolDefinition: {
+        name: "chain_tool",
+        description: "Chains multiple skills",
+        inputSchema: { type: "object", properties: {}, required: [] },
+      },
+      skillConfig: { steps: [{ skillName: "short_term_memory", inputMapping: {} }] },
+    };
+
+    // Composite handler should be reached — it will return an error because
+    // the sub-step "short_term_memory" is not in the skills list (expected behavior).
+    const result = await dispatchToolCall(
+      {} as any,
+      "chain_tool",
+      {},
+      [compositeSkill],
+      "test-user",
+    );
+
+    expect( result ).toBeDefined();
+    expect( result ).toHaveProperty( "success" );
+    // The composite handler returns { success: false } when a sub-step skill is not found
+    expect( result.success ).toBe( false );
+    expect( result.error ).toContain( "not found" );
+  } );
+
+  test( "sandbox skill type returns result (not silent fail)", async () => {
+    const { dispatchToolCall } = await import( "./lib/toolDispatch" );
+    const sandboxSkill = {
+      skillType: "sandbox" as const,
+      name: "docker_tool",
+      toolDefinition: {
+        name: "docker_tool",
+        description: "Runs code in sandbox",
+        inputSchema: { type: "object", properties: {}, required: [] },
+      },
+      skillConfig: { runtime: "docker", command: "python test.py", timeout: 30000 },
+    };
+
+    // Sandbox handler should be reached (not silently skipped) and return a result.
+    const result = await dispatchToolCall(
+      {} as any,
+      "docker_tool",
+      {},
+      [sandboxSkill],
+      "test-user",
+    );
+
+    expect( result ).toBeDefined();
+    expect( result ).toHaveProperty( "success" );
+    expect( result.success ).toBe( true );
+  } );
+} );
+
+// ─── 12. isOllamaModelId & deriveDeploymentType (Phase 0) ───────────────────
+
+describe( "isOllamaModelId", () => {
+  test( "returns true for explicit ollama deploymentType", async () => {
+    const { isOllamaModelId } = await import( "./modelRegistry" );
+    expect( isOllamaModelId( "anything", "ollama" ) ).toBe( true );
+  } );
+
+  test( "returns true for model name containing 'ollama'", async () => {
+    const { isOllamaModelId } = await import( "./modelRegistry" );
+    expect( isOllamaModelId( "ollama/qwen3:4b" ) ).toBe( true );
+    expect( isOllamaModelId( "Ollama-custom:latest" ) ).toBe( true );
+  } );
+
+  test( "returns true for colon-no-dot pattern without deploymentType", async () => {
+    const { isOllamaModelId } = await import( "./modelRegistry" );
+    expect( isOllamaModelId( "qwen3:4b" ) ).toBe( true );
+    expect( isOllamaModelId( "llama3:8b" ) ).toBe( true );
+    expect( isOllamaModelId( "mistral:latest" ) ).toBe( true );
+  } );
+
+  test( "returns false for Bedrock IDs with colon AND dot", async () => {
+    const { isOllamaModelId } = await import( "./modelRegistry" );
+    expect( isOllamaModelId( "anthropic.claude-haiku-4-5-20251001-v1:0" ) ).toBe( false );
+    expect( isOllamaModelId( "anthropic.claude-sonnet-4-5-20250929-v1:0" ) ).toBe( false );
+    expect( isOllamaModelId( "deepseek.v3-v1:0" ) ).toBe( false );
+  } );
+
+  test( "returns false for Bedrock IDs without colon", async () => {
+    const { isOllamaModelId } = await import( "./modelRegistry" );
+    expect( isOllamaModelId( "anthropic.claude-opus-4-6-v1" ) ).toBe( false );
+  } );
+
+  test( "returns false when deploymentType is explicitly not ollama", async () => {
+    const { isOllamaModelId } = await import( "./modelRegistry" );
+    expect( isOllamaModelId( "qwen3:4b", "bedrock" ) ).toBe( false );
+    expect( isOllamaModelId( "llama3:8b", "ecs" ) ).toBe( false );
+  } );
+} );
+
+describe( "deriveDeploymentType", () => {
+  test( "returns explicit type when provided", async () => {
+    const { deriveDeploymentType } = await import( "./modelRegistry" );
+    expect( deriveDeploymentType( "anything", "bedrock" ) ).toBe( "bedrock" );
+    expect( deriveDeploymentType( "anything", "ecs" ) ).toBe( "ecs" );
+  } );
+
+  test( "returns 'ollama' for Ollama-pattern model ID", async () => {
+    const { deriveDeploymentType } = await import( "./modelRegistry" );
+    expect( deriveDeploymentType( "qwen3:4b" ) ).toBe( "ollama" );
+    expect( deriveDeploymentType( "mistral:latest" ) ).toBe( "ollama" );
+  } );
+
+  test( "returns 'bedrock' for Bedrock model ID", async () => {
+    const { deriveDeploymentType } = await import( "./modelRegistry" );
+    expect( deriveDeploymentType( "anthropic.claude-haiku-4-5-20251001-v1:0" ) ).toBe( "bedrock" );
+    expect( deriveDeploymentType( "deepseek.v3-v1:0" ) ).toBe( "bedrock" );
   } );
 } );

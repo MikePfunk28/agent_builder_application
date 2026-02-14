@@ -5,6 +5,7 @@ import { v } from "convex/values";
 import { api, internal } from "./_generated/api";
 import { isDbMcpServer } from "./mcpConfig";
 import type { Id } from "./_generated/dataModel";
+import { getAuthUserId } from "@convex-dev/auth/server";
 
 /**
  * MCP Client for invoking tools from configured MCP servers
@@ -91,7 +92,7 @@ export const invokeMCPToolInternal = internalAction( {
   args: {
     serverName: v.string(),
     toolName: v.string(),
-    parameters: v.any(),
+    parameters: v.record( v.string(), v.any() ), // v.any(): tool parameter values are heterogeneous (strings, numbers, objects)
     userId: v.optional( v.id( "users" ) ),
     timeout: v.optional( v.number() ),
   },
@@ -183,12 +184,24 @@ export const invokeMCPTool = action( {
   args: {
     serverName: v.string(),
     toolName: v.string(),
-    parameters: v.any(),
+    parameters: v.record( v.string(), v.any() ), // v.any(): tool parameter values are heterogeneous (strings, numbers, objects)
     userId: v.optional( v.id( "users" ) ), // Pass userId to enable billing for callers
     timeout: v.optional( v.number() ), // Override timeout in milliseconds
   },
   handler: async ( ctx, args ) => {
     const startTime = Date.now();
+
+    // Resolve billing user from auth (prevents spoofing via args.userId)
+    let billingUserId: Id<"users"> | undefined = undefined;
+    try {
+      const authUserId = await getAuthUserId( ctx );
+      if ( authUserId ) billingUserId = authUserId;
+    } catch {
+      // Auth resolution failed — fall back to args.userId for server-side callers
+    }
+    if ( !billingUserId && args.userId ) {
+      billingUserId = args.userId;
+    }
 
     try {
       // Get MCP server configuration from database
@@ -281,22 +294,22 @@ export const invokeMCPTool = action( {
           },
         } );
 
-        // Meter Bedrock usage if userId provided and token data available (non-fatal)
+        // Meter Bedrock usage if billing user resolved and token data available (non-fatal)
         if (
-          args.userId &&
+          billingUserId &&
           result.result?.tokenUsage &&
           ( result.result.tokenUsage.inputTokens > 0 || result.result.tokenUsage.outputTokens > 0 )
         ) {
           try {
             await ctx.runMutation( internal.stripeMutations.incrementUsageAndReportOverage, {
-              userId: args.userId,
+              userId: billingUserId,
               modelId: result.result.model_id,
               inputTokens: result.result.tokenUsage.inputTokens,
               outputTokens: result.result.tokenUsage.outputTokens,
             } );
           } catch ( billingErr ) {
             console.error( "mcpClient invokeMCPTool: billing failed (non-fatal)", {
-              userId: args.userId, modelId: result.result.model_id,
+              userId: billingUserId, modelId: result.result.model_id,
               inputTokens: result.result.tokenUsage.inputTokens,
               outputTokens: result.result.tokenUsage.outputTokens,
               error: billingErr instanceof Error ? billingErr.message : billingErr,
@@ -600,17 +613,11 @@ async function invokeBedrockDirect( parameters: any, timeout: number ): Promise<
   try {
     const { BedrockRuntimeClient, InvokeModelCommand } = await import( "@aws-sdk/client-bedrock-runtime" );
 
-    const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
-    const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
-    if ( ( accessKeyId && !secretAccessKey ) || ( secretAccessKey && !accessKeyId ) ) {
-      throw new Error( "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must both be set or both be unset" );
-    }
+    const creds = (await import("./lib/aws/credentials")).validateAwsCredentials();
 
     const client = new BedrockRuntimeClient( {
       region: process.env.AWS_REGION || "us-east-1",
-      credentials: accessKeyId && secretAccessKey
-        ? { accessKeyId, secretAccessKey }
-        : undefined,
+      credentials: creds || undefined,
     } );
 
     const modelId = parameters.model_id || process.env.AGENT_BUILDER_MODEL_ID || "deepseek.v3-v1:0";
@@ -797,10 +804,10 @@ export const testMCPServerConnection = action( {
         const transport = new StdioClientTransport( {
           command: server.command,
           args: server.args || [],
-          env: {
-            ...process.env,
-            ...( server.env || {} ),
-          },
+          env: Object.fromEntries(
+            Object.entries( { ...process.env, ...( server.env || {} ) } )
+              .filter( ( entry ): entry is [string, string] => entry[1] !== undefined ),
+          ),
         } );
 
         client = new Client(

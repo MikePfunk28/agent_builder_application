@@ -53,7 +53,7 @@ export const compileCode = action({
  */
 export const createContextDB = action({
   args: {
-    data: v.any(),
+    data: v.any(), // v.any(): accepts dynamic user-provided data for context DB (JSON objects, arrays, etc.)
     format: v.union(v.literal("json"), v.literal("sqlite"))
   },
   handler: async (ctx, args) => {
@@ -74,8 +74,8 @@ export const testAPIIntegration = action({
   args: {
     apiUrl: v.string(),
     method: v.string(),
-    headers: v.optional(v.any()),
-    body: v.optional(v.any())
+    headers: v.optional(v.record(v.string(), v.string())), // HTTP headers as key-value string pairs
+    body: v.optional(v.any()) // v.any(): HTTP request body — shape varies by API
   },
   handler: async (ctx, args) => {
     // Test API calls before including in agent
@@ -95,7 +95,10 @@ export const testAPIIntegration = action({
 export const analyzePerformance = action({
   args: {
     agentCode: v.string(),
-    testCases: v.array(v.any())
+    testCases: v.array(v.object({
+      input: v.string(),
+      expectedOutput: v.optional(v.string()),
+    }))
   },
   handler: async (ctx, args) => {
     // Analyze agent performance characteristics
@@ -118,7 +121,7 @@ export const generateTool = action({
     toolSpec: v.object({
       name: v.string(),
       description: v.string(),
-      parameters: v.any(),
+      parameters: v.any(), // v.any(): JSON Schema object for tool parameters — shape varies per tool
       implementation: v.optional(v.string())
     })
   },

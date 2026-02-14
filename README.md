@@ -1,60 +1,98 @@
 # AI Agent Builder Application
 
-A comprehensive platform for building, testing, and deploying AI agents with support for multiple LLM providers (AWS Bedrock, Ollama), deployment tiers (AgentCore, Fargate), and MCP (Model Context Protocol) integration.
+A comprehensive platform for building, testing, and deploying AI agents with support for multiple LLM providers (AWS Bedrock, Ollama/LMStudio), tier-based access (Freemium, Personal), and MCP (Model Context Protocol) integration.
 
-## Try it out:
-https://ai-forge.mikepfunk.com
+## Try it out
 
+**Live**: [https://ai-forge.mikepfunk.com](https://ai-forge.mikepfunk.com)
 
-## ✅ Infrastructure Verified & Updated
+## What It Does
 
-**Three Chat System**:
-- ✅ **Chat UI Panel** - Agent building with interleaved reasoning
-- ✅ **Agent Builder Input** - Automated processing with Claude Haiku 4.5
-- ✅ **Test Chat** - Testing built agents with conversation manager
+AI Agent Builder lets you create, test, and deploy AI agents without writing code. You describe what you want your agent to do, the platform generates the agent code, and you can deploy it to AWS.
 
-**MCP Servers (11+ configured)**:
-- ✅ **bedrock-agentcore-mcp-server** - Windows uv tool setup for AgentCore integration
-- ✅ **document-fetcher-mcp-server** - Document retrieval and processing
-- ✅ **aws-diagram-mcp-server** - Infrastructure diagram generation
-- ✅ **Plus 8+ others** - Configured in mcpConfig.ts
+**Three ways to build agents**:
+1. **Chat Builder** - Describe your agent in natural language, get asked clarifying questions, agent is generated automatically
+2. **Manual Builder** - Select models, tools, and system prompts yourself with full control
+3. **Visual Workflow Builder** - Drag-and-drop visual scripting for multi-step agent workflows
 
-**Rate-Limited External APIs**:
-- ✅ **Tavily Web Search** - 1000 requests/month for web search
-- ✅ **Mem0 Memory** - 1000 requests/month for memory operations
-- ✅ **AgentOps Tracing** - 1000 requests/month for agent observability
+**What you get**:
+- Complete Python agent code using Strands Agents SDK
+- 60+ AI models to choose from (Claude, DeepSeek, Llama, Mistral, etc.)
+- 50+ pre-built tools (web search, code execution, file operations, etc.)
+- MCP server integration for extended capabilities
+- One-click deployment to AWS AgentCore or downloadable agent ZIP
+- Token-based billing with usage tracking
 
-**Model Registry (49 models)**:
-- ✅ **AWS Bedrock** - Claude, Titan, and other foundation models
-- ✅ **Ollama** - Local model execution (llama, mistral, etc.)
+## How to Use It
 
-**Tool Registry (50+ Strands tools)**:
-- ✅ **Pre-configured tools** - From toolRegistry.ts with auto-discovery
+### Getting Started (User)
 
-**DNS & Hosting**:
-- ✅ **Cloudflare DNS** (NOT Route53) - manages all domain resolution
-- ✅ **Cloudflare Pages** - frontend hosting at `ai-forge.mikepfunk.com`
-- ✅ **Custom API Domain** - `api.mikepfunk.com` points to Convex (via Cloudflare DNS)
+1. Go to [ai-forge.mikepfunk.com](https://ai-forge.mikepfunk.com)
+2. Sign in with GitHub, Google, or email/password
+3. Choose your builder:
+   - **Dashboard** - See your agents and usage
+   - **AI Builder** - Chat-based agent creation
+   - **Builder** - Manual agent configuration
+   - **Visual Scripting** - Drag-and-drop workflows
+   - **Chat** - Interleaved reasoning chat
+   - **MCP Servers** - Manage MCP integrations
 
-**Memory Architecture**:
-- ✅ **STM (Short-Term)**: Convex tables (<8KB) for real-time access
-- ✅ **LTM (Long-Term)**: S3 storage (>8KB) for persistence
-- ✅ **DynamoDB**: Memory indexing for fast lookups and semantic search
+### Building an Agent
 
-**Authentication**:
-- ✅ **Web Identity Federation**: STS AssumeRoleWithWebIdentity
-- ✅ **NO static AWS keys**: All credentials are temporary via STS
-- ✅ **Cognito + OAuth**: GitHub, Google integration
+**Chat Builder (Recommended)**:
+1. Click "AI Builder" in the nav
+2. Describe what you want your agent to do
+3. Answer the clarifying questions
+4. Click "Generate Agent" when ready
+5. Test your agent in the Test Chat
 
-**Testing vs Deployment Separation**:
-- ✅ **agentcoreSetup.ts** - Testing via MCP server
-- ✅ **agentcoreDeployment.ts** - Deployment to AgentCore sandbox
-- ✅ **awsDeployment.ts** - User AWS Fargate deployment
+**Manual Builder**:
+1. Click "Builder" in the nav
+2. Enter agent name and description
+3. Select an AI model (Claude Haiku 4.5 for fast, Sonnet 4.5 for smart, Opus 4.6 for best)
+4. Write a system prompt
+5. Select tools your agent needs
+6. Click "Generate Code"
 
-**Backend**:
-- ✅ **Convex Serverless**: Primary database and real-time backend
-- ✅ **Built-in Indexes**: Convex table indexes (NOT external database)
-- ✅ **14+ Tables**: users, agents, deployments, agentMemories, etc.
+**Visual Workflow Builder**:
+1. Click "Visual Scripting" in the nav
+2. Choose a template or start blank
+3. Add nodes: Prompt, LLM, Router, Output
+4. Connect nodes to define the flow
+5. Configure each node's settings
+6. Execute the workflow
+
+### Deployment Tiers
+
+| Tier | Cost | Models | Limits |
+|------|------|--------|--------|
+| Freemium | $0 | Ollama/LMStudio (local) | 50 units/month |
+| Personal | $5/mo + $0.05/unit | All Bedrock + local models | 100 units/month + overage |
+| Enterprise | Coming soon | All + SSO (WorkOS) | Unlimited |
+
+### Commands & Scripts
+
+```bash
+# Development
+npm run dev              # Start frontend + backend
+npm run dev:frontend     # Frontend only (port 4000)
+npm run dev:backend      # Convex backend only
+npm run build            # Production build
+
+# Testing
+npm run test             # Run all tests
+npm run test:watch       # Watch mode
+npm run test:skills      # Agent skills tests only
+
+# Backend
+npx convex dev           # Convex dev server
+npx convex deploy --prod # Deploy to production
+npx convex logs          # View backend logs
+
+# MCP Diagrams
+npm run setup-diagram-mcp    # Setup AWS diagram MCP server
+npm run generate-diagram     # Generate architecture diagram
+```
 
 ## 🏗️ Architecture Overview
 
@@ -121,17 +159,18 @@ https://ai-forge.mikepfunk.com
 │  │  - Agent Builder (Code Generation)                       │   │
 │  │  - Validator (Schema & Syntax)                           │   │
 │  │  - Deployment Router (Tier Selection)                    │   │
-│  │  - Model Registry (49 models: Bedrock + Ollama)         │   │
+│  │  - Model Registry (60+ models: Bedrock + Ollama)         │   │
 │  │  - Tool Registry (50+ Strands tools)                    │   │
 │  └──────────────────────────────────────────────────────────┘   │
 │                                                                   │
 │  ┌──────────────────────────────────────────────────────────┐   │
 │  │ MCP & Strands Integration                                │   │
-│  │  - MCP Servers (11+ configured)                          │   │
+│  │  - MCP Servers (5 built-in + user-custom)                │   │
 │  │    • bedrock-agentcore-mcp-server (Windows uv)           │   │
 │  │    • document-fetcher-mcp-server                         │   │
 │  │    • aws-diagram-mcp-server                              │   │
-│  │    • Plus 8+ others                                      │   │
+│  │    • ollama-mcp-server                                   │   │
+│  │    • task-master-ai                                      │   │
 │  │  - Strands Tools SDK (50+ tools)                         │   │
 │  │  - Agent as MCP Tool                                     │   │
 │  └──────────────────────────────────────────────────────────┘   │
@@ -140,7 +179,7 @@ https://ai-forge.mikepfunk.com
 │  │ Rate-Limited External APIs                               │   │
 │  │  - Tavily Web Search (1000 req/month)                    │   │
 │  │  - Mem0 Memory (1000 req/month)                          │   │
-│  │  - AgentOps Tracing (1000 req/month)                     │   │
+│  │  - AgentOps Tracing (planned — API key set, no code)     │   │
 │  └──────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────┘
                             │
@@ -156,22 +195,21 @@ https://ai-forge.mikepfunk.com
 │                                                                   │
 │  ┌──────────────────────────────────────────────────────────┐   │
 │  │ AI Services                                              │   │
-│  │  - Bedrock AgentCore (Tier 1 runtime)                   │   │
+│  │  - Bedrock AgentCore (Test execution runtime)            │   │
 │  │  - Bedrock Models (Claude, etc.)                         │   │
 │  │  - Strands Agents SDK                                    │   │
 │  └──────────────────────────────────────────────────────────┘   │
 │                                                                   │
 │  ┌──────────────────────────────────────────────────────────┐   │
-│  │ Tier 2 - User AWS Account (ECS Fargate)                 │   │
-│  │  - VPC with public/private subnets                       │   │
-│  │  - Application Load Balancer                             │   │
-│  │  - ECS Fargate Cluster                                   │   │
-│  │  - ECR Container Registry                                │   │
+│  │ Agent Delivery (Personal Tier)                          │   │
+│  │  - One-click deploy to AgentCore sandbox                │   │
+│  │  - Downloadable ZIP (agent.py, Dockerfile, deploy.sh)   │   │
+│  │  - CloudFormation templates for user AWS deployment     │   │
 │  └──────────────────────────────────────────────────────────┘   │
 │                                                                   │
 │  ┌──────────────────────────────────────────────────────────┐   │
 │  │ Monitoring & Observability                               │   │
-│  │  - CloudWatch Logs (Fargate, AgentCore, Convex)         │   │
+│  │  - CloudWatch Logs (AgentCore, Convex)                  │   │
 │  │  - CloudWatch Metrics & Dashboards                       │   │
 │  │  - AWS X-Ray (Distributed tracing)                       │   │
 │  │  - OpenTelemetry (OTEL instrumentation)                  │   │
@@ -208,16 +246,15 @@ https://ai-forge.mikepfunk.com
 - **Hybrid Strategy**: Automatic routing based on data size
 
 **AI & Agents**:
-- **Bedrock AgentCore**: Tier 1 freemium runtime (platform-managed)
+- **Bedrock AgentCore**: Agent test execution & deployment runtime
 - **Bedrock Models**: Claude, Titan, and other foundation models
 - **Strands Agents**: SDK for agent creation and tool integration
-- **MCP Integration**: 11+ MCP servers for extended capabilities
+- **MCP Integration**: 5 built-in MCP servers + user-custom
 
 **AWS Services**:
+- **Bedrock AgentCore**: Test sandbox (Direct Bedrock API → Lambda backup)
 - **S3**: Long-term memory, deployment packages, artifacts
 - **DynamoDB**: Memory indexing, semantic search
-- **ECS Fargate**: Tier 2 containerized agent execution
-- **ECR**: Container registry for agent images
 - **CloudWatch**: Logs and metrics for all services
 - **X-Ray**: Distributed tracing and performance insights
 - **Cognito**: User authentication and OAuth
@@ -238,7 +275,7 @@ https://ai-forge.mikepfunk.com
 ## 🚀 Features
 
 ### Agent Creation
-- **Model Selection**: Choose from 49 AI models across AWS Bedrock and Ollama
+- **Model Selection**: Choose from 60+ AI models across AWS Bedrock and Ollama
 - **Tool Selection**: Browse 50+ pre-configured Strands tools
 - **Custom System Prompts**: Define agent behavior and context
 - **Code Generation**: One-click generation of complete agent packages
@@ -253,47 +290,49 @@ https://ai-forge.mikepfunk.com
 
 ### Deployment Tiers
 
-#### Tier 1: AgentCore (Freemium + Testing)
-- **Testing**: Via bedrock-agentcore-mcp-server (agentcoreSetup.ts)
-- **Deployment**: AWS Bedrock AgentCore sandbox (agentcoreDeployment.ts)
-- Bedrock models only
-- Limited test executions (10/month for freemium)
+#### Tier 1: Freemium ($0/month)
+- **Models**: Ollama/LMStudio (user runs locally)
+- **Testing**: Via AgentCore test runner (local Ollama/LMStudio models)
+- **Limits**: 50 units/month, max 10 agents
 - No AWS account required
 - Cost-effective for experimentation
-- Platform-managed runtime
 
-#### Tier 2: Fargate (Personal)
-- **Deployment**: User's AWS account via cross-account IAM role (awsDeployment.ts)
-- Full Docker container support
-- Ollama + Bedrock models
-- Unlimited executions
-- Cross-account IAM role setup with External ID
-- VPC, ECS Fargate, ECR infrastructure
+#### Tier 2: Personal ($5/month + $0.05/unit overage)
+- **Models**: All Bedrock models + local models
+- **Testing**: Via AgentCore (Direct Bedrock API → Lambda backup)
+- **Deployment**: AgentCore sandbox or downloadable ZIP package
+- **Limits**: 100 units/month + metered overage
+- Full Stripe billing integration
+- Token-based billing: `awsCost x 2 / $0.05 = units`
 
-#### Tier 3: Enterprise (Future)
+#### Tier 3: Enterprise (Coming Soon)
+- SSO via WorkOS
 - Multi-user support
-- AWS SSO + Organizations
-- Advanced monitoring
-- Custom integrations
+- AWS Organizations integration
+- Advanced monitoring & analytics
 - SLA guarantees
 
 ### MCP Integration
-- **MCP Server Management**: Configure and manage 11+ MCP servers
-- **bedrock-agentcore-mcp-server**: Windows uv tool setup for AgentCore testing
-- **document-fetcher-mcp-server**: Document retrieval and processing
-- **aws-diagram-mcp-server**: Infrastructure diagram generation
+- **5 Built-in MCP Servers**:
+  - `bedrock-agentcore-mcp-server` — AgentCore testing (Windows uv)
+  - `document-fetcher-mcp-server` — Document retrieval and processing
+  - `aws-diagram-mcp-server` — Infrastructure diagram generation
+  - `ollama-mcp-server` — Local model integration
+  - `task-master-ai` — Task management
+- **User-Custom Servers**: Users can add their own MCP servers via the UI
 - **Tool Discovery**: Automatic tool detection from MCP servers
 - **Agent as Tool**: Expose agents as MCP tools for agent-to-agent communication
 
 ### Rate-Limited External APIs
 - **Tavily Web Search**: 1000 requests/month for comprehensive web search
 - **Mem0 Memory**: 1000 requests/month for advanced memory operations
-- **AgentOps Tracing**: 1000 requests/month for agent observability and debugging
+- **AgentOps Tracing**: Planned (API key configured, code integration pending)
 
-### Three Chat System
-- **Chat UI Panel**: Agent building process with interleaved reasoning
-- **Agent Builder Input**: Automated agent processing with Claude Haiku 4.5
-- **Test Chat**: Testing built agents with conversation manager
+### Chat Interfaces
+- **ConversationChat**: General-purpose chat with conversation manager
+- **InterleavedChat**: Agent building with interleaved reasoning (thinking blocks)
+- **AgentBuilder Input**: Automated agent processing with Claude Haiku 4.5
+- **AgentTester**: Testing built agents against AgentCore
 
 ### Meta-Tooling
 - **Dynamic Tool Creation**: Agents can create tools they need
@@ -316,7 +355,7 @@ agent_builder_application/
 │   ├── schema.ts                 # Database schema
 │   ├── agents.ts                 # Agent CRUD operations
 │   ├── codeGenerator.ts          # Agent code generation
-│   ├── modelRegistry.ts          # 49 AI models catalog
+│   ├── modelRegistry.ts          # 60+ AI models catalog
 │   ├── toolRegistry.ts           # 50+ tools catalog
 │   ├── mcpConfig.ts              # MCP server management
 │   ├── mcpClient.ts              # MCP tool invocation
@@ -473,7 +512,6 @@ Configure these callback URLs in your OAuth providers:
 ### Logging
 - **Convex Logs**: `npx convex logs` for backend function execution
 - **CloudWatch Logs**: Centralized logs for AWS services
-  - Fargate container logs
   - AgentCore runtime logs
   - Lambda function logs
 - **Structured Logging**: JSON format with trace IDs for correlation
@@ -517,9 +555,12 @@ Proprietary - All rights reserved
 
 - This project uses Convex for backend and database
 - Frontend is deployed on Cloudflare Pages
-- Agent deployments use AWS (AgentCore or Fargate)
+- Agent testing and deployment uses AWS Bedrock AgentCore
+- Agent delivery: one-click AgentCore deploy or downloadable ZIP package
 - MCP integration enables agent-to-agent communication
 - Meta-tooling allows agents to create their own tools
+- Token-based billing with Stripe metered pricing
+- Payment gating via bedrockGate.ts (subscription status, tier, limits)
 
 ## Security
 [![Codacy Badge](https://app.codacy.com/project/badge/Grade/13bcb475933b44fca1e7f27dcdbb9078)](https://app.codacy.com?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)

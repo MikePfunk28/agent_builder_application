@@ -6,6 +6,7 @@
 import { action } from "./_generated/server";
 import { v } from "convex/values";
 import { getModelConfig } from "./modelRegistry";
+import { escapePythonString, escapePythonTripleQuote } from "./constants";
 
 /**
  * Meta-tooling instructions added to agent system prompts
@@ -41,7 +42,7 @@ export const generateAgent = action({
     tools: v.array(v.object({
       name: v.string(),
       type: v.string(),
-      config: v.optional(v.any()),
+      config: v.optional(v.any()), // v.any(): tool config shape varies per tool type
       requiresPip: v.optional(v.boolean()),
       pipPackages: v.optional(v.array(v.string())),
       extrasPip: v.optional(v.string()),
@@ -52,13 +53,13 @@ export const generateAgent = action({
       name: v.string(),
       command: v.string(),
       args: v.array(v.string()),
-      env: v.optional(v.any()),
+      env: v.optional(v.record(v.string(), v.string())), // MCP server environment variables
       disabled: v.optional(v.boolean()),
     }))),
     dynamicTools: v.optional(v.array(v.object({
       name: v.string(),
       code: v.string(),
-      parameters: v.any(),
+      parameters: v.any(), // v.any(): JSON Schema object defining tool parameters — shape varies per tool
     }))),
   },
   handler: async (ctx, args) => {
@@ -375,21 +376,23 @@ function isBuiltInTool(toolType: string): boolean {
  */
 function generateAgentToolWrapper(agentId: string, agentName: string, description: string): string {
   const toolName = agentName.replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
-  
+  const safeDescription = escapePythonString(description || `Invoke ${agentName} agent`);
+  const safeName = escapePythonString(agentName);
+
   return `@tool(
     name="${toolName}",
-    description="${description || `Invoke ${agentName} agent`}",
+    description="${safeDescription}",
     parameters={
         "task": {
             "type": "string",
-            "description": "Task or question for ${agentName}",
+            "description": "Task or question for ${safeName}",
             "required": True
         }
     }
 )
 async def ${toolName}(task: str) -> str:
     """
-    Invoke ${agentName} agent as a tool.
+    Invoke ${escapePythonTripleQuote(agentName)} agent as a tool.
     Enables hierarchical agent coordination.
     """
     import os
@@ -413,46 +416,52 @@ async def ${toolName}(task: str) -> str:
  */
 function generateCustomToolFunction(tool: any): string {
   const functionName = tool.type.replace(/[^a-zA-Z0-9_]/g, '_');
-  const description = tool.config?.description || `Custom tool: ${tool.name}`;
-  
+  const rawDescription = tool.config?.description || `Custom tool: ${tool.name}`;
+  const safeDescription = escapePythonString(rawDescription);
+  const safeToolName = escapePythonString(tool.name);
+
   // Extract parameters from tool config
   const params = tool.config?.parameters || [];
+  // Sanitize parameter names to valid Python identifiers
   const paramSignature = params.length > 0
-    ? params.map((p: any) => `${p.name}: ${p.type || 'str'}`).join(', ')
+    ? params.map((p: any) => `${String(p.name).replace(/[^a-zA-Z0-9_]/g, '_')}: ${p.type || 'str'}`).join(', ')
     : '**kwargs';
-  
-  // Generate parameter schema for @tool decorator
+
+  // Generate parameter schema for @tool decorator (escape all user-provided strings)
   const paramSchema = params.length > 0
     ? `{
-${params.map((p: any) => `        "${p.name}": {
-            "type": "${p.type || 'string'}",
-            "description": "${p.description || p.name}"${p.required ? ',\n            "required": True' : ''}
+${params.map((p: any) => `        "${escapePythonString(String(p.name))}": {
+            "type": "${escapePythonString(String(p.type || 'string'))}",
+            "description": "${escapePythonString(String(p.description || p.name))}"${p.required ? ',\n            "required": True' : ''}
         }`).join(',\n')}
     }`
     : '{}';
-  
+
   // Generate helpful implementation guidance based on parameters
   const paramsList = params.length > 0
-    ? params.map((p: any) => `${p.name}: ${p.description || 'parameter value'}`).join('\n    #   ')
+    ? params.map((p: any) => `${String(p.name).replace(/[^a-zA-Z0-9_]/g, '_')}: ${escapePythonTripleQuote(String(p.description || 'parameter value'))}`).join('\n    #   ')
     : 'No parameters defined';
 
-  const exampleLogic = tool.config?.exampleImplementation ||
-    (params.length > 0
+  const rawExampleLogic = tool.config?.exampleImplementation;
+  // Sanitize user-provided implementation to prevent Python code injection
+  const exampleLogic = rawExampleLogic
+    ? escapePythonTripleQuote(String(rawExampleLogic))
+    : (params.length > 0
       ? `# Example: Process the parameters
-        # Access parameters: ${params.map((p: any) => p.name).join(', ')}
+        # Access parameters: ${params.map((p: any) => String(p.name).replace(/[^a-zA-Z0-9_]/g, '_')).join(', ')}
         # Perform your custom logic here
         # Return a string result`
       : `# Implement your custom tool logic here
         # Return a string result`);
 
   return `@tool(
-    name="${tool.name}",
-    description="${description}",
+    name="${safeToolName}",
+    description="${safeDescription}",
     parameters=${paramSchema}
 )
 async def ${functionName}(${paramSignature}) -> str:
     """
-    ${description}
+    ${escapePythonTripleQuote(rawDescription)}
 
     This is a custom tool function that can be invoked by the agent.
 
@@ -463,7 +472,7 @@ async def ${functionName}(${paramSignature}) -> str:
         str: Result of the tool execution
     """
     try:
-        logger.info(f"Executing custom tool: ${tool.name}")
+        logger.info(f"Executing custom tool: ${safeToolName}")
 
         ${exampleLogic}
 
@@ -482,11 +491,14 @@ async def ${functionName}(${paramSignature}) -> str:
 function generateAgentClass(name: string, model: string, systemPrompt: string, tools: any[], enableMetaTooling: boolean = true): string {
   const className = name.replace(/[^a-zA-Z0-9]/g, "") + "Agent";
   const toolList = tools.map(t => t.type).join(", ");
-  
+  const safeName = escapePythonString(name);
+
   // Add meta-tooling instructions to system prompt if enabled
-  const enhancedSystemPrompt = enableMetaTooling 
+  const rawSystemPrompt = enableMetaTooling
     ? `${systemPrompt}\n\n${META_TOOLING_INSTRUCTIONS}`
     : systemPrompt;
+  // Escape for triple-quoted Python string context
+  const enhancedSystemPrompt = escapePythonTripleQuote(rawSystemPrompt);
   
   return `
 # Pre-processing hook
@@ -555,7 +567,7 @@ async def postprocess_response(response: str, context: Optional[Dict[str, Any]] 
         "system_packages": ["gcc", "g++"],
         "environment_vars": {
             "LOG_LEVEL": "INFO",
-            "AGENT_NAME": "${name}",
+            "AGENT_NAME": "${safeName}",
         },
     },
     # Pre/post processing hooks
@@ -564,7 +576,7 @@ async def postprocess_response(response: str, context: Optional[Dict[str, Any]] 
 )
 class ${className}(Agent):
     """
-    ${name} - AI Agent powered by Strands Agents
+    ${escapePythonTripleQuote(name)} - AI Agent powered by Strands Agents
     
     This agent uses interleaved reasoning with Claude Sonnet 4.5 and has access
     to the following tools: ${tools.map(t => t.name).join(", ")}
@@ -1708,7 +1720,15 @@ export const generateDeploymentFiles = action({
     agentId: v.string(),
     name: v.string(),
     model: v.string(),
-    tools: v.array(v.any()),
+    tools: v.array(v.object({
+      name: v.string(),
+      type: v.string(),
+      config: v.optional(v.any()), // v.any(): tool config shape varies per tool type
+      requiresPip: v.optional(v.boolean()),
+      pipPackages: v.optional(v.array(v.string())),
+      extrasPip: v.optional(v.string()),
+      notSupportedOn: v.optional(v.array(v.string())),
+    })),
     containerImage: v.optional(v.string()),
   },
   handler: async (ctx, args) => {

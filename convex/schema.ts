@@ -36,7 +36,7 @@ const applicationTables = {
     description: v.optional( v.string() ),
 
     // AWS Resources
-    taskArn: v.optional( v.string() ), // ECS task ARN
+    taskArn: v.optional( v.string() ), // @deprecated: ECS task ARN — Fargate removed, kept for backward compat
     agentCoreRuntimeId: v.optional( v.string() ),
     agentCoreEndpoint: v.optional( v.string() ),
     cloudFormationStackId: v.optional( v.string() ),
@@ -190,15 +190,7 @@ const applicationTables = {
     tools: v.array( v.object( {
       name: v.string(),
       type: v.string(),
-      config: v.optional( v.object( {
-        description: v.optional( v.string() ),
-        parameters: v.optional( v.array( v.object( {
-          name: v.string(),
-          type: v.string(),
-          description: v.optional( v.string() ),
-          required: v.optional( v.boolean() ),
-        } ) ) ),
-      } ) ),
+      config: v.optional( v.any() ), // v.any(): tool config shape varies per tool type (http: baseUrl/headers, internal: kind/name, etc.)
       requiresPip: v.optional( v.boolean() ),
       pipPackages: v.optional( v.array( v.string() ) ),
       extrasPip: v.optional( v.string() ),
@@ -217,7 +209,7 @@ const applicationTables = {
       name: v.string(),
       command: v.string(),
       args: v.array( v.string() ),
-      env: v.optional( v.any() ),
+      env: v.optional( v.record( v.string(), v.string() ) ), // MCP server environment variables (e.g. { "PATH": "/usr/bin" })
       disabled: v.optional( v.boolean() ),
     } ) ) ),
 
@@ -225,13 +217,13 @@ const applicationTables = {
     dynamicTools: v.optional( v.array( v.object( {
       name: v.string(),
       code: v.string(),
-      parameters: v.any(),
+      parameters: v.any(), // v.any(): JSON schema object defining tool parameters — shape varies per tool
     } ) ) ),
 
     // MCP Tool Exposure
     exposableAsMCPTool: v.optional( v.boolean() ),
     mcpToolName: v.optional( v.string() ),
-    mcpInputSchema: v.optional( v.any() ),
+    mcpInputSchema: v.optional( v.string() ), // JSON-stringified JSON Schema for MCP tool input
 
     // Dynamic Model Switching (Unified Modality Switching)
     enableDynamicModelSwitching: v.optional( v.boolean() ),
@@ -256,6 +248,13 @@ const applicationTables = {
       v.literal( "medium" ), // budget_tokens: 4096, 2 reasoning rounds
       v.literal( "high" ),   // budget_tokens: 16384, 3 reasoning rounds
     ) ),
+
+    // Iterative Loop Configuration (Ralphy pattern)
+    iterativeConfig: v.optional( v.object( {
+      maxIterations: v.optional( v.number() ),  // default 10, configurable 1-100
+      completionCriteria: v.optional( v.string() ), // "tests_pass" | "no_errors" | "llm_judgment" | "max_iterations"
+      successPattern: v.optional( v.string() ), // regex/substring for tests_pass criteria
+    } ) ),
 
     // Architecture & Deployment Metadata
     diagramUrl: v.optional( v.string() ),
@@ -282,7 +281,7 @@ const applicationTables = {
     tools: v.array( v.object( {
       name: v.string(),
       type: v.string(),
-      config: v.optional( v.any() ),
+      config: v.optional( v.any() ), // v.any(): tool config shape varies per tool type (http: baseUrl/headers, internal: kind/name, etc.)
       requiresPip: v.optional( v.boolean() ),
       pipPackages: v.optional( v.array( v.string() ) ),
     } ) ),
@@ -301,7 +300,7 @@ const applicationTables = {
       role: v.union( v.literal( "user" ), v.literal( "assistant" ), v.literal( "system" ) ),
       content: v.string(),
       timestamp: v.number(),
-      metadata: v.optional( v.any() ),
+      metadata: v.optional( v.record( v.string(), v.any() ) ), // Message metadata key-value pairs
     } ) ),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -317,7 +316,7 @@ const applicationTables = {
     role: v.union( v.literal( "user" ), v.literal( "assistant" ), v.literal( "system" ) ),
     content: v.string(),
     timestamp: v.number(),
-    metadata: v.optional( v.any() ),
+    metadata: v.optional( v.record( v.string(), v.any() ) ), // Message metadata key-value pairs
     sequenceNumber: v.number(), // For deterministic ordering
   } )
     .index( "by_conversation", ["conversationId", "sequenceNumber"] )
@@ -327,7 +326,7 @@ const applicationTables = {
   conversationAnalyses: defineTable( {
     conversationId: v.id( "conversations" ),
     agentId: v.id( "agents" ),
-    analysis: v.any(), // Detailed analysis object from conversationAnalysis.ts
+    analysis: v.any(), // v.any(): analysis structure varies by analysis type (conversationAnalysis.ts)
     createdAt: v.number(),
   } )
     .index( "by_conversation", ["conversationId"] )
@@ -338,7 +337,7 @@ const applicationTables = {
   agentImprovementHistory: defineTable( {
     agentId: v.id( "agents" ),
     conversationId: v.id( "conversations" ),
-    improvementPlan: v.any(),
+    improvementPlan: v.any(), // v.any(): LLM-generated improvement plan — structure varies
     changes: v.array( v.string() ), // List of changes applied
     appliedAt: v.number(),
   } )
@@ -362,7 +361,7 @@ const applicationTables = {
       baseUrl: v.optional( v.string() ),
       modelId: v.optional( v.string() ),
       region: v.optional( v.string() ),
-      testEnvironment: v.optional( v.string() ), // "docker" | "agentcore" | "fargate"
+      testEnvironment: v.optional( v.string() ), // "docker" | "agentcore"
     } ),
     timeout: v.number(),
     agentRuntimeArn: v.optional( v.string() ), // For AgentCore testing
@@ -372,7 +371,7 @@ const applicationTables = {
     status: v.string(), // CREATED | QUEUED | BUILDING | RUNNING | COMPLETED | FAILED | ABANDONED | ARCHIVED
     phase: v.string(), // queued | building | running | completed
 
-    // Infrastructure
+    // Infrastructure — @deprecated: Fargate removed, kept for backward compat with existing data
     ecsTaskArn: v.optional( v.string() ),
     ecsTaskId: v.optional( v.string() ),
     cloudwatchLogGroup: v.optional( v.string() ),
@@ -464,7 +463,7 @@ const applicationTables = {
     // Server Configuration
     command: v.string(),
     args: v.array( v.string() ),
-    env: v.optional( v.any() ), // Accepts arbitrary env maps (e.g. { "PATH": "/usr/bin" })
+    env: v.optional( v.record( v.string(), v.string() ) ), // MCP server environment variables (e.g. { "PATH": "/usr/bin" })
     disabled: v.boolean(),
     timeout: v.optional( v.number() ), // Timeout in milliseconds
 
@@ -477,7 +476,7 @@ const applicationTables = {
     availableTools: v.optional( v.array( v.object( {
       name: v.string(),
       description: v.optional( v.string() ),
-      inputSchema: v.optional( v.any() ),
+      inputSchema: v.optional( v.any() ), // v.any(): JSON Schema object for tool input — shape defined by MCP protocol
     } ) ) ),
 
     // Timestamps
@@ -513,7 +512,7 @@ const applicationTables = {
     category: v.string(), // "oauth" | "mcp" | "agent" | "deployment" | "general"
     severity: v.string(), // "info" | "warning" | "error" | "critical"
     message: v.string(),
-    details: v.optional( v.any() ),
+    details: v.optional( v.record( v.string(), v.any() ) ), // Error detail key-value pairs
     userId: v.optional( v.id( "users" ) ),
     stackTrace: v.optional( v.string() ),
     metadata: v.optional( v.object( {
@@ -541,7 +540,7 @@ const applicationTables = {
     resource: v.optional( v.string() ),
     resourceId: v.optional( v.string() ),
     success: v.boolean(),
-    details: v.optional( v.any() ),
+    details: v.optional( v.record( v.string(), v.any() ) ), // Audit event detail key-value pairs
     metadata: v.optional( v.object( {
       provider: v.optional( v.string() ),
       serverName: v.optional( v.string() ),
@@ -579,7 +578,7 @@ const applicationTables = {
       reasoning: v.optional( v.string() ),
       timestamp: v.number(),
     } ) ),
-    generatedAgentConfig: v.optional( v.any() ),
+    generatedAgentConfig: v.optional( v.any() ), // v.any(): LLM-generated agent config — shape varies by builder step
     createdAt: v.number(),
     updatedAt: v.number(),
   } )
@@ -597,7 +596,7 @@ const applicationTables = {
       role: v.union( v.literal( "user" ), v.literal( "assistant" ) ),
       content: v.string(),
       reasoning: v.optional( v.string() ),
-      toolCalls: v.optional( v.any() ),
+      toolCalls: v.optional( v.any() ), // v.any(): tool call format varies by provider (Anthropic, Bedrock, Ollama)
       timestamp: v.number(),
     } ) ) ), // DEPRECATED: Use interleavedMessages table instead
     messageCount: v.optional( v.number() ), // OPTIONAL: Computed on-demand from interleavedMessages count
@@ -617,7 +616,7 @@ const applicationTables = {
     role: v.union( v.literal( "user" ), v.literal( "assistant" ) ),
     content: v.string(),
     reasoning: v.optional( v.string() ), // Claude's thinking process
-    toolCalls: v.optional( v.any() ),
+    toolCalls: v.optional( v.any() ), // v.any(): tool call format varies by provider (Anthropic, Bedrock, Ollama)
     timestamp: v.number(),
     sequenceNumber: v.number(), // For ordering messages
   } )
@@ -633,7 +632,7 @@ const applicationTables = {
     summary: v.optional( v.string() ),
     content: v.optional( v.string() ),
     s3Key: v.optional( v.string() ),
-    metadata: v.optional( v.any() ),
+    metadata: v.optional( v.record( v.string(), v.any() ) ), // Memory metadata key-value pairs
     tokenCount: v.optional( v.number() ),
     createdAt: v.number(),
     archived: v.optional( v.boolean() ),
@@ -657,7 +656,7 @@ const applicationTables = {
     validationError: v.optional( v.string() ),
 
     // Tool Metadata
-    parameters: v.any(), // JSON schema for tool parameters
+    parameters: v.any(), // v.any(): JSON Schema object for tool parameters — shape varies per tool
     returnType: v.optional( v.string() ),
     category: v.optional( v.string() ),
 
@@ -696,13 +695,13 @@ const applicationTables = {
     // agent:     { agentId: Id<"agents"> }
     // composite: { steps: [{ skillName: string, inputMapping?: Record<string,string> }] }
     // sandbox:   { runtime: "e2b" | "docker", command: string, timeout?: number }
-    skillConfig: v.optional( v.any() ),
+    skillConfig: v.optional( v.any() ), // v.any(): routing config varies by skillType (internal, mcp, agent, composite, sandbox)
 
     // What the LLM sees (tool definition for the Anthropic tools array)
     toolDefinition: v.optional( v.object( {
       name: v.string(),
       description: v.string(),
-      inputSchema: v.any(),
+      inputSchema: v.any(), // v.any(): JSON Schema for tool input — shape defined by Anthropic tools API
     } ) ),
 
     // SKILL.md content — loaded only when skill is invoked, not upfront
@@ -744,7 +743,7 @@ const applicationTables = {
     status: v.string(), // "running" | "completed" | "failed"
     startedAt: v.number(),
     completedAt: v.optional( v.number() ),
-    result: v.optional( v.any() ),
+    result: v.optional( v.any() ), // v.any(): aggregated multi-agent result — shape varies by pattern
   } )
     .index( "by_parent_agent", ["parentAgentId"] )
     .index( "by_parent_conversation", ["parentConversationId"] )
@@ -756,7 +755,7 @@ const applicationTables = {
     sessionId: v.id( "multiAgentSessions" ),
     agentId: v.id( "agents" ),
     conversationId: v.id( "interleavedConversations" ),
-    result: v.any(),
+    result: v.optional( v.any() ), // v.any(): individual agent result — shape varies by agent type; optional for running/failed states
     status: v.string(), // "running" | "completed" | "failed"
     startedAt: v.number(),
     completedAt: v.optional( v.number() ),
@@ -782,7 +781,7 @@ const workflowNodeValidator = v.object( {
     type: v.string(),
     label: v.optional( v.string() ),
     notes: v.optional( v.string() ),
-    config: v.any(), // Config shape varies per node kind; validated at runtime by sanitizeNode
+    config: v.any(), // v.any(): config shape varies per node kind (prompt, tool, router, etc.); validated at runtime by sanitizeNode
   } ),
 } );
 
@@ -816,7 +815,7 @@ export default defineSchema( {
     } ) ),
     output: v.optional( v.object( {
       success: v.boolean(),
-      result: v.optional( v.any() ), // execution results are genuinely polymorphic
+      result: v.optional( v.any() ), // v.any(): execution results are genuinely polymorphic (string, object, array)
       error: v.optional( v.string() ),
       executionTime: v.optional( v.number() ),
     } ) ),
@@ -825,7 +824,7 @@ export default defineSchema( {
       nodeType: v.optional( v.string() ),
       nodeLabel: v.optional( v.string() ),
       executionTime: v.optional( v.number() ),
-      result: v.optional( v.any() ), // node results vary per type
+      result: v.optional( v.any() ), // v.any(): node results vary per type (prompt output, tool result, etc.)
     } ) ),
     duration: v.number(),
     status: v.string(),

@@ -9,6 +9,7 @@ import { action } from "./_generated/server";
 import { v } from "convex/values";
 import { api } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
+import { escapePythonString, escapePythonTripleQuote } from "./constants";
 
 /**
  * Generate agent-as-tool wrapper code
@@ -21,7 +22,7 @@ export const generateAgentAsTool = action( {
     const agent: any = await ctx.runQuery( api.agents.get, { id: args.agentId } );
     if ( !agent ) throw new Error( "Agent not found" );
 
-    const toolName: string = agent.name.replaceAll( /[^a-zA-Z0-9_]/g, '_' ).toLowerCase();
+    const toolName: string = agent.name.replaceAll( /\W/g, '_' ).toLowerCase();
     const toolCode = generateToolCode( agent.name, toolName, agent.description || "", args.agentId );
 
     return {
@@ -42,8 +43,9 @@ function generateToolCode(
   agentId: string
 ): string {
   // Sanitize inputs to prevent template injection in generated Python code
-  const sanitize = ( s: string ) => s.replaceAll( '\\', "\\\\" ).replaceAll( '"""', String.raw`\"\"\"` );
-  const safeAgentName = sanitize( agentName );
+  const safeAgentName = escapePythonTripleQuote(agentName);
+  const safeDescription = escapePythonString(description || `Invoke ${agentName} agent to handle specialized tasks`);
+  const safeAgentNameDQ = escapePythonString(agentName);
   return `"""
 Agent-as-Tool: ${safeAgentName}
 Auto-generated wrapper to use ${safeAgentName} as a tool in other agents.
@@ -56,11 +58,11 @@ from typing import Optional
 
 @tool(
     name="${toolName}",
-    description="${description || `Invoke ${agentName} agent to handle specialized tasks`}",
+    description="${safeDescription}",
     parameters={
         "task": {
             "type": "string",
-            "description": "The task or question to send to ${agentName}",
+            "description": "The task or question to send to ${safeAgentNameDQ}",
             "required": True
         },
         "context": {
@@ -72,17 +74,17 @@ from typing import Optional
 )
 async def ${toolName}(task: str, context: Optional[dict] = None) -> str:
     """
-    Invoke ${agentName} agent as a tool.
+    Invoke ${safeAgentName} agent as a tool.
 
     This allows hierarchical agent architectures where one agent
     can delegate tasks to specialized agents.
 
     Args:
-        task: The task or question for ${agentName}
+        task: The task or question for ${safeAgentName}
         context: Optional context dictionary
 
     Returns:
-        str: Response from ${agentName}
+        str: Response from ${safeAgentName}
     """
     try:
         # Get platform API endpoint from environment
@@ -139,7 +141,7 @@ export const generateCoordinatorAgent = action( {
     // Generate tool wrappers for each agent
     const agentTools: Array<{ name: string; agentId: string; agentName: string; description: string }> = agents.map( ( agent: any ) => {
       if ( !agent ) return null;
-      const toolName: string = agent.name.replaceAll( /[\W]/g, '_' ).toLowerCase();
+      const toolName: string = agent.name.replaceAll( /\W/g, '_' ).toLowerCase();
       return {
         name: toolName,
         agentId: agent._id,
@@ -277,7 +279,7 @@ export const linkAgentsForCoordination = action( {
         const child: any = await ctx.runQuery( api.agents.get, { id: childId } );
         if ( !child ) return null;
 
-        const toolName: string = child.name.replaceAll( /[\W]/g, '_' ).toLowerCase();
+        const toolName: string = child.name.replaceAll( /\W/g, '_' ).toLowerCase();
         return {
           name: toolName,
           type: "agent_tool",

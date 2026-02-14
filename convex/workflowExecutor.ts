@@ -82,8 +82,8 @@ function detectDependencyCycle(
 export const executeWorkflow = action( {
   args: {
     workflowId: v.id( "workflows" ),
-    input: v.any(),
-    runtimeInputs: v.optional( v.any() ),
+    input: v.any(), // v.any(): accepts dynamic user-provided workflow input (string, object, etc.)
+    runtimeInputs: v.optional( v.record( v.string(), v.any() ) ), // v.any(): runtime input values are heterogeneous
   },
   handler: async ( ctx, { workflowId, input, runtimeInputs } ) => {
     const startTime = Date.now();
@@ -740,7 +740,7 @@ async function evaluateRouterConditions(
   const conditions = config.conditions || [];
 
   for ( const condition of conditions ) {
-    // Simple expression evaluation (unsafe, TODO: use safe evaluator)
+    // Safe expression evaluation — whitelist-based, no eval/Function
     try {
       const context = { result, success: result?.success };
       const evalResult = evaluateExpression( condition.expression, context );
@@ -761,24 +761,33 @@ async function evaluateRouterConditions(
 }
 
 /**
- * Safe expression evaluator (simplified)
+ * Safe expression evaluator — whitelist-based pattern matching only.
+ * Does NOT use eval or dynamic code execution. Only supports:
+ * - "success" / "error" keyword checks
+ * - "key == value" / "key === value" equality comparisons
+ * - "!=" / "!==" inequality comparisons
+ * Returns false for any unrecognized expression (safe default).
  */
 function evaluateExpression( expression: string, context: Record<string, any> ): boolean {
-  // Simple checks for now (TODO: use proper safe evaluator)
   if ( expression.includes( "success" ) ) {
     return context.success === true;
   }
   if ( expression.includes( "error" ) ) {
     return context.result?.error !== undefined;
   }
+  if ( expression.includes( "!=" ) || expression.includes( "!==" ) ) {
+    const [left, right] = expression.split( /!==?/ ).map( ( s ) => s.trim() );
+    const leftValue = context[left] ?? context.result?.[left];
+    const rightValue = right === "null" ? null : right === "true" ? true : right === "false" ? false : right;
+    return leftValue !== rightValue;
+  }
   if ( expression.includes( "==" ) || expression.includes( "===" ) ) {
-    // Very basic equality check
     const [left, right] = expression.split( /===?/ ).map( ( s ) => s.trim() );
-    const leftValue = context[left] || context.result?.[left];
+    const leftValue = context[left] ?? context.result?.[left];
     const rightValue = right === "null" ? null : right === "true" ? true : right === "false" ? false : right;
     return leftValue === rightValue;
   }
 
-  // Default false for safety
+  // Default false for safety — unrecognized expressions are rejected
   return false;
 }

@@ -227,8 +227,6 @@ export const assumeRoleWithWebIdentity = action({
         throw new Error("Invalid Role ARN format. Expected: arn:aws:iam::ACCOUNT_ID:role/ROLE_NAME");
       }
 
-      console.log(`Assuming role ${args.roleArn} for user ${userId}`);
-
       // Use AWS STS to assume role with web identity
       const { STSClient, AssumeRoleWithWebIdentityCommand } = await import("@aws-sdk/client-sts");
 
@@ -248,8 +246,6 @@ export const assumeRoleWithWebIdentity = action({
       if (!response.Credentials) {
         throw new Error("STS did not return credentials");
       }
-
-      console.log(`Successfully assumed role for user ${userId}`);
 
       return {
         success: true,

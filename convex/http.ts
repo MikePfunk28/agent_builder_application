@@ -92,8 +92,39 @@ http.route({
     let agentName: string | undefined;
 
     try {
-      const body = await _request.json();
-      const { name, arguments: args } = body;
+      let body: unknown;
+      try {
+        body = await _request.json();
+      } catch {
+        return new Response(JSON.stringify({ error: "Invalid JSON in request body" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      // Validate body structure
+      if (typeof body !== "object" || body === null || Array.isArray(body)) {
+        return new Response(JSON.stringify({ error: "Request body must be a JSON object" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      const { name, arguments: args } = body as Record<string, unknown>;
+
+      if (typeof name !== "string" || !name.trim()) {
+        return new Response(JSON.stringify({ error: "Missing or invalid 'name' field (must be a non-empty string)" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (args !== undefined && (typeof args !== "object" || args === null || Array.isArray(args))) {
+        return new Response(JSON.stringify({ error: "'arguments' must be a JSON object if provided" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
 
       // Extract client info for audit logging
       const userAgent = _request.headers.get("User-Agent") || "unknown";
@@ -101,31 +132,7 @@ http.route({
                         _request.headers.get("X-Real-IP") || 
                         "unknown";
 
-      if (!name) {
-        // Log invalid request
-        await ctx.runMutation(api.errorLogging.logError, {
-          category: "agent",
-          severity: "warning",
-          message: "Agent MCP invocation missing required field: name",
-          details: {
-            body,
-            userAgent,
-            ipAddress,
-          },
-        });
-
-        return new Response(
-          JSON.stringify({ 
-            error: "Missing required field: name" 
-          }),
-          {
-            status: 400,
-            headers: { "Content-Type": "application/json" },
-          }
-        );
-      }
-
-      agentName = name;
+      agentName = name as string;
 
       // Find agent by MCP tool name
       const agent: any = await ctx.runQuery(api.agents.getByMCPToolName, { name });
@@ -193,7 +200,7 @@ http.route({
       // No polling - calls AgentCore directly
       const result = await ctx.runAction(api.strandsAgentExecution.executeAgentWithStrandsAgents, {
         agentId: agent._id,
-        message: args?.input || JSON.stringify(args),
+        message: (args as Record<string, unknown>)?.input as string || JSON.stringify(args),
         // No conversationId for MCP tool invocations (stateless)
       });
 

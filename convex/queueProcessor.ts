@@ -1,8 +1,8 @@
 /**
  * Queue Processor
  *
- * Scheduled action that processes the test queue and starts ECS tasks.
- * Runs every 5 seconds to maintain ~2 second queue latency.
+ * Scheduled action that processes the test queue and routes to AgentCore.
+ * Triggered on-demand when tests are submitted.
  */
 
 import { internalAction, internalQuery, internalMutation } from "./_generated/server";
@@ -31,27 +31,20 @@ export const processQueue = internalAction({
         return;
       }
 
-      // Only log when there's actual work to do
-      console.log("🔄 Processing test queue...");
-
       // Check current capacity
       const runningTests = await ctx.runQuery(internal.queueProcessor.queryRunningTests);
       const runningCount = runningTests.length;
 
       if (runningCount >= MAX_CONCURRENT_TESTS) {
-        console.log(`⏸️  At capacity (${runningCount}/${MAX_CONCURRENT_TESTS}), skipping queue processing`);
         return;
       }
 
       const availableSlots = MAX_CONCURRENT_TESTS - runningCount;
-      console.log(`📊 Available slots: ${availableSlots}`);
 
       // Get all pending tests we can process
       const allNextTests = await ctx.runQuery(internal.queueProcessor.queryNextPendingTests, {
         limit: availableSlots,
       });
-
-      console.log(`🚀 Starting ${allNextTests.length} test(s)...`);
 
       // Process each test
       for (const queueEntry of allNextTests) {
@@ -62,7 +55,6 @@ export const processQueue = internalAction({
           });
 
           if (!claimed) {
-            console.log(`⚠️  Test ${queueEntry.testId} already claimed, skipping`);
             continue;
           }
 
@@ -72,69 +64,28 @@ export const processQueue = internalAction({
           });
 
           if (!test) {
-            console.log(`❌ Test ${queueEntry.testId} not found`);
             await ctx.runMutation(internal.queueProcessor.removeFromQueue, {
               queueId: queueEntry._id,
             });
             continue;
           }
 
-          // SMART ROUTING: Bedrock → AgentCore (simplified), Ollama → Fargate
-          const agent = await ctx.runQuery(internal.agents.getInternal, { id: test.agentId });
-          const modelId = agent?.model || test.modelConfig?.modelId || '';
+          // Route ALL tests through AgentCore (Direct Bedrock → Lambda backup)
+          await ctx.runMutation(internal.testExecution.appendLogs, {
+            testId: test._id,
+            logs: [
+              "📦 Test claimed from queue",
+              "🚀 Routing to AgentCore (cost optimized)",
+            ],
+            timestamp: Date.now(),
+          });
 
-          // Check if Bedrock model (starts with provider prefix)
-          const isBedrockModel = modelId.startsWith('anthropic.') ||
-                                modelId.startsWith('amazon.') ||
-                                modelId.startsWith('ai21.') ||
-                                modelId.startsWith('cohere.') ||
-                                modelId.startsWith('meta.') ||
-                                modelId.startsWith('mistral.');
-
-          let result;
-          if (isBedrockModel) {
-            // Route to AgentCore (simplified: Direct Bedrock → Lambda backup)
-            await ctx.runMutation(internal.testExecution.appendLogs, {
-              testId: test._id,
-              logs: [
-                "📦 Test claimed from queue",
-                "🚀 Routing to AgentCore (Bedrock model - cost optimized)",
-              ],
-              timestamp: Date.now(),
-            });
-
-            result = await ctx.runAction(internal.agentcoreTestExecution.executeAgentCoreTest, {
-              testId: test._id,
-              agentId: test.agentId,
-              input: test.testQuery,
-              conversationHistory: test.conversationId ? await ctx.runQuery(internal.conversations.getHistory, { conversationId: test.conversationId }) : [],
-            });
-          } else {
-            // Route to ECS Fargate (Docker support for Ollama)
-            await ctx.runMutation(internal.testExecution.appendLogs, {
-              testId: test._id,
-              logs: [
-                "📦 Test claimed from queue",
-                "🚀 Routing to ECS Fargate (Ollama model)",
-              ],
-              timestamp: Date.now(),
-            });
-
-            result = await ctx.runAction(internal.containerOrchestrator.startTestContainer, {
-              testId: test._id,
-              agentCode: test.agentCode,
-              requirements: test.requirements,
-              dockerfile: test.dockerfile || '',
-              testQuery: test.testQuery,
-              modelProvider: 'ollama',
-              modelConfig: {
-                modelId: modelId,
-                baseUrl: process.env.OLLAMA_BASE_URL || 'http://host.docker.internal:11434',
-                testEnvironment: 'fargate',
-              },
-              timeout: 300000, // 5 minutes
-            });
-          }
+          const result = await ctx.runAction(internal.agentcoreTestExecution.executeAgentCoreTest, {
+            testId: test._id,
+            agentId: test.agentId,
+            input: test.testQuery,
+            conversationHistory: test.conversationId ? await ctx.runQuery(internal.conversations.getHistory, { conversationId: test.conversationId }) : [],
+          });
 
           if ("error" in result) {
             // Failed to execute test
@@ -161,7 +112,6 @@ export const processQueue = internalAction({
 
             // Retry if attempts < 3
             if (queueEntry.attempts < 3) {
-              console.log(`🔄 Retrying test ${test._id} (attempt ${queueEntry.attempts + 1}/3)`);
               await ctx.runMutation(internal.queueProcessor.requeueTest, {
                 testId: test._id,
                 priority: queueEntry.priority,
@@ -171,9 +121,6 @@ export const processQueue = internalAction({
             }
           } else {
             // Successfully completed - execution methods handle their own status updates and usage tracking
-            const executionMethod = (result as any).executionMethod || 'unknown';
-            console.log(`✅ Test ${test._id} completed successfully via ${executionMethod}`);
-
             // Remove from queue (execution methods handle their own status updates and usage tracking)
             await ctx.runMutation(internal.queueProcessor.removeFromQueue, {
               queueId: queueEntry._id,
@@ -190,7 +137,6 @@ export const processQueue = internalAction({
         }
       }
 
-      console.log("✅ Queue processing complete");
     } catch (error: any) {
       console.error("❌ Queue processor error:", error);
     }
@@ -302,27 +248,6 @@ export const requeueTest = internalMutation({
 });
 
 /**
- * Update test with ECS task information
- */
-export const updateTestWithTaskInfo = internalMutation({
-  args: {
-    testId: v.id("testExecutions"),
-    taskArn: v.string(),
-    taskId: v.string(),
-    logGroup: v.string(),
-    logStream: v.string(),
-  },
-  handler: async (ctx, args) => {
-    await ctx.db.patch(args.testId, {
-      ecsTaskArn: args.taskArn,
-      ecsTaskId: args.taskId,
-      cloudwatchLogGroup: args.logGroup,
-      cloudwatchLogStream: args.logStream,
-    });
-  },
-});
-
-/**
  * Cleanup abandoned tests (scheduled to run every hour)
  *
  * Cost optimization: Exits early if no tests in queue
@@ -341,11 +266,7 @@ export const cleanupAbandonedTests = internalAction({
       return;
     }
 
-    console.log(`🧹 Found ${abandoned.length} abandoned test(s) to clean up`);
-
     for (const queueEntry of abandoned) {
-      console.log(`🧹 Cleaning up abandoned test: ${queueEntry.testId}`);
-
       if (queueEntry.attempts < 3) {
         // Retry
         await ctx.runMutation(internal.queueProcessor.requeueTest, {

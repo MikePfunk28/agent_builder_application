@@ -83,7 +83,31 @@ Output a detailed architecture specification with:
     outputFormat: "architecture_specification"
   },
 
-  // Stage 3: Tool Design
+  // Stage 3: AST / Codebase Analysis (Traycer pattern)
+  AST_ANALYSIS: {
+    name: "ast_analysis",
+    systemPrompt: `You are an expert codebase analyst performing structural analysis.
+
+Given the architecture specification, analyze the target codebase structure to inform implementation.
+
+Analyze and report:
+1. Existing patterns and conventions to reuse (naming, folder structure, import style)
+2. Dependency graph — which modules interact and how
+3. Type constraints — existing TypeScript/Python types the agent must conform to
+4. Integration points — APIs, hooks, events the agent should connect to
+5. Potential conflicts — files, functions, or patterns that overlap with the new agent
+6. Reusable utilities — existing helper functions, shared modules, or common abstractions
+
+Output a structured AST analysis report with:
+- File tree of relevant existing code
+- Dependency map (module → dependencies)
+- Type signatures to match
+- Recommended patterns to follow
+- Warnings about potential conflicts`,
+    outputFormat: "ast_analysis_report"
+  },
+
+  // Stage 4: Tool Design
   TOOL_DESIGN: {
     name: "tool_design",
     systemPrompt: `You are an expert tool designer for AI agents.
@@ -124,7 +148,33 @@ Output a step-by-step implementation plan.`,
     outputFormat: "implementation_plan"
   },
 
-  // Stage 5: Code Generation
+  // Stage 6: Test Generation (Traycer pattern — tests FROM the plan)
+  TEST_GENERATION: {
+    name: "test_generation",
+    systemPrompt: `You are an expert test engineer building tests BEFORE code generation.
+
+Given the implementation plan and tool specifications, generate comprehensive test specifications
+that will CONSTRAIN the code generation step. Tests must be strict enough that any deviation
+from the plan causes a failure.
+
+Generate for EACH component:
+1. Unit tests — individual function behavior, edge cases, error handling
+2. Integration tests — component interactions, data flow, API contracts
+3. Assertion patterns — specific values, types, and behaviors to verify
+4. Security tests — input sanitization, injection prevention, auth checks
+5. Performance constraints — response time limits, memory bounds
+
+Output format:
+- test_agent.py — pytest test file with all test cases
+- Test manifest (JSON) listing every test with expected outcome
+- Coverage requirements (which functions/lines must be tested)
+
+CRITICAL: These tests will be included in the deployment package alongside the code.
+The code generation step MUST produce code that passes ALL of these tests.`,
+    outputFormat: "test_specifications"
+  },
+
+  // Stage 7: Code Generation
   CODE_GENERATION: {
     name: "code_generation",
     systemPrompt: `You are an expert Python developer implementing AI agents.
@@ -172,6 +222,32 @@ Output:
 - Potential issues and fixes
 - Deployment readiness checklist`,
     outputFormat: "validation_report"
+  },
+
+  // Stage 9: Verification (Traycer pattern — verify build against tests)
+  VERIFICATION: {
+    name: "verification",
+    systemPrompt: `You are an expert verification engineer performing final validation.
+
+Given the generated code AND the test specifications from earlier stages, perform a comprehensive
+verification that the implementation is complete and correct.
+
+Verify:
+1. All generated tests would pass against the generated code (trace through logic)
+2. No type errors — all TypeScript/Python types match their contracts
+3. Security checks pass — no dangerous dynamic code evaluation, no unsanitized user input in shell commands
+4. All deployment files are present and syntactically valid (agent.py, requirements.txt, Dockerfile, mcp.json)
+5. All integration points connect correctly (APIs, tools, MCP servers)
+6. Error handling is complete — every external call has try/catch or equivalent
+7. The agent matches the original requirements specification from Stage 1
+
+Output a verification report with:
+- Pass/fail status for each check
+- Specific line references for any issues found
+- Remediation steps for failures
+- Final deployment readiness score (0-100)
+- Sign-off recommendation (READY / NEEDS_FIXES / BLOCKED)`,
+    outputFormat: "verification_report"
   }
 };
 
@@ -234,11 +310,11 @@ export const executeWorkflowStage = action( {
           inputTokens: result.inputTokens,
           outputTokens: result.outputTokens,
         } );
-      } catch ( billingErr ) {
+      } catch ( error_ ) {
         console.error( "agentBuilderWorkflow: billing failed (non-fatal)", {
           userId: gateResult.userId, modelId: effectiveModelId,
           inputTokens: result.inputTokens, outputTokens: result.outputTokens,
-          error: billingErr instanceof Error ? billingErr.message : billingErr,
+          error: error_ instanceof Error ? error_.message : error_,
         } );
       }
     }
@@ -397,10 +473,13 @@ export const executeCompleteWorkflow = action( {
     const stages = [
       "REQUIREMENTS",
       "ARCHITECTURE",
+      "AST_ANALYSIS",
       "TOOL_DESIGN",
       "IMPLEMENTATION",
+      "TEST_GENERATION",
       "CODE_GENERATION",
-      "VALIDATION"
+      "VALIDATION",
+      "VERIFICATION",
     ];
 
     // Execute each stage sequentially, passing context forward
@@ -432,7 +511,7 @@ export const executeCompleteWorkflow = action( {
       success: true,
       workflow: workflowResults,
       totalUsage,
-      finalOutput: workflowResults[workflowResults.length - 1].output
+      finalOutput: workflowResults.at( -1 )?.output ?? ""
     };
   }
 } );
@@ -460,17 +539,19 @@ export const streamWorkflowExecution = action( {
       throw new Error( gateResult.reason );
     }
 
-    const { ConverseCommand } = await import( "@aws-sdk/client-bedrock-runtime" );
     const { resolveBedrockModelId } = await import( "./modelRegistry.js" );
     const resolvedModelId = resolveBedrockModelId( effectiveModelId );
 
     const stages = [
       "REQUIREMENTS",
       "ARCHITECTURE",
+      "AST_ANALYSIS",
       "TOOL_DESIGN",
       "IMPLEMENTATION",
+      "TEST_GENERATION",
       "CODE_GENERATION",
       "VALIDATION",
+      "VERIFICATION",
     ];
 
     const workflowContext: Array<{ stage: string; output: string }> = [];
@@ -491,34 +572,24 @@ export const streamWorkflowExecution = action( {
 
       const fullPrompt = `${contextPrompt}USER REQUEST:\n${args.userRequest}\n\nYour task: ${stage.systemPrompt}`;
 
-      // Use Converse API — works with ALL Bedrock models (Claude, DeepSeek, Kimi, Llama, etc.)
-      const command = new ConverseCommand( {
+      // Use invokeWorkflowModel — routes to Claude-specific or ConverseCommand path automatically
+      const result = await invokeWorkflowModel( {
         modelId: resolvedModelId,
-        messages: [{ role: "user", content: [{ text: fullPrompt }] }],
-        system: [{ text: stage.systemPrompt }],
-        inferenceConfig: {
-          maxTokens: 8000,
-          temperature: 0.7,
-        },
+        stageName: stage.name,
+        systemPrompt: stage.systemPrompt,
+        userPrompt: fullPrompt,
       } );
 
-      const response = await bedrockClient.send( command );
-
-      // Extract response text
-      const stageOutput = response.output?.message?.content?.[0]?.text || "";
-
-      // Accumulate tokens across all stages
-      const usage = response.usage ?? { inputTokens: 0, outputTokens: 0 };
-      totalInputTokens += usage.inputTokens || 0;
-      totalOutputTokens += usage.outputTokens || 0;
+      totalInputTokens += result.inputTokens;
+      totalOutputTokens += result.outputTokens;
 
       workflowContext.push( {
         stage: stage.name,
-        output: stageOutput,
+        output: result.outputText,
       } );
     }
 
-    // Bill accumulated usage across all 6 stages (non-fatal)
+    // Bill accumulated usage across all 9 stages (non-fatal)
     if ( totalInputTokens > 0 || totalOutputTokens > 0 ) {
       try {
         await ctx.runMutation( internal.stripeMutations.incrementUsageAndReportOverage, {

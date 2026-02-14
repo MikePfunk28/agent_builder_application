@@ -69,7 +69,7 @@ export const addMCPServer = mutation({
     name: v.string(),
     command: v.string(),
     args: v.array(v.string()),
-    env: v.optional(v.any()),
+    env: v.optional(v.record(v.string(), v.string())), // MCP server environment variables
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);

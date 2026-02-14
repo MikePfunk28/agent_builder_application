@@ -178,8 +178,7 @@ function Content({ currentView, onNavigate }: { currentView: string; onNavigate:
     case "builder":
       return <AgentBuilder />;
     case "aiBuilder":
-      return <AIAgentBuilder onAgentsCreated={(agents) => {
-        console.log("AI-generated agents:", agents);
+      return <AIAgentBuilder onAgentsCreated={(_agents) => {
         // TODO: Navigate to builder with pre-filled agents
       }} />;
     case "chat":

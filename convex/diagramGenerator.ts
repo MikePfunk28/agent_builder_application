@@ -14,7 +14,10 @@ export const generateArchitectureDiagram = action({
     agentName: v.string(),
     deploymentType: v.string(),
     model: v.string(),
-    tools: v.array(v.any()),
+    tools: v.array(v.object({
+      name: v.string(),
+      type: v.string(),
+    })),
   },
   handler: async (ctx, args): Promise<{
     success: boolean;

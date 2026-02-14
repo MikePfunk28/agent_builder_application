@@ -12,7 +12,12 @@ export const generateCloudFormationTemplate = action({
   args: {
     agentName: v.string(),
     model: v.string(),
-    tools: v.array(v.any()),
+    tools: v.array(v.object({
+      name: v.string(),
+      type: v.string(),
+      requiresPip: v.optional(v.boolean()),
+      pipPackages: v.optional(v.array(v.string())),
+    })),
     region: v.optional(v.string()),
     environment: v.optional(v.string()), // dev, staging, prod
     vpcConfig: v.optional(v.object({

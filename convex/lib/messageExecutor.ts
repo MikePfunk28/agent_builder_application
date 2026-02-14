@@ -25,16 +25,10 @@ export async function executeComposedMessages(
     const { BedrockRuntimeClient, ConverseCommand } = await import(
       "@aws-sdk/client-bedrock-runtime"
     );
-    const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
-    const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
-    if ((accessKeyId && !secretAccessKey) || (secretAccessKey && !accessKeyId)) {
-      throw new Error("AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must both be set or both be unset");
-    }
+    const creds = (await import("./aws/credentials")).validateAwsCredentials();
     const client = new BedrockRuntimeClient({
       region: process.env.AWS_REGION || process.env.BEDROCK_REGION || "us-east-1",
-      credentials: accessKeyId && secretAccessKey
-        ? { accessKeyId, secretAccessKey }
-        : undefined,
+      credentials: creds || undefined,
     });
 
     const response = await client.send(

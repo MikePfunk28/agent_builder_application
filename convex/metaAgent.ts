@@ -70,7 +70,7 @@ const MODEL_DATABASE: ModelScore[] = buildModelDatabase();
 export const designAgent = action({
   args: {
     userRequirement: v.string(),
-    modelId: v.string(), // User selects the model from the UI — required, no defaults
+    modelId: v.string(), // The ANALYSIS model (used for designing agents, not the resulting agent's model)
     maxBudgetPoints: v.optional(v.number()), // Default 300
   },
   handler: async (ctx, args): Promise<{

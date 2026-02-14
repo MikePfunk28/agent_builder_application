@@ -18,8 +18,6 @@ export const archiveOldTests = internalAction({
   args: {},
   handler: async (ctx) => {
     try {
-      console.log("🗄️  Starting old test archival...");
-
       const cutoffTime = Date.now() - SEVEN_DAYS;
 
       // Find completed tests older than 7 days
@@ -27,24 +25,18 @@ export const archiveOldTests = internalAction({
         cutoffTime,
       });
 
-      console.log(`📊 Found ${oldTests.length} old tests to archive`);
-
       for (const test of oldTests) {
         try {
           // Archive test (purge logs, keep metadata)
           await ctx.runMutation(internal.maintenance.archiveTest, {
             testId: test._id,
           });
-
-          console.log(`✅ Archived test ${test._id}`);
         } catch (error: any) {
-          console.error(`❌ Failed to archive test ${test._id}:`, error);
+          console.error(`Failed to archive test ${test._id}:`, error);
         }
       }
-
-      console.log("✅ Old test archival complete");
     } catch (error: any) {
-      console.error("❌ Archive old tests error:", error);
+      console.error("Archive old tests error:", error);
     }
   },
 });
@@ -91,11 +83,7 @@ export const cleanupExpiredPackages = internalAction({
   args: {},
   handler: async (ctx) => {
     try {
-      console.log("🧹 Starting expired package cleanup...");
-
       const expiredPackages = await ctx.runQuery(internal.maintenance.findExpiredPackages);
-
-      console.log(`📊 Found ${expiredPackages.length} expired packages`);
 
       for (const pkg of expiredPackages) {
         try {
@@ -106,16 +94,12 @@ export const cleanupExpiredPackages = internalAction({
           await ctx.runMutation(internal.maintenance.deletePackage, {
             packageId: pkg._id,
           });
-
-          console.log(`✅ Deleted expired package ${pkg._id}`);
         } catch (error: any) {
-          console.error(`❌ Failed to delete package ${pkg._id}:`, error);
+          console.error(`Failed to delete package ${pkg._id}:`, error);
         }
       }
-
-      console.log("✅ Expired package cleanup complete");
     } catch (error: any) {
-      console.error("❌ Cleanup expired packages error:", error);
+      console.error("Cleanup expired packages error:", error);
     }
   },
 });
