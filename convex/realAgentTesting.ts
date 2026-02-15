@@ -45,7 +45,7 @@ export const createTestContainer = action({
       const containerId = `agent-test-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
       
       // In real implementation, this would:
-      // 1. Create ECS Fargate task with the container
+      // 1. Create AgentCore runtime with the agent package
       // 2. Set up chat endpoint with strandsagents conversation manager
       // 3. Install all dependencies (agentcore, strandsagents, tools)
       // 4. Start the agent with @agent decorator
@@ -502,8 +502,8 @@ if __name__ == "__main__":
 
 async function startTestContainer(containerId: string, config: any): Promise<string> {
   // In real implementation, this would:
-  // 1. Create ECS Fargate task with the container configuration
-  // 2. Wait for container to be ready
+  // 1. Create AgentCore runtime with the agent configuration
+  // 2. Wait for runtime to be ready
   // 3. Return the chat interface URL
   
   // For now, return a mock URL
@@ -511,7 +511,7 @@ async function startTestContainer(containerId: string, config: any): Promise<str
 }
 
 async function checkContainerStatus(containerId: string): Promise<any> {
-  // Mock implementation - in reality would check ECS task status
+  // Mock implementation - in reality would check AgentCore runtime status
   return {
     status: "running",
     chatUrl: `http://localhost:8000/chat/${containerId}`,
@@ -536,8 +536,8 @@ function generateDeploymentPackage(args: any) {
 
 async function deployToBedrock(deploymentPackage: any, awsCredentials: any): Promise<any> {
   // In real implementation, this would:
-  // 1. Build container image with agent
-  // 2. Push to ECR
+  // 1. Package agent code and dependencies
+  // 2. Upload to S3
   // 3. Create Bedrock AgentCore deployment
   // 4. Return deployment details
   
@@ -548,6 +548,5 @@ async function deployToBedrock(deploymentPackage: any, awsCredentials: any): Pro
 }
 
 async function cleanupContainer(containerId: string): Promise<void> {
-  // In real implementation, this would stop and remove the ECS task
-  // Container cleanup — in real implementation would stop/remove ECS task
+  // In real implementation, this would stop and cleanup the AgentCore runtime
 }

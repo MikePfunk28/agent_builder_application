@@ -1,15 +1,13 @@
 /**
  * AWS Deployment Flow - Vercel-style Experience
- * 
+ *
  * Flow:
  * 1. User clicks "Deploy to AWS"
  * 2. Check if they have AWS configured
  * 3. If not, offer two options:
  *    a) Quick Setup - We create role via CloudFormation (1-click)
  *    b) Manual Setup - Step-by-step wizard
- * 4. Once configured, deploy based on model type:
- *    - Bedrock models → AgentCore (Lambda-based, no ECR)
- *    - Ollama models → ECS Fargate (ECR + Docker)
+ * 4. Once configured, deploy to Bedrock AgentCore
  */
 
 import { action, mutation, query } from "./_generated/server";
@@ -64,16 +62,11 @@ export const checkDeploymentReadiness = query({
       };
     }
 
-    // Determine deployment type based on model
-    const isBedrock = agent.model.includes("anthropic") || 
-                      agent.model.includes("amazon") ||
-                      agent.model.includes("bedrock");
-
     return {
       ready: true,
-      deploymentType: isBedrock ? "bedrock_agentcore" : "fargate_ollama",
-      requiresECR: !isBedrock, // Only Ollama needs ECR
-      estimatedCost: isBedrock ? "$0.10/hour" : "$0.05/hour",
+      deploymentType: "bedrock_agentcore",
+      requiresECR: false,
+      estimatedCost: "Pay-per-use (Bedrock pricing)",
       roleArn: (user as any).awsRoleArn
     };
   },
@@ -148,8 +141,7 @@ function generateQuickSetupTemplate(identityProvider: string): string {
             }]
           },
           ManagedPolicyArns: [
-            "arn:aws:iam::aws:policy/AmazonECS_FullAccess",
-            "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryFullAccess",
+            "arn:aws:iam::aws:policy/AmazonBedrockFullAccess",
             "arn:aws:iam::aws:policy/AmazonS3FullAccess",
             "arn:aws:iam::aws:policy/CloudWatchLogsFullAccess"
           ],
@@ -272,12 +264,8 @@ export const deployAgent: any = action({
       throw new Error("Agent not found");
     }
 
-    // Route to correct deployment method
-    if (readiness.deploymentType === "bedrock_agentcore") {
-      return await deployToBedrockAgentCore(ctx, agent, args.region, userId);
-    } else {
-      return await deployToFargateOllama(ctx, agent, args.region, userId);
-    }
+    // All deployments go through AgentCore
+    return await deployToBedrockAgentCore(ctx, agent, args.region, userId);
   },
 });
 
@@ -373,52 +361,7 @@ async function deployToBedrockAgentCore(
   };
 }
 
-/**
- * Deploy Ollama model to Fargate (ECR + Docker)
- */
-async function deployToFargateOllama(
-  ctx: any,
-  agent: any,
-  region: string,
-  userId: string
-) {
-  // This uses the existing deployToUserAWS function
-  // which handles ECR, Docker, and Fargate
-  
-  const user = await ctx.runQuery(internal.awsDeployment.getUserTierInternal, {
-    userId
-  });
-
-  if (!(user as any)?.awsRoleArn) {
-    throw new Error("AWS role not configured");
-  }
-
-  const assumeResult = await ctx.runAction(api.awsAuth.assumeRoleWithWebIdentity, {
-    roleArn: (user as any).awsRoleArn
-  });
-
-  if (!assumeResult.success) {
-    throw new Error(assumeResult.error || "Failed to assume role");
-  }
-
-  const { credentials } = assumeResult;
-
-  // Call the existing deployment function
-  // (This is defined in awsDeployment.ts)
-  const result = await deployToUserAWSWithCredentials(
-    agent,
-    region,
-    credentials.accessKeyId,
-    credentials.secretAccessKey,
-    credentials.sessionToken
-  );
-
-  return {
-    deploymentType: "fargate_ollama",
-    ...result,
-    message: "Deployed to ECS Fargate with Ollama"
-  };
-}
+// Fargate/ECS deployment removed — all deployments now go through Bedrock AgentCore.
 
 /**
  * Generate Bedrock agent code (Lambda handler)
@@ -465,34 +408,4 @@ def handler(event, context):
 `;
 }
 
-/**
- * Package code for Lambda deployment
- */
-async function packageForLambda(code: string): Promise<Uint8Array> {
-  // In production, this would:
-  // 1. Create temp directory
-  // 2. Write agent.py
-  // 3. Install dependencies
-  // 4. Zip everything
-  // 5. Return zip bytes
-  
-  // For now, return mock zip
-  return new Uint8Array([80, 75, 3, 4]); // ZIP header
-}
-
-// Re-export for use in other files
-async function deployToUserAWSWithCredentials(
-  agent: any,
-  region: string,
-  accessKeyId: string,
-  secretAccessKey: string,
-  sessionToken: string
-) {
-  // This would call the existing deployToUserAWS function
-  // from awsDeployment.ts
-  return {
-    ecrRepository: "placeholder",
-    ecsCluster: "placeholder",
-    ecsService: "placeholder"
-  };
-}
+// ECS/Fargate stubs removed — all deployments now use Bedrock AgentCore.

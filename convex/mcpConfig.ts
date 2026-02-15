@@ -26,12 +26,14 @@ interface BuiltInMcpServer {
   _creationTime: number;
   name: string;
   userId: string; // "system" — not a real user ID
-  command: string;
-  args: string[];
-  env: Record<string, string>;
+  command?: string; // Required for stdio transport; omit for sse/http/direct
+  args?: string[]; // Required for stdio transport; omit for sse/http/direct
+  env?: Record<string, string>;
   disabled: boolean;
   timeout: number;
   status: string;
+  url?: string; // Required for sse/http transport
+  transportType: "stdio" | "sse" | "http" | "direct"; // How to connect to this server
   availableTools: Array<{ name: string; description: string }>;
   createdAt: number;
   updatedAt: number;
@@ -43,13 +45,15 @@ interface DbMcpServer {
   _creationTime: number;
   name: string;
   userId: Id<"users">;
-  command: string;
-  args: string[];
-  env: Record<string, string>;
+  command?: string; // Required for stdio transport; omit for sse/http
+  args?: string[]; // Required for stdio transport; omit for sse/http
+  env?: Record<string, string>;
   disabled: boolean;
-  timeout: number;
+  timeout?: number;
   status: string;
-  availableTools: Array<{ name: string; description: string }>;
+  url?: string; // Required for sse/http transport
+  transportType?: string; // "stdio" | "sse" | "http" — defaults to "stdio"
+  availableTools?: Array<{ name: string; description?: string; inputSchema?: unknown }>;
   createdAt: number;
   updatedAt: number;
 }
@@ -63,12 +67,10 @@ const BUILT_IN_MCP_SERVERS: BuiltInMcpServer[] = [
     _creationTime: Date.now(),
     name: "bedrock-agentcore-mcp-server",
     userId: "system",
-    command: "bedrock-agentcore",
-    args: [],
-    env: {},
     disabled: false,
     timeout: 60000,
     status: "connected",
+    transportType: "direct", // Calls Bedrock API directly — no MCP protocol
     availableTools: [
       { name: "execute_agent", description: "Execute a strands-agents agent" },
     ],
@@ -82,12 +84,10 @@ const BUILT_IN_MCP_SERVERS: BuiltInMcpServer[] = [
     _creationTime: Date.now(),
     name: "document-fetcher-mcp-server",
     userId: "system",
-    command: "uvx",
-    args: ["mcp-document-fetcher"],
-    env: {},
     disabled: false,
     timeout: 30000,
     status: "connected",
+    transportType: "direct", // Direct fetch() calls — no MCP subprocess
     availableTools: [
       { name: "fetch_url", description: "Fetch and clean a web page" },
       { name: "parse_llms_txt", description: "Parse an llms.txt file and extract links" },
@@ -102,12 +102,10 @@ const BUILT_IN_MCP_SERVERS: BuiltInMcpServer[] = [
     _creationTime: Date.now(),
     name: "aws-diagram-mcp-server",
     userId: "system",
-    command: "uvx",
-    args: ["awslabs.aws-diagram-mcp-server@latest"],
-    env: {},
-    disabled: false,
+    disabled: true, // Disabled: requires subprocess (uvx) — needs SSE server or reimplementation
     timeout: 30000,
-    status: "connected",
+    status: "disconnected",
+    transportType: "direct",
     availableTools: [
       { name: "create_diagram", description: "Create AWS architecture diagram" },
       { name: "get_resources", description: "Get AWS resources from a region" },
@@ -121,20 +119,17 @@ const BUILT_IN_MCP_SERVERS: BuiltInMcpServer[] = [
     _creationTime: Date.now(),
     name: "ollama-mcp-server",
     userId: "system",
-    command: "node",
-    args: [process.env.OLLAMA_MCP_PATH || ""],
     env: {
-      OLLAMA_HOST: "http://127.0.0.1:11434"
+      OLLAMA_HOST: "http://127.0.0.1:11434",
     },
     disabled: false,
     timeout: 60000,
     status: "connected",
+    transportType: "direct", // Direct Ollama REST API — no MCP subprocess
     availableTools: [
       { name: "chat_completion", description: "Chat with Ollama models" },
       { name: "list", description: "List available Ollama models" },
-      { name: "pull", description: "Pull an Ollama model" },
       { name: "show", description: "Show model information" },
-      { name: "serve", description: "Serve Ollama model" },
     ],
     createdAt: Date.now(),
     updatedAt: Date.now(),
@@ -146,12 +141,10 @@ const BUILT_IN_MCP_SERVERS: BuiltInMcpServer[] = [
     _creationTime: Date.now(),
     name: "task-master-ai",
     userId: "system",
-    command: "npx",
-    args: ["task-master-ai", "mcp"],
-    env: {},
-    disabled: false,
+    disabled: true, // Disabled: requires subprocess (npx) — needs SSE server or reimplementation
     timeout: 30000,
-    status: "connected",
+    status: "disconnected",
+    transportType: "direct",
     availableTools: [
       { name: "parse_prd", description: "Parse a PRD document into structured tasks" },
       { name: "next_task", description: "Get the next task to work on based on priority and dependencies" },
@@ -286,11 +279,13 @@ export const getMCPServerByNameInternal = internalQuery( {
 export const addMCPServer = mutation( {
   args: {
     name: v.string(),
-    command: v.string(),
-    args: v.array( v.string() ),
+    command: v.optional( v.string() ),    // Required for stdio transport
+    args: v.optional( v.array( v.string() ) ), // Required for stdio transport
     env: v.optional( v.object( {} ) ),
     disabled: v.optional( v.boolean() ),
     timeout: v.optional( v.number() ),
+    url: v.optional( v.string() ),        // Required for sse/http transport
+    transportType: v.optional( v.string() ), // "stdio" | "sse" | "http" — defaults to "stdio"
   },
   handler: async ( ctx, args ) => {
     // Get Convex user document ID
@@ -319,6 +314,18 @@ export const addMCPServer = mutation( {
       );
     }
 
+    // Validate transport-specific required fields
+    const transport = args.transportType || "stdio";
+    if ( transport === "sse" || transport === "http" ) {
+      if ( !args.url ) {
+        throw new Error( `Transport "${transport}" requires a url field` );
+      }
+    } else if ( transport === "stdio" ) {
+      if ( !args.command ) {
+        throw new Error( "Transport \"stdio\" requires a command field" );
+      }
+    }
+
     // Create new MCP server
     const serverId = await ctx.db.insert( "mcpServers", {
       name: args.name,
@@ -328,6 +335,8 @@ export const addMCPServer = mutation( {
       env: args.env,
       disabled: args.disabled ?? false,
       timeout: args.timeout,
+      url: args.url,
+      transportType: args.transportType,
       status: "unknown",
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -350,6 +359,8 @@ export const updateMCPServer = mutation( {
       env: v.optional( v.object( {} ) ),
       disabled: v.optional( v.boolean() ),
       timeout: v.optional( v.number() ),
+      url: v.optional( v.string() ),
+      transportType: v.optional( v.string() ),
     } ),
   },
   handler: async ( ctx, args ) => {

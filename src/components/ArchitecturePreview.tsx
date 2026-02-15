@@ -68,9 +68,9 @@ export function ArchitecturePreview({
             <div className="inline-flex items-center gap-2 px-3 py-1 bg-blue-600/30 border border-blue-500/50 rounded-full">
               <Zap className="w-4 h-4 text-blue-400" />
               <span className="text-sm font-medium text-blue-300">
-                {tier === "freemium" && "Freemium (AgentCore)"}
-                {tier === "personal" && "Personal AWS (Fargate)"}
-                {tier === "enterprise" && "Enterprise"}
+                {tier === "freemium" && "Freemium (Local + AgentCore)"}
+                {tier === "personal" && "Personal (AgentCore)"}
+                {tier === "enterprise" && "Enterprise (AgentCore + SSO)"}
               </span>
             </div>
           </div>
@@ -166,7 +166,7 @@ export function ArchitecturePreview({
               {tier === "freemium" &&
                 "Freemium tier includes limited free usage. Additional usage charged per request."}
               {tier === "personal" &&
-                "Costs include Fargate compute, storage, and data transfer. You only pay when your agent is active."}
+                "Costs include Bedrock model inference and AgentCore runtime. You only pay when your agent is active."}
               {tier === "enterprise" &&
                 "Enterprise pricing includes dedicated resources, SSO, and priority support."}
             </p>
@@ -200,7 +200,7 @@ export function ArchitecturePreview({
               {tier === "personal" && (
                 <li className="flex items-center gap-2">
                   <div className="w-1 h-1 bg-purple-400 rounded-full" />
-                  VPC isolation with private subnets
+                  Cross-account assume-role isolation
                 </li>
               )}
               {tier === "enterprise" && (
@@ -233,27 +233,14 @@ export function ArchitecturePreview({
   );
 }
 
-function determineDeploymentTier(deploymentType: string, model: string): string {
-  // Personal: AWS (Fargate) - Docker, Ollama, or custom models
-  // Check these first as they take priority
-  if (deploymentType === "docker" || deploymentType === "ollama") {
-    return "personal";
+function determineDeploymentTier(deploymentType: string, _model: string): string {
+  // Freemium: Local (Docker/Ollama) or limited AgentCore via our account
+  if (deploymentType === "docker" || deploymentType === "ollama" || deploymentType === "local") {
+    return "freemium";
   }
 
-  // Freemium: AgentCore - Bedrock models only
-  // Bedrock models can be identified by:
-  // 1. Containing "bedrock" in the name
-  // 2. Using AWS Bedrock provider prefixes (anthropic., amazon., meta., cohere., ai21., mistral.)
-  if (deploymentType === "aws") {
-    const bedrockProviders = ["anthropic.", "amazon.", "meta.", "cohere.", "ai21.", "mistral."];
-    const isBedrockModel = model.includes("bedrock") || 
-                          bedrockProviders.some(provider => model.startsWith(provider));
-    
-    if (isBedrockModel) {
-      return "freemium";
-    }
-    
-    // Non-Bedrock AWS deployments use Fargate (personal tier)
+  // Personal: AgentCore in user's own AWS account (via assume-role)
+  if (deploymentType === "aws" || deploymentType === "agentcore") {
     return "personal";
   }
 
@@ -293,29 +280,29 @@ function buildResourceEstimates(
       cost: "$0.50/GB",
     });
   } else if (tier === "personal") {
-    // Personal: AWS (Fargate)
+    // Personal: AgentCore in user's AWS account
     resources.push({
-      name: "VPC",
-      type: "Network",
-      icon: <Network className="w-4 h-4 text-blue-400" />,
-      description: "Isolated virtual network",
-      cost: "Free",
+      name: "AWS Bedrock AgentCore",
+      type: "Managed Runtime",
+      icon: <Zap className="w-4 h-4 text-purple-400" />,
+      description: "Agent execution in your AWS account",
+      cost: "Pay per request",
     });
 
     resources.push({
-      name: "ECS Fargate",
+      name: "Lambda Function",
       type: "Compute",
       icon: <Server className="w-4 h-4 text-orange-400" />,
-      description: "Containerized agent execution",
-      cost: "$0.04/hour",
+      description: "Agent invocation handler",
+      cost: "Included",
     });
 
     resources.push({
-      name: "ECR Repository",
+      name: "S3 Bucket",
       type: "Storage",
       icon: <Database className="w-4 h-4 text-green-400" />,
-      description: "Docker image storage",
-      cost: "$0.10/GB/month",
+      description: "Agent artifacts and data",
+      cost: "$0.023/GB/month",
     });
 
     resources.push({
@@ -325,38 +312,30 @@ function buildResourceEstimates(
       description: "Log aggregation and monitoring",
       cost: "$0.50/GB",
     });
-
-    resources.push({
-      name: "Application Load Balancer",
-      type: "Network",
-      icon: <Network className="w-4 h-4 text-purple-400" />,
-      description: "Traffic distribution (optional)",
-      cost: "$0.0225/hour",
-    });
   } else if (tier === "enterprise") {
     // Enterprise: includes all Personal tier resources + SSO
     resources.push({
-      name: "VPC",
-      type: "Network",
-      icon: <Network className="w-4 h-4 text-blue-400" />,
-      description: "Isolated virtual network",
-      cost: "Free",
+      name: "AWS Bedrock AgentCore",
+      type: "Managed Runtime",
+      icon: <Zap className="w-4 h-4 text-purple-400" />,
+      description: "Agent execution in your AWS account",
+      cost: "Pay per request",
     });
 
     resources.push({
-      name: "ECS Fargate",
+      name: "Lambda Function",
       type: "Compute",
       icon: <Server className="w-4 h-4 text-orange-400" />,
-      description: "Containerized agent execution",
-      cost: "$0.04/hour",
+      description: "Agent invocation handler",
+      cost: "Included",
     });
 
     resources.push({
-      name: "ECR Repository",
+      name: "S3 Bucket",
       type: "Storage",
       icon: <Database className="w-4 h-4 text-green-400" />,
-      description: "Docker image storage",
-      cost: "$0.10/GB/month",
+      description: "Agent artifacts and data",
+      cost: "$0.023/GB/month",
     });
 
     resources.push({
@@ -392,13 +371,8 @@ function calculateEstimatedCost(tier: string): string {
     // Freemium: AgentCore - pay per request
     return "$0.001 - $0.01/request";
   } else if (tier === "personal") {
-    // Personal: Fargate - pay per hour when active
-    const baseCost = 0.04; // Fargate (includes storage and logs in estimate)
-    
-    const estimatedHourly = baseCost;
-    const estimatedMonthly = estimatedHourly * 24 * 30; // Assuming 24/7 operation
-    
-    return `~$${estimatedHourly.toFixed(2)}/hour (~$${estimatedMonthly.toFixed(2)}/month)`;
+    // Personal: AgentCore - pay per request in your account
+    return "$0.001 - $0.05/request (in your AWS account)";
   } else if (tier === "enterprise") {
     // Enterprise: contact for pricing
     return "Contact for enterprise pricing";

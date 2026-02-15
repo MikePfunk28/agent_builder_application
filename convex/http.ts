@@ -330,58 +330,8 @@ http.route({
   }),
 });
 
-// AWS ECS RunTask
-http.route({
-  path: "/aws/runTask",
-  method: "POST",
-  handler: httpAction(async (ctx, request) => {
-    const authHeader = request.headers.get("Authorization");
-    if (authHeader !== `Bearer ${process.env.AWS_API_SECRET}`) {
-      return new Response("Unauthorized", { status: 401 });
-    }
-
-    const body = await request.json();
-    const { credentials, region, cluster, taskDefinition, subnets, securityGroups, containerOverrides } = body;
-
-    try {
-      const AWS = await import("@aws-sdk/client-ecs");
-      const ecs = new AWS.ECSClient({
-        region,
-        credentials: {
-          accessKeyId: credentials.accessKeyId,
-          secretAccessKey: credentials.secretAccessKey,
-          sessionToken: credentials.sessionToken,
-        },
-      });
-
-      const command = new AWS.RunTaskCommand({
-        cluster,
-        taskDefinition,
-        launchType: "FARGATE",
-        networkConfiguration: {
-          awsvpcConfiguration: { subnets, securityGroups, assignPublicIp: "ENABLED" },
-        },
-        overrides: { containerOverrides: [containerOverrides] },
-      });
-
-      const response = await ecs.send(command);
-      if (!response.tasks || response.tasks.length === 0) {
-        throw new Error("No tasks were created");
-      }
-
-      const task = response.tasks[0];
-      return new Response(
-        JSON.stringify({ taskArn: task.taskArn, taskId: task.taskArn?.split("/").pop(), status: task.lastStatus }),
-        { status: 200, headers: { "Content-Type": "application/json" } }
-      );
-    } catch (error: any) {
-      return new Response(
-        JSON.stringify({ error: error.message, code: error.Code }),
-        { status: 400, headers: { "Content-Type": "application/json" } }
-      );
-    }
-  }),
-});
+// ECS RunTask endpoint removed — all deployments now use Bedrock AgentCore.
+// See agentcoreDeployment.ts for the AgentCore deployment path.
 
 // Validate Role
 http.route({

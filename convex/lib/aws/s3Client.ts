@@ -128,7 +128,7 @@ export async function uploadDeploymentPackage(params: {
 }
 
 /**
- * Upload build context for ECS task
+ * Upload build context for agent deployment
  */
 export async function uploadBuildContext(params: {
   testId: string;

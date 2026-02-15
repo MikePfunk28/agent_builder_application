@@ -164,7 +164,7 @@ Parameters:
     Type: String
     Default: t3.medium
     AllowedValues: [t3.small, t3.medium, t3.large, t3.xlarge, m5.large, m5.xlarge, m5.2xlarge]
-    Description: EC2 instance type for ECS tasks
+    Description: EC2 instance type (reserved for future use)
 
   MinCapacity:
     Type: Number
@@ -469,7 +469,7 @@ Resources:
         Statement:
           - Effect: Allow
             Principal:
-              Service: ecs-tasks.amazonaws.com
+              Service: bedrock.amazonaws.com
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AmazonBedrockFullAccess
@@ -485,7 +485,7 @@ Resources:
                   - logs:CreateLogStream
                   - logs:PutLogEvents
                   - logs:DescribeLogStreams
-                Resource: !Sub 'arn:aws:logs:\${AWS::Region}:\${AWS::AccountId}:log-group:/aws/ecs/\${AgentName}-\${Environment}*'
+                Resource: !Sub 'arn:aws:logs:\${AWS::Region}:\${AWS::AccountId}:log-group:/aws/agentcore/\${AgentName}-\${Environment}*'
               - Effect: Allow
                 Action:
                   - s3:GetObject
@@ -509,10 +509,10 @@ Resources:
         Statement:
           - Effect: Allow
             Principal:
-              Service: ecs-tasks.amazonaws.com
+              Service: bedrock.amazonaws.com
             Action: sts:AssumeRole
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+        - arn:aws:iam::aws:policy/AmazonBedrockFullAccess
       Policies:
         - PolicyName: AgentCoreExecutionPolicy
           PolicyDocument:
@@ -520,15 +520,13 @@ Resources:
             Statement:
               - Effect: Allow
                 Action:
-                  - ecr:GetAuthorizationToken
-                  - ecr:BatchCheckLayerAvailability
-                  - ecr:GetDownloadUrlForLayer
-                  - ecr:BatchGetImage
-                Resource: '*'
-              - Effect: Allow
-                Action:
                   - secretsmanager:GetSecretValue
                 Resource: !Ref AgentCoreSecrets
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub '\${AgentCoreS3Bucket}/*'
       Tags:
         - Key: Environment
           Value: !Ref Environment
@@ -609,273 +607,41 @@ Resources:
           Value: !Ref Environment
 
   # ============================================================================
-  # ECS Cluster and Service
+  # Bedrock AgentCore Runtime
   # ============================================================================
-  AgentCoreCluster:
-    Type: AWS::ECS::Cluster
-    Properties:
-      ClusterName: !Sub '\${AgentName}-\${Environment}-cluster'
-      CapacityProviders:
-        - FARGATE
-        - FARGATE_SPOT
-      DefaultCapacityProviderStrategy:
-        - CapacityProvider: FARGATE
-          Weight: 1
-        - CapacityProvider: FARGATE_SPOT
-          Weight: !If [IsProduction, 0, 1]
-      ClusterSettings:
-        - Name: containerInsights
-          Value: !If [EnableDetailedCloudWatch, enabled, disabled]
-      Tags:
-        - Key: Environment
-          Value: !Ref Environment
-
   AgentCoreLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Sub '/aws/ecs/\${AgentName}-\${Environment}'
+      LogGroupName: !Sub '/aws/agentcore/\${AgentName}-\${Environment}'
       RetentionInDays: !Ref LogRetentionDays
       Tags:
         - Key: Environment
           Value: !Ref Environment
 
-  AgentCoreTaskDefinition:
-    Type: AWS::ECS::TaskDefinition
-    Properties:
-      Family: !Sub '\${AgentName}-\${Environment}'
-      Cpu: 1024
-      Memory: 2048
-      NetworkMode: awsvpc
-      RequiresCompatibilities:
-        - FARGATE
-      ExecutionRoleArn: !GetAtt AgentCoreExecutionRole.Arn
-      TaskRoleArn: !GetAtt AgentCoreTaskRole.Arn
-      ContainerDefinitions:
-        - Name: agentcore
-          Image: !Sub '\${AWS::AccountId}.dkr.ecr.\${AWS::Region}.amazonaws.com/\${AgentName}-\${Environment}:latest'
-          PortMappings:
-            - ContainerPort: 8080
-              Protocol: tcp
-          Environment:
-            - Name: AWS_REGION
-              Value: !Ref 'AWS::Region'
-            - Name: ENVIRONMENT
-              Value: !Ref Environment
-            - Name: AGENT_NAME
-              Value: !Ref AgentName
-          Secrets:
-            - Name: MODEL_ID
-              ValueFrom: !Sub '\${AgentCoreSecrets}:MODEL_ID::'
-          LogConfiguration:
-            LogDriver: awslogs
-            Options:
-              awslogs-group: !Ref AgentCoreLogGroup
-              awslogs-region: !Ref 'AWS::Region'
-              awslogs-stream-prefix: ecs
-          HealthCheck:
-            Command:
-              - CMD-SHELL
-              - curl -f http://localhost:8080/ping || exit 1
-            Interval: 30
-            Timeout: 5
-            Retries: 3
-            StartPeriod: 60
-      Tags:
-        - Key: Environment
-          Value: !Ref Environment
-
-  AgentCoreService:
-    Type: AWS::ECS::Service
-    DependsOn: LoadBalancerListener
-    Properties:
-      ServiceName: !Sub '\${AgentName}-\${Environment}-service'
-      Cluster: !Ref AgentCoreCluster
-      TaskDefinition: !Ref AgentCoreTaskDefinition
-      DesiredCount: !Ref MinCapacity
-      LaunchType: FARGATE
-      NetworkConfiguration:
-        AwsvpcConfiguration:
-          SecurityGroups:
-            - !Ref AgentCoreSecurityGroup
-          Subnets:
-            - !If [CreateVpc, !Ref PrivateSubnet1, !Ref 'AWS::NoValue']
-            - !If [CreateVpc, !Ref PrivateSubnet2, !Ref 'AWS::NoValue']
-          AssignPublicIp: DISABLED
-      LoadBalancers:
-        - ContainerName: agentcore
-          ContainerPort: 8080
-          TargetGroupArn: !Ref AgentCoreTargetGroup
-      DeploymentConfiguration:
-        MaximumPercent: 200
-        MinimumHealthyPercent: 50
-        DeploymentCircuitBreaker:
-          Enable: true
-          Rollback: true
-      EnableExecuteCommand: !If [IsProduction, false, true]
-      Tags:
-        - Key: Environment
-          Value: !Ref Environment
-
-  # ============================================================================
-  # Load Balancer
-  # ============================================================================
-  AgentCoreLoadBalancer:
-    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
-    Properties:
-      Name: !Sub '\${AgentName}-\${Environment}-alb'
-      Scheme: internet-facing
-      Type: application
-      SecurityGroups:
-        - !Ref LoadBalancerSecurityGroup
-      Subnets:
-        - !If [CreateVpc, !Ref PublicSubnet1, !Ref 'AWS::NoValue']
-        - !If [CreateVpc, !Ref PublicSubnet2, !Ref 'AWS::NoValue']
-      Tags:
-        - Key: Environment
-          Value: !Ref Environment
-
-  AgentCoreTargetGroup:
-    Type: AWS::ElasticLoadBalancingV2::TargetGroup
-    Properties:
-      Name: !Sub '\${AgentName}-\${Environment}-tg'
-      Port: 8080
-      Protocol: HTTP
-      VpcId: !If [CreateVpc, !Ref VPC, !Ref 'AWS::NoValue']
-      TargetType: ip
-      HealthCheckPath: /ping
-      HealthCheckProtocol: HTTP
-      HealthCheckIntervalSeconds: 30
-      HealthCheckTimeoutSeconds: 5
-      HealthyThresholdCount: 2
-      UnhealthyThresholdCount: 3
-      Matcher:
-        HttpCode: 200
-      Tags:
-        - Key: Environment
-          Value: !Ref Environment
-
-  LoadBalancerListener:
-    Type: AWS::ElasticLoadBalancingV2::Listener
-    Properties:
-      DefaultActions:
-        - Type: forward
-          TargetGroupArn: !Ref AgentCoreTargetGroup
-      LoadBalancerArn: !Ref AgentCoreLoadBalancer
-      Port: 80
-      Protocol: HTTP
-
-  # ============================================================================
-  # Auto Scaling
-  # ============================================================================
-  AgentCoreAutoScalingTarget:
-    Type: AWS::ApplicationAutoScaling::ScalableTarget
-    Properties:
-      MaxCapacity: !Ref MaxCapacity
-      MinCapacity: !Ref MinCapacity
-      ResourceId: !Sub 'service/\${AgentCoreCluster}/\${AgentCoreService.Name}'
-      RoleARN: !Sub 'arn:aws:iam::\${AWS::AccountId}:role/aws-service-role/ecs.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_ECSService'
-      ScalableDimension: ecs:service:DesiredCount
-      ServiceNamespace: ecs
-
-  AgentCoreAutoScalingPolicy:
-    Type: AWS::ApplicationAutoScaling::ScalingPolicy
-    Properties:
-      PolicyName: !Sub '\${AgentName}-\${Environment}-scaling-policy'
-      PolicyType: TargetTrackingScaling
-      ScalingTargetId: !Ref AgentCoreAutoScalingTarget
-      TargetTrackingScalingPolicyConfiguration:
-        PredefinedMetricSpecification:
-          PredefinedMetricType: ECSServiceAverageCPUUtilization
-        TargetValue: !Ref TargetCpuUtilization
-        ScaleOutCooldown: 300
-        ScaleInCooldown: 300
-
   # ============================================================================
   # CloudWatch Alarms
   # ============================================================================
-  HighCPUAlarm:
+  AgentCoreErrorAlarm:
     Type: AWS::CloudWatch::Alarm
     Condition: EnableDetailedCloudWatch
     Properties:
-      AlarmName: !Sub '\${AgentName}-\${Environment}-high-cpu'
-      AlarmDescription: High CPU utilization
-      MetricName: CPUUtilization
-      Namespace: AWS/ECS
-      Statistic: Average
+      AlarmName: !Sub '\${AgentName}-\${Environment}-errors'
+      AlarmDescription: Agent invocation errors
+      MetricName: Errors
+      Namespace: AWS/Bedrock
+      Statistic: Sum
       Period: 300
       EvaluationPeriods: 2
-      Threshold: 80
+      Threshold: 5
       ComparisonOperator: GreaterThanThreshold
-      Dimensions:
-        - Name: ServiceName
-          Value: !Sub '\${AgentName}-\${Environment}-service'
-        - Name: ClusterName
-          Value: !Ref AgentCoreCluster
-      TreatMissingData: notBreaching
-
-  HighMemoryAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Condition: EnableDetailedCloudWatch
-    Properties:
-      AlarmName: !Sub '\${AgentName}-\${Environment}-high-memory'
-      AlarmDescription: High memory utilization
-      MetricName: MemoryUtilization
-      Namespace: AWS/ECS
-      Statistic: Average
-      Period: 300
-      EvaluationPeriods: 2
-      Threshold: 80
-      ComparisonOperator: GreaterThanThreshold
-      Dimensions:
-        - Name: ServiceName
-          Value: !Sub '\${AgentName}-\${Environment}-service'
-        - Name: ClusterName
-          Value: !Ref AgentCoreCluster
-      TreatMissingData: notBreaching
-
-  ServiceUnhealthyAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub '\${AgentName}-\${Environment}-service-unhealthy'
-      AlarmDescription: Service has unhealthy targets
-      MetricName: UnHealthyHostCount
-      Namespace: AWS/ApplicationELB
-      Statistic: Average
-      Period: 60
-      EvaluationPeriods: 2
-      Threshold: 0
-      ComparisonOperator: GreaterThanThreshold
-      Dimensions:
-        - Name: TargetGroup
-          Value: !GetAtt AgentCoreTargetGroup.TargetGroupFullName
-        - Name: LoadBalancer
-          Value: !GetAtt AgentCoreLoadBalancer.LoadBalancerFullName
       TreatMissingData: notBreaching
 
 Outputs:
   AgentCoreEndpoint:
-    Description: AgentCore endpoint URL
-    Value: !Sub 'http://\${AgentCoreLoadBalancer.DNSName}'
+    Description: Bedrock AgentCore endpoint URL
+    Value: !Sub 'https://bedrock-agentcore.\${AWS::Region}.amazonaws.com/agents/\${AgentName}-\${Environment}/invoke'
     Export:
       Name: !Sub '\${AWS::StackName}-endpoint'
-
-  AgentCoreClusterName:
-    Description: ECS cluster name
-    Value: !Ref AgentCoreCluster
-    Export:
-      Name: !Sub '\${AWS::StackName}-cluster'
-
-  AgentCoreServiceName:
-    Description: ECS service name
-    Value: !Sub '\${AgentName}-\${Environment}-service'
-    Export:
-      Name: !Sub '\${AWS::StackName}-service'
-
-  ECRRepositoryURI:
-    Description: ECR repository URI
-    Value: !Sub '\${AWS::AccountId}.dkr.ecr.\${AWS::Region}.amazonaws.com/\${AgentName}-\${Environment}'
-    Export:
-      Name: !Sub '\${AWS::StackName}-ecr-uri'
 
   S3BucketName:
     Description: S3 bucket for agent storage
@@ -889,13 +655,6 @@ Outputs:
     Value: !Ref VPC
     Export:
       Name: !Sub '\${AWS::StackName}-vpc-id'
-
-  PrivateSubnets:
-    Condition: CreateVpc
-    Description: Private subnet IDs
-    Value: !Sub '\${PrivateSubnet1},\${PrivateSubnet2}'
-    Export:
-      Name: !Sub '\${AWS::StackName}-private-subnets'
 
   SecurityGroupId:
     Description: AgentCore security group ID

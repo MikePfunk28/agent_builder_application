@@ -162,76 +162,31 @@ function buildResourceList(deployment: any): AWSResource[] {
       });
     }
   } else if (deployment.tier === "personal") {
-    // Personal: AWS (Fargate)
-    
-    // VPC
-    resources.push({
-      type: "vpc",
-      name: `${deployment.agentName}-vpc`,
-      properties: {
-        cidr: "10.0.0.0/16",
-        region,
-      },
-    });
+    // Personal: AWS (Bedrock AgentCore in user's account)
 
-    // Subnets
+    // AgentCore Runtime
     resources.push({
-      type: "subnet",
-      name: `${deployment.agentName}-subnet-1`,
-      properties: {
-        cidr: "10.0.1.0/24",
-        availabilityZone: `${region}a`,
-      },
-    });
-
-    resources.push({
-      type: "subnet",
-      name: `${deployment.agentName}-subnet-2`,
-      properties: {
-        cidr: "10.0.2.0/24",
-        availabilityZone: `${region}b`,
-      },
-    });
-
-    // ECR Repository
-    if (deployment.ecrRepositoryUri) {
-      resources.push({
-        type: "ecr",
-        name: deployment.ecrRepositoryUri.split("/").pop() || "agent-repository",
-        id: deployment.ecrRepositoryUri,
-        properties: {
-          region,
-        },
-      });
-    }
-
-    // ECS Cluster
-    resources.push({
-      type: "ecs-cluster",
-      name: `${deployment.agentName}-cluster`,
+      type: "bedrock-agentcore",
+      name: `${deployment.agentName}-runtime`,
       properties: {
         region,
       },
     });
 
-    // ECS Fargate Service
-    if (deployment.taskArn) {
-      resources.push({
-        type: "ecs-fargate",
-        name: `${deployment.agentName}-service`,
-        id: deployment.taskArn,
-        properties: {
-          cpu: "256",
-          memory: "512",
-          region,
-        },
-      });
-    }
+    // Lambda (AgentCore entry point)
+    resources.push({
+      type: "lambda",
+      name: `${deployment.agentName}-invoker`,
+      properties: {
+        runtime: "python3.11",
+        region,
+      },
+    });
 
     // CloudWatch Logs
     resources.push({
       type: "cloudwatch-logs",
-      name: `/ecs/${deployment.agentName}`,
+      name: `/agentcore/${deployment.agentName}`,
       properties: {
         retentionDays: deployment.logRetentionDays || 7,
         region,

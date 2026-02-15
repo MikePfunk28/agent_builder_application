@@ -470,8 +470,10 @@ async function invokeMCPToolWithRetry(
 /**
  * Direct MCP tool invocation
  *
- * For Bedrock AgentCore: Uses Bedrock Runtime API directly
- * For other MCP servers: Uses MCP SDK with stdio transport
+ * Transport routing:
+ * - "direct" or Bedrock AgentCore → Direct API calls (no MCP protocol overhead)
+ * - "sse" or "http" → MCP SDK with SSE/HTTP transport (cloud-compatible)
+ * - "stdio" or undefined → MCP SDK with stdio transport (local dev only)
  */
 async function invokeMCPToolDirect(
   server: any,
@@ -479,19 +481,160 @@ async function invokeMCPToolDirect(
   parameters: any,
   timeout: number
 ): Promise<any> {
-  // Special handling for Bedrock AgentCore
+  // Special handling for Bedrock AgentCore (always direct)
   if ( server.name === "bedrock-agentcore-mcp-server" || toolName === "execute_agent" ) {
     return await invokeBedrockAgentCore( parameters, timeout );
   }
 
-  // For other MCP servers, use MCP SDK
+  const transportType: string = server.transportType || "stdio";
+
+  // Direct API calls — bypass MCP protocol entirely for built-in servers
+  if ( transportType === "direct" ) {
+    return await invokeDirectAPI( server, toolName, parameters, timeout );
+  }
+
+  // SSE/HTTP transport — cloud-compatible, no subprocess spawning
+  if ( transportType === "sse" || transportType === "http" ) {
+    return await invokeMCPViaHTTP( server, toolName, parameters, timeout );
+  }
+
+  // Stdio transport — spawns subprocess, local dev only
+  return await invokeMCPViaStdio( server, toolName, parameters, timeout );
+}
+
+/**
+ * Invoke a built-in MCP server via direct HTTP/API calls (no MCP protocol)
+ */
+async function invokeDirectAPI(
+  server: any,
+  toolName: string,
+  parameters: any,
+  timeout: number
+): Promise<any> {
+  const controller = new AbortController();
+  const timer = setTimeout( () => controller.abort(), timeout );
+
+  try {
+    // Ollama: Direct REST API
+    if ( server.name === "ollama-mcp-server" ) {
+      const ollamaHost = server.env?.OLLAMA_HOST || "http://127.0.0.1:11434";
+      if ( toolName === "chat_completion" ) {
+        const resp = await fetch( `${ollamaHost}/api/chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify( { model: parameters.model, messages: parameters.messages, stream: false } ),
+          signal: controller.signal,
+        } );
+        if ( !resp.ok ) throw new Error( `Ollama API error: ${resp.status} ${resp.statusText}` );
+        return await resp.json();
+      }
+      if ( toolName === "list" ) {
+        const resp = await fetch( `${ollamaHost}/api/tags`, { signal: controller.signal } );
+        if ( !resp.ok ) throw new Error( `Ollama API error: ${resp.status} ${resp.statusText}` );
+        return await resp.json();
+      }
+      if ( toolName === "show" ) {
+        const resp = await fetch( `${ollamaHost}/api/show`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify( { name: parameters.name || parameters.model } ),
+          signal: controller.signal,
+        } );
+        if ( !resp.ok ) throw new Error( `Ollama API error: ${resp.status} ${resp.statusText}` );
+        return await resp.json();
+      }
+      throw new Error( `Unsupported Ollama tool: ${toolName}` );
+    }
+
+    // Document Fetcher: Direct fetch + HTML cleanup
+    if ( server.name === "document-fetcher-mcp-server" ) {
+      if ( toolName === "fetch_url" ) {
+        const resp = await fetch( parameters.url, { signal: controller.signal } );
+        if ( !resp.ok ) throw new Error( `Fetch error: ${resp.status} ${resp.statusText}` );
+        const html = await resp.text();
+        // Basic HTML → text cleanup (strip tags)
+        const text = html.replace( /<script[^>]*>[\s\S]*?<\/script>/gi, "" )
+          .replace( /<style[^>]*>[\s\S]*?<\/style>/gi, "" )
+          .replace( /<[^>]+>/g, " " )
+          .replace( /\s+/g, " " )
+          .trim();
+        return { content: text.slice( 0, 50000 ) }; // Cap at 50KB
+      }
+      throw new Error( `Unsupported document-fetcher tool: ${toolName}` );
+    }
+
+    throw new Error( `No direct API handler for server "${server.name}" tool "${toolName}"` );
+  } finally {
+    clearTimeout( timer );
+  }
+}
+
+/**
+ * Invoke MCP server via SSE/HTTP transport (cloud-compatible, no subprocess)
+ */
+async function invokeMCPViaHTTP(
+  server: any,
+  toolName: string,
+  parameters: any,
+  timeout: number
+): Promise<any> {
+  if ( !server.url ) {
+    throw new Error( `MCP server "${server.name}" has transport "${server.transportType}" but no url configured` );
+  }
+
+  const { Client } = await import( "@modelcontextprotocol/sdk/client/index.js" );
+  const { SSEClientTransport } = await import( "@modelcontextprotocol/sdk/client/sse.js" );
+
+  let client: any = null;
+
+  try {
+    const transport = new SSEClientTransport( new URL( server.url ) );
+
+    client = new Client(
+      { name: "agent-builder-convex", version: "1.0.0" },
+      { capabilities: {} },
+    );
+
+    await Promise.race( [
+      client.connect( transport ),
+      new Promise( ( _, reject ) =>
+        setTimeout( () => reject( new Error( "MCP SSE connection timeout" ) ), timeout )
+      ),
+    ] );
+
+    const result = await Promise.race( [
+      client.callTool( { name: toolName, arguments: parameters } ),
+      new Promise( ( _, reject ) =>
+        setTimeout( () => reject( new Error( "MCP tool invocation timeout" ) ), timeout )
+      ),
+    ] );
+
+    return result.content?.[0]?.text || result;
+  } catch ( error: any ) {
+    console.error( `MCP SSE invocation error (${server.name}/${toolName}):`, error );
+    throw error;
+  } finally {
+    if ( client ) {
+      try { await client.close(); } catch { /* ignore close errors */ }
+    }
+  }
+}
+
+/**
+ * Invoke MCP server via stdio transport (local dev only — spawns subprocess)
+ */
+async function invokeMCPViaStdio(
+  server: any,
+  toolName: string,
+  parameters: any,
+  timeout: number
+): Promise<any> {
   const { Client } = await import( "@modelcontextprotocol/sdk/client/index.js" );
   const { StdioClientTransport } = await import( "@modelcontextprotocol/sdk/client/stdio.js" );
 
   let client: any = null;
 
   try {
-    // Create stdio transport for the MCP server
     const transport = new StdioClientTransport( {
       command: server.command,
       args: server.args || [],
@@ -501,18 +644,11 @@ async function invokeMCPToolDirect(
       ),
     } );
 
-    // Create MCP client
     client = new Client(
-      {
-        name: "agent-builder-convex",
-        version: "1.0.0",
-      },
-      {
-        capabilities: {},
-      }
+      { name: "agent-builder-convex", version: "1.0.0" },
+      { capabilities: {} },
     );
 
-    // Connect to the server with timeout
     await Promise.race( [
       client.connect( transport ),
       new Promise( ( _, reject ) =>
@@ -520,10 +656,7 @@ async function invokeMCPToolDirect(
       ),
     ] );
 
-    // List available tools
     const toolsList = await client.listTools();
-
-    // Find the requested tool
     const tool = toolsList.tools.find( ( t: any ) => t.name === toolName );
     if ( !tool ) {
       throw new Error(
@@ -531,30 +664,20 @@ async function invokeMCPToolDirect(
       );
     }
 
-    // Call the tool with timeout
     const result = await Promise.race( [
-      client.callTool( {
-        name: toolName,
-        arguments: parameters,
-      } ),
+      client.callTool( { name: toolName, arguments: parameters } ),
       new Promise( ( _, reject ) =>
         setTimeout( () => reject( new Error( "MCP tool invocation timeout" ) ), timeout )
       ),
     ] );
 
-    // Return the result content
     return result.content?.[0]?.text || result;
   } catch ( error: any ) {
-    console.error( `MCP invocation error (${server.name}/${toolName}):`, error );
+    console.error( `MCP stdio invocation error (${server.name}/${toolName}):`, error );
     throw error;
   } finally {
-    // Clean up: close the client connection
     if ( client ) {
-      try {
-        await client.close();
-      } catch ( closeError ) {
-        console.error( "Error closing MCP client:", closeError );
-      }
+      try { await client.close(); } catch { /* ignore close errors */ }
     }
   }
 }
@@ -819,29 +942,42 @@ export const testMCPServerConnection = action( {
       }
 
       // For other MCP servers, connect and list tools
-      const { Client } = await import( "@modelcontextprotocol/sdk/client/index.js" );
-      const { StdioClientTransport } = await import( "@modelcontextprotocol/sdk/client/stdio.js" );
+      const transportType: string = server.transportType || "stdio";
 
+      // Direct API servers — return their hardcoded tool list
+      if ( transportType === "direct" ) {
+        return {
+          success: true,
+          status: "connected",
+          tools: server.availableTools || [],
+        };
+      }
+
+      const { Client } = await import( "@modelcontextprotocol/sdk/client/index.js" );
       let client: any = null;
+      let transport: any = null;
 
       try {
-        const transport = new StdioClientTransport( {
-          command: server.command,
-          args: server.args || [],
-          env: Object.fromEntries(
-            Object.entries( { ...process.env, ...( server.env || {} ) } )
-              .filter( ( entry ): entry is [string, string] => entry[1] !== undefined ),
-          ),
-        } );
+        if ( transportType === "sse" || transportType === "http" ) {
+          if ( !server.url ) throw new Error( "SSE/HTTP server missing url" );
+          const { SSEClientTransport } = await import( "@modelcontextprotocol/sdk/client/sse.js" );
+          transport = new SSEClientTransport( new URL( server.url ) );
+        } else {
+          // stdio transport
+          const { StdioClientTransport } = await import( "@modelcontextprotocol/sdk/client/stdio.js" );
+          transport = new StdioClientTransport( {
+            command: server.command,
+            args: server.args || [],
+            env: Object.fromEntries(
+              Object.entries( { ...process.env, ...( server.env || {} ) } )
+                .filter( ( entry ): entry is [string, string] => entry[1] !== undefined ),
+            ),
+          } );
+        }
 
         client = new Client(
-          {
-            name: "agent-builder-convex",
-            version: "1.0.0",
-          },
-          {
-            capabilities: {},
-          }
+          { name: "agent-builder-convex", version: "1.0.0" },
+          { capabilities: {} },
         );
 
         // Connect with 10 second timeout
@@ -852,7 +988,6 @@ export const testMCPServerConnection = action( {
           ),
         ] );
 
-        // List available tools
         const toolsList = await client.listTools();
 
         return {
@@ -866,11 +1001,7 @@ export const testMCPServerConnection = action( {
         };
       } finally {
         if ( client ) {
-          try {
-            await client.close();
-          } catch ( closeError ) {
-            console.error( "Error closing test client:", closeError );
-          }
+          try { await client.close(); } catch { /* ignore close errors */ }
         }
       }
     } catch ( error: any ) {

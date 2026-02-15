@@ -51,10 +51,12 @@ export const generateAgent = action({
     deploymentType: v.string(),
     mcpServers: v.optional(v.array(v.object({
       name: v.string(),
-      command: v.string(),
-      args: v.array(v.string()),
+      command: v.optional(v.string()),
+      args: v.optional(v.array(v.string())),
       env: v.optional(v.record(v.string(), v.string())), // MCP server environment variables
       disabled: v.optional(v.boolean()),
+      url: v.optional(v.string()),
+      transportType: v.optional(v.string()), // "stdio" | "sse" | "http" | "direct"
     }))),
     dynamicTools: v.optional(v.array(v.object({
       name: v.string(),
@@ -1184,7 +1186,7 @@ volumes:
 }
 
 /**
- * Generate AWS SAM template for Lambda/ECS deployment
+ * Generate AWS SAM template for Lambda deployment
  */
 function generateSAMTemplate(agentName: string, model: string): string {
   const functionName = agentName.replace(/[^a-zA-Z0-9]/g, '');

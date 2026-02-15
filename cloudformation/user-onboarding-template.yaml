@@ -7,12 +7,12 @@ Parameters:
     Description: The AWS Account ID of the Agent Builder Platform
     AllowedPattern: '[0-9]{12}'
     ConstraintDescription: Must be a valid 12-digit AWS Account ID
-  
+
   UserIdentifier:
     Type: String
     Description: Your email or unique identifier (used as External ID for security)
     Default: ''
-  
+
   ProjectName:
     Type: String
     Description: Project name for resource tagging
@@ -36,120 +36,34 @@ Metadata:
         default: 'Project Name'
 
 Resources:
-  # VPC for agent deployment
-  AgentVPC:
-    Type: AWS::EC2::VPC
+  # S3 Bucket for agent artifacts
+  AgentArtifactsBucket:
+    Type: AWS::S3::Bucket
     Properties:
-      CidrBlock: 10.0.0.0/16
-      EnableDnsHostnames: true
-      EnableDnsSupport: true
+      BucketName: !Sub '${ProjectName}-${AWS::AccountId}-artifacts'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
       Tags:
         - Key: Name
-          Value: !Sub '${ProjectName}-vpc'
+          Value: !Sub '${ProjectName}-artifacts'
         - Key: ManagedBy
           Value: 'CloudFormation'
-
-  # Internet Gateway
-  InternetGateway:
-    Type: AWS::EC2::InternetGateway
-    Properties:
-      Tags:
-        - Key: Name
-          Value: !Sub '${ProjectName}-igw'
-
-  AttachGateway:
-    Type: AWS::EC2::VPCGatewayAttachment
-    Properties:
-      VpcId: !Ref AgentVPC
-      InternetGatewayId: !Ref InternetGateway
-
-  # Public Subnet
-  PublicSubnet:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref AgentVPC
-      CidrBlock: 10.0.1.0/24
-      MapPublicIpOnLaunch: true
-      AvailabilityZone: !Select [0, !GetAZs '']
-      Tags:
-        - Key: Name
-          Value: !Sub '${ProjectName}-public-subnet'
-
-  # Route Table
-  PublicRouteTable:
-    Type: AWS::EC2::RouteTable
-    Properties:
-      VpcId: !Ref AgentVPC
-      Tags:
-        - Key: Name
-          Value: !Sub '${ProjectName}-public-rt'
-
-  PublicRoute:
-    Type: AWS::EC2::Route
-    DependsOn: AttachGateway
-    Properties:
-      RouteTableId: !Ref PublicRouteTable
-      DestinationCidrBlock: 0.0.0.0/0
-      GatewayId: !Ref InternetGateway
-
-  SubnetRouteTableAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      SubnetId: !Ref PublicSubnet
-      RouteTableId: !Ref PublicRouteTable
-
-  # Security Group
-  AgentSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupName: !Sub '${ProjectName}-agent-sg'
-      GroupDescription: Security group for Agent Builder agents
-      VpcId: !Ref AgentVPC
-      SecurityGroupEgress:
-        - IpProtocol: -1
-          CidrIp: 0.0.0.0/0
-      Tags:
-        - Key: Name
-          Value: !Sub '${ProjectName}-agent-sg'
-
-  # ECS Cluster
-  ECSCluster:
-    Type: AWS::ECS::Cluster
-    Properties:
-      ClusterName: !Sub '${ProjectName}-cluster'
-      CapacityProviders:
-        - FARGATE
-      DefaultCapacityProviderStrategy:
-        - CapacityProvider: FARGATE
-          Weight: 1
-      Tags:
-        - Key: Name
-          Value: !Sub '${ProjectName}-cluster'
 
   # CloudWatch Log Group
   LogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Sub '/aws/${ProjectName}/agents'
+      LogGroupName: !Sub '/aws/agentcore/${ProjectName}/agents'
       RetentionInDays: 7
-
-  # IAM Role for Fargate Task Execution
-  FargateExecutionRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: !Sub '${ProjectName}-fargate-execution-role'
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: ecs-tasks.amazonaws.com
-            Action: sts:AssumeRole
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
-      Tags:
-        - Key: Name
-          Value: !Sub '${ProjectName}-fargate-execution-role'
 
   # Cross-Account IAM Role
   CrossAccountRole:
@@ -179,32 +93,31 @@ Resources:
       PolicyDocument:
         Version: '2012-10-17'
         Statement:
-          - Sid: ECSPermissions
+          - Sid: BedrockPermissions
             Effect: Allow
             Action:
-              - ecs:CreateCluster
-              - ecs:RegisterTaskDefinition
-              - ecs:RunTask
-              - ecs:StopTask
-              - ecs:DescribeTasks
-              - ecs:DescribeTaskDefinition
-              - ecs:ListTasks
+              - bedrock:CreateAgent
+              - bedrock:CreateAgentActionGroup
+              - bedrock:InvokeAgent
+              - bedrock:InvokeModel
+              - bedrock:InvokeModelWithResponseStream
+              - bedrock:GetAgent
+              - bedrock:ListAgents
+              - bedrock:UpdateAgent
+              - bedrock:DeleteAgent
             Resource: '*'
-          
-          - Sid: ECRPermissions
+
+          - Sid: S3Permissions
             Effect: Allow
             Action:
-              - ecr:CreateRepository
-              - ecr:GetAuthorizationToken
-              - ecr:BatchCheckLayerAvailability
-              - ecr:GetDownloadUrlForLayer
-              - ecr:BatchGetImage
-              - ecr:PutImage
-              - ecr:InitiateLayerUpload
-              - ecr:UploadLayerPart
-              - ecr:CompleteLayerUpload
-            Resource: '*'
-          
+              - s3:GetObject
+              - s3:PutObject
+              - s3:DeleteObject
+              - s3:ListBucket
+            Resource:
+              - !GetAtt AgentArtifactsBucket.Arn
+              - !Sub '${AgentArtifactsBucket.Arn}/*'
+
           - Sid: LogsPermissions
             Effect: Allow
             Action:
@@ -212,8 +125,8 @@ Resources:
               - logs:CreateLogStream
               - logs:PutLogEvents
               - logs:DescribeLogStreams
-            Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/${ProjectName}/*'
-          
+            Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/agentcore/${ProjectName}/*'
+
           - Sid: IAMPermissions
             Effect: Allow
             Action:
@@ -222,24 +135,6 @@ Resources:
               - iam:PassRole
               - iam:GetRole
             Resource: !Sub 'arn:aws:iam::${AWS::AccountId}:role/${ProjectName}-*'
-          
-          - Sid: VPCPermissions
-            Effect: Allow
-            Action:
-              - ec2:DescribeVpcs
-              - ec2:DescribeSubnets
-              - ec2:DescribeSecurityGroups
-              - ec2:CreateSecurityGroup
-              - ec2:AuthorizeSecurityGroupIngress
-              - ec2:AuthorizeSecurityGroupEgress
-            Resource: '*'
-          
-          - Sid: BedrockPermissions
-            Effect: Allow
-            Action:
-              - bedrock:InvokeModel
-              - bedrock:InvokeModelWithResponseStream
-            Resource: '*'
       Roles:
         - !Ref CrossAccountRole
 
@@ -262,29 +157,11 @@ Outputs:
     Export:
       Name: !Sub '${AWS::StackName}-Region'
 
-  ECSClusterName:
-    Description: ECS Cluster name for agent deployment
-    Value: !Ref ECSCluster
+  ArtifactsBucketName:
+    Description: S3 bucket for agent artifacts
+    Value: !Ref AgentArtifactsBucket
     Export:
-      Name: !Sub '${AWS::StackName}-ECSCluster'
-
-  VPCId:
-    Description: VPC ID
-    Value: !Ref AgentVPC
-    Export:
-      Name: !Sub '${AWS::StackName}-VPCId'
-
-  SubnetId:
-    Description: Public Subnet ID
-    Value: !Ref PublicSubnet
-    Export:
-      Name: !Sub '${AWS::StackName}-SubnetId'
-
-  SecurityGroupId:
-    Description: Security Group ID
-    Value: !Ref AgentSecurityGroup
-    Export:
-      Name: !Sub '${AWS::StackName}-SecurityGroupId'
+      Name: !Sub '${AWS::StackName}-ArtifactsBucket'
 
   SetupInstructions:
     Description: Next steps

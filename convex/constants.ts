@@ -43,10 +43,7 @@ export type ExtrasPip = typeof VALID_EXTRAS_PIP[number];
  * Default resource configurations
  */
 export const DEFAULT_RESOURCES = {
-  ECS_CPU: "256",
-  ECS_MEMORY: "512",
   LOG_RETENTION_DAYS: 7,
-  ECR_IMAGE_RETENTION: 10,
   CONTAINER_PORT: 8000,
 } as const;
 
@@ -110,10 +107,10 @@ export function isAWSDeployment(deploymentType: string): boolean {
 }
 
 /**
- * Check if deployment type is container-based
+ * Check if deployment type is local-only (no cloud deployment)
  */
-export function isContainerDeployment(deploymentType: string): boolean {
-  return deploymentType === DEPLOYMENT_TYPES.DOCKER || 
+export function isLocalDeployment(deploymentType: string): boolean {
+  return deploymentType === DEPLOYMENT_TYPES.DOCKER ||
          deploymentType === DEPLOYMENT_TYPES.OLLAMA;
 }
 

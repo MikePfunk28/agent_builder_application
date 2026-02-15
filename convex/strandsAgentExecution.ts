@@ -191,7 +191,7 @@ async function executeViaAgentCore(
       if ( skillRef.skillId ) {
         // Load from dynamicTools table
         const skillDoc = await ctx.runQuery( internal.metaTooling.getSkillById, {
-          skillId: skillRef.skillId,
+          skillId: skillRef.skillId as import( "./_generated/dataModel" ).Id<"dynamicTools">,
         } );
         if ( skillDoc?.skillType && skillDoc?.toolDefinition ) {
           agentSkills.push( {
@@ -206,7 +206,7 @@ async function executeViaAgentCore(
     }
   }
 
-  const thinkingLevel = agentDoc.thinkingLevel as "low" | "medium" | "high" | undefined;
+  const thinkingLevel = (agent as unknown as { thinkingLevel?: string }).thinkingLevel as "low" | "medium" | "high" | undefined;
 
   return await executeDirectBedrock( ctx, agent, message, history, agentSkills, thinkingLevel );
 }

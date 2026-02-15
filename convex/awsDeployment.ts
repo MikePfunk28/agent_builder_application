@@ -17,7 +17,6 @@ import { incrementUsageAndReportOverageImpl } from "./stripeMutations";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { assembleDeploymentPackageFiles } from "./deploymentPackageGenerator";
 import { sanitizeAgentName } from "./constants";
-import { isOllamaModelId } from "./modelRegistry";
 
 /**
  * Deploy agent - Routes to correct tier (Tier 1/2/3)
@@ -104,7 +103,7 @@ export const deployToAWS = action( {
         throw new Error( `Free tier limit reached (${freeLimits.monthlyExecutions} executions/month). Configure AWS credentials to deploy to your own account!` );
       }
 
-      // Deploy to platform Fargate
+      // Deploy to platform AgentCore
       return await deployFreemium( ctx, args, userId );
     } else if ( tier === "enterprise" ) {
       // Enterprise: SSO deployment (not implemented yet)
@@ -168,13 +167,13 @@ export const executeDeployment = internalAction( {
         progress: {
           stage: "deploying",
           percentage: 60,
-          message: "Deploying to AWS AgentCore...",
-          currentStep: "Deploying to AWS",
+          message: "Deploying to Bedrock AgentCore...",
+          currentStep: "Deploying to AgentCore",
           totalSteps: 5,
         },
       } );
 
-      // Deploy to AWS using AgentCore CLI
+      // Deploy to AgentCore
       const deploymentResult = await deployToAgentCore( artifacts, args.config );
 
       // Update status to completed with final progress
@@ -619,29 +618,7 @@ function generateAgentCoreRequirements( tools: any[] ): string {
   return Array.from( packages ).join( String.raw`\n` );
 }
 
-function generateAgentCoreDockerfile( agent: any ): string {
-  const isOllamaModel = isOllamaModelId( agent.model, agent.deploymentType );
-
-  if ( isOllamaModel ) {
-    // Validate model name to prevent shell injection in entrypoint.sh
-    const safeModelPattern = /^[A-Za-z0-9._:/-]+$/;
-    const modelName = safeModelPattern.test( agent.model ) ? agent.model : "llama3:latest";
-
-    return `FROM ollama/ollama:latest
-
-RUN apt-get update && apt-get install -y python3.11 python3-pip curl && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /app
-COPY requirements.txt agent.py ./
-RUN pip3 install --no-cache-dir -r requirements.txt
-
-RUN echo '#!/bin/bash\nollama serve &\nsleep 5\nollama pull ${modelName}\npython3 agent.py' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
-
-EXPOSE 8080 11434
-ENTRYPOINT ["/app/entrypoint.sh"]
-`;
-  }
-
+function generateAgentCoreDockerfile( _agent: any ): string {
   return `FROM python:3.11-slim
 
 RUN apt-get update && apt-get install -y gcc g++ curl && rm -rf /var/lib/apt/lists/*
@@ -884,8 +861,8 @@ export const executeDeploymentInternal = internalAction( {
         progress: {
           stage: "building",
           percentage: 10,
-          message: "Building Docker image...",
-          currentStep: "docker-build",
+          message: "Building agent package...",
+          currentStep: "agent-build",
           totalSteps: 5,
         },
       } );
@@ -904,7 +881,6 @@ export const executeDeploymentInternal = internalAction( {
           currentStep: "agentcore-deploy",
           totalSteps: 5,
         },
-        ecrRepositoryUri: "123456789012.dkr.ecr.us-east-1.amazonaws.com/agent-repo",
         cloudFormationStackId: "arn:aws:cloudformation:us-east-1:123456789012:stack/agent-stack/12345",
       } );
 
@@ -948,7 +924,7 @@ export const executeDeploymentInternal = internalAction( {
 // ============================================================================
 
 /**
- * Freemium: Deploy to platform Fargate
+ * Freemium: Deploy to platform AgentCore (our AWS account)
  */
 async function deployFreemium( ctx: any, args: any, userId: Id<"users"> ): Promise<any> {
   // Create deployment record
@@ -985,7 +961,7 @@ async function deployFreemium( ctx: any, args: any, userId: Id<"users"> ): Promi
 }
 
 /**
- * Personal: Deploy to USER's Fargate (Personal AWS Account) using Web Identity Federation
+ * Personal: Deploy to USER's AgentCore (Personal AWS Account) using Web Identity Federation
  */
 async function deployPersonal( ctx: any, args: any, userId: string ): Promise<any> {
   // Get user's stored Role ARN
@@ -1084,15 +1060,15 @@ export const executeCrossAccountDeploymentInternal = internalAction( {
       // Assume role in user's account
       await assumeUserRole( args.roleArn, args.externalId );
 
-      // Deploy to their Fargate
+      // Deploy to their AgentCore
       await ctx.runMutation( internal.awsDeployment.updateDeploymentStatusInternal, {
         deploymentId: args.deploymentId,
         status: "DEPLOYING",
         progress: {
           stage: "deploying",
           percentage: 50,
-          message: "Deploying to your AWS Fargate...",
-          currentStep: "deploy-fargate",
+          message: "Deploying to your AWS Bedrock AgentCore...",
+          currentStep: "deploy-agentcore",
           totalSteps: 5,
         },
       } );
@@ -1276,36 +1252,16 @@ export const executeWebIdentityDeploymentInternal = internalAction( {
         awsCallerArn: callerArn,
       } );
 
-      const { ECRClient, DescribeRepositoriesCommand, CreateRepositoryCommand } = await import( "@aws-sdk/client-ecr" );
-      const ecrClient = new ECRClient( { region, credentials: awsCredentials } );
-      const repositoryName = `agent-builder/${sanitizedName}`;
-      let repositoryUri: string | undefined;
-
-      try {
-        const describe = await ecrClient.send( new DescribeRepositoriesCommand( { repositoryNames: [repositoryName] } ) );
-        repositoryUri = describe.repositories?.[0]?.repositoryUri;
-      } catch ( repoError: any ) {
-        if ( repoError.name === "RepositoryNotFoundException" ) {
-          const created = await ecrClient.send( new CreateRepositoryCommand( { repositoryName } ) );
-          repositoryUri = created.repository?.repositoryUri;
-        } else {
-          throw repoError;
-        }
-      }
-
       await ctx.runMutation( internal.awsDeployment.updateDeploymentStatusInternal, {
         deploymentId: args.deploymentId,
         status: "DEPLOYING",
         progress: {
-          stage: "registry-ready",
+          stage: "artifacts-ready",
           percentage: 80,
-          message: repositoryUri
-            ? `ECR repository ready at ${repositoryUri}`
-            : "ECR repository ready",
-          currentStep: "prepare-registry",
+          message: `Agent package staged at s3://${bucketName}/${packageKey}`,
+          currentStep: "prepare-deployment",
           totalSteps: 5,
         },
-        ecrRepositoryUri: repositoryUri,
       } );
 
       let downloadUrl: string | null = null;
@@ -1322,10 +1278,7 @@ export const executeWebIdentityDeploymentInternal = internalAction( {
       const instructionsLines = [
         `Artifacts uploaded to s3://${bucketName}/${packageKey}`,
         `1. Download package: aws s3 cp s3://${bucketName}/${packageKey} ./agent_package.zip --region ${region}`,
-        repositoryUri
-          ? `2. Build and push the container image:\n   aws ecr get-login-password --region ${region} | docker login --username AWS --password-stdin ${awsAccountId}.dkr.ecr.${region}.amazonaws.com\n   docker build -t ${repositoryUri}:latest .\n   docker push ${repositoryUri}:latest`
-          : "2. Build and push your agent image to the provisioned ECR repository.",
-        "3. Deploy the AgentCore stack using the CloudFormation template inside agent_package.zip or run deploy_agentcore.sh.",
+        "2. Deploy the AgentCore stack using the CloudFormation template inside agent_package.zip or run deploy_agentcore.sh.",
       ];
 
       if ( downloadUrl ) {
@@ -1340,11 +1293,10 @@ export const executeWebIdentityDeploymentInternal = internalAction( {
         progress: {
           stage: "staged",
           percentage: 100,
-          message: "Artifacts staged in your AWS account. Push the container image and launch AgentCore to finish deployment.",
+          message: "Artifacts staged in your AWS account. Deploy the AgentCore stack to finish deployment.",
           currentStep: "staged",
           totalSteps: 5,
         },
-        ecrRepositoryUri: repositoryUri,
         s3BucketName: bucketName,
         deploymentPackageKey: packageKey,
         awsAccountId,
@@ -1403,181 +1355,5 @@ async function assumeUserRole( roleArn: string, externalId: string ) {
   return await response.json();
 }
 
-/**
- *
- Deploy agent to user's AWS account using temporary credentials
- */
-async function deployToUserAWS(
-  agent: any,
-  region: string,
-  accessKeyId: string,
-  secretAccessKey: string,
-  sessionToken: string
-) {
-  const {
-    ECRClient,
-    CreateRepositoryCommand,
-    GetAuthorizationTokenCommand
-  } = await import( "@aws-sdk/client-ecr" );
-
-  const {
-    ECSClient,
-    CreateClusterCommand,
-    RegisterTaskDefinitionCommand,
-    CreateServiceCommand
-  } = await import( "@aws-sdk/client-ecs" );
-
-  const {
-    S3Client,
-    CreateBucketCommand,
-    PutObjectCommand
-  } = await import( "@aws-sdk/client-s3" );
-
-  const {
-    EC2Client,
-    DescribeVpcsCommand,
-    DescribeSubnetsCommand,
-    CreateSecurityGroupCommand,
-    AuthorizeSecurityGroupIngressCommand,
-    DescribeSecurityGroupsCommand
-  } = await import( "@aws-sdk/client-ec2" );
-
-  // Configure AWS clients with temporary credentials
-  const credentials = {
-    accessKeyId,
-    secretAccessKey,
-    sessionToken
-  };
-
-  const ecrClient = new ECRClient( { region, credentials } );
-  const ecsClient = new ECSClient( { region, credentials } );
-  const s3Client = new S3Client( { region, credentials } );
-  const ec2Client = new EC2Client( { region, credentials } );
-
-  // 1. Create ECR repository for agent image
-  const repoName = `agent-${agent._id.toLowerCase()}`;
-  try {
-    await ecrClient.send( new CreateRepositoryCommand( {
-      repositoryName: repoName,
-      imageScanningConfiguration: {
-        scanOnPush: true
-      }
-    } ) );
-  } catch ( error: any ) {
-    if ( error.name !== "RepositoryAlreadyExistsException" ) {
-      throw error;
-    }
-  }
-
-  // 2. Get ECR auth token for Docker push
-  const authResponse = await ecrClient.send( new GetAuthorizationTokenCommand( {} ) );
-  const authToken = authResponse.authorizationData?.[0];
-
-  if ( !authToken ) {
-    throw new Error( "Failed to get ECR authorization token" );
-  }
-
-  // 3. Create S3 bucket for agent artifacts
-  const bucketName = `agent-artifacts-${Date.now()}`;
-  try {
-    await s3Client.send( new CreateBucketCommand( {
-      Bucket: bucketName,
-      CreateBucketConfiguration: {
-        LocationConstraint: ( region !== "us-east-1" ? region : undefined ) as any
-      }
-    } ) );
-  } catch ( error: any ) {
-    if ( error.name !== "BucketAlreadyOwnedByYou" ) {
-      throw error;
-    }
-  }
-
-  // 4. Upload agent code to S3
-  const agentCode = generateAgentCoreCode( agent );
-  await s3Client.send( new PutObjectCommand( {
-    Bucket: bucketName,
-    Key: "agent.py",
-    Body: agentCode,
-    ContentType: "text/x-python"
-  } ) );
-
-  // 5. Create ECS cluster
-  const clusterName = `agent-cluster-${agent._id}`;
-  try {
-    await ecsClient.send( new CreateClusterCommand( {
-      clusterName,
-      capacityProviders: ["FARGATE"],
-      defaultCapacityProviderStrategy: [{
-        capacityProvider: "FARGATE",
-        weight: 1
-      }]
-    } ) );
-  } catch ( error: any ) {
-    if ( error.name !== "ClusterAlreadyExistsException" ) {
-      throw error;
-    }
-  }
-
-  // 6. Register task definition
-  const taskFamily = `agent-task-${agent._id}`;
-  const taskDefResponse = await ecsClient.send( new RegisterTaskDefinitionCommand( {
-    family: taskFamily,
-    networkMode: "awsvpc",
-    requiresCompatibilities: ["FARGATE"],
-    cpu: "256",
-    memory: "512",
-    executionRoleArn: `arn:aws:iam::${authToken.proxyEndpoint?.split( '.' )[0].split( '//' )[1]}:role/ecsTaskExecutionRole`,
-    containerDefinitions: [{
-      name: "agent-container",
-      image: `${authToken.proxyEndpoint}/${repoName}:latest`,
-      essential: true,
-      portMappings: [{
-        containerPort: 8080,
-        protocol: "tcp"
-      }],
-      environment: [
-        { name: "AGENT_NAME", value: agent.name },
-        { name: "MODEL_ID", value: agent.model }
-      ],
-      logConfiguration: {
-        logDriver: "awslogs",
-        options: {
-          "awslogs-group": `/ecs/${taskFamily}`,
-          "awslogs-region": region,
-          "awslogs-stream-prefix": "agent"
-        }
-      }
-    }]
-  } ) );
-
-  // 7. Create ECS service
-  const serviceName = `agent-service-${agent._id}`;
-  try {
-    await ecsClient.send( new CreateServiceCommand( {
-      cluster: clusterName,
-      serviceName,
-      taskDefinition: taskDefResponse.taskDefinition?.taskDefinitionArn,
-      desiredCount: 1,
-      launchType: "FARGATE",
-      networkConfiguration: {
-        awsvpcConfiguration: {
-          assignPublicIp: "ENABLED",
-          subnets: [], // TODO: Get default VPC subnets
-          securityGroups: [] // TODO: Create security group
-        }
-      }
-    } ) );
-  } catch ( error: any ) {
-    if ( error.name !== "ServiceAlreadyExistsException" ) {
-      throw error;
-    }
-  }
-
-  return {
-    ecrRepository: `${authToken.proxyEndpoint}/${repoName}`,
-    ecsCluster: clusterName,
-    ecsService: serviceName,
-    s3Bucket: bucketName,
-    taskDefinition: taskDefResponse.taskDefinition?.taskDefinitionArn
-  };
-}
+// ECS/Fargate deployment removed — all deployments now go through Bedrock AgentCore.
+// See agentcoreDeployment.ts for the AgentCore deployment path.

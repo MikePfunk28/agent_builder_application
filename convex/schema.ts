@@ -207,10 +207,12 @@ const applicationTables = {
     // MCP Configuration
     mcpServers: v.optional( v.array( v.object( {
       name: v.string(),
-      command: v.string(),
-      args: v.array( v.string() ),
+      command: v.optional( v.string() ), // Required for stdio transport; omit for sse/http
+      args: v.optional( v.array( v.string() ) ), // Required for stdio transport; omit for sse/http
       env: v.optional( v.record( v.string(), v.string() ) ), // MCP server environment variables (e.g. { "PATH": "/usr/bin" })
       disabled: v.optional( v.boolean() ),
+      url: v.optional( v.string() ), // Required for sse/http transport (e.g. "https://mcp.example.com/sse")
+      transportType: v.optional( v.string() ), // "stdio" | "sse" | "http" | "direct" — defaults to "stdio"
     } ) ) ),
 
     // Dynamic Tools (Meta-tooling)
@@ -461,11 +463,13 @@ const applicationTables = {
     userId: v.id( "users" ),
 
     // Server Configuration
-    command: v.string(),
-    args: v.array( v.string() ),
+    command: v.optional( v.string() ), // Required for stdio transport; omit for sse/http
+    args: v.optional( v.array( v.string() ) ), // Required for stdio transport; omit for sse/http
     env: v.optional( v.record( v.string(), v.string() ) ), // MCP server environment variables (e.g. { "PATH": "/usr/bin" })
     disabled: v.boolean(),
     timeout: v.optional( v.number() ), // Timeout in milliseconds
+    url: v.optional( v.string() ), // Required for sse/http transport (e.g. "https://mcp.example.com/sse")
+    transportType: v.optional( v.string() ), // "stdio" | "sse" | "http" | "direct" — defaults to "stdio"
 
     // Connection Status
     status: v.string(), // "connected" | "disconnected" | "error" | "unknown"

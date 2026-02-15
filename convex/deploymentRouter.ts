@@ -1,6 +1,6 @@
 // Deployment Router - Routes deployments to correct tier
 // Freemium: AgentCore sandbox (OUR AWS)
-// Personal: Fargate (USER's AWS)
+// Personal: AgentCore (USER's AWS via assume-role)
 // Enterprise: SSO deployment (ENTERPRISE AWS via SSO)
 
 import { v } from "convex/values";
@@ -158,23 +158,48 @@ async function deployFreemium(ctx: any, args: any, userId: Id<"users">): Promise
   }
 }
 
-// Personal: Deploy to USER's Fargate (Personal AWS Account)
+// Personal: Deploy to USER's Bedrock AgentCore (Personal AWS Account via assume-role)
 // No per-deployment billing — user pays AWS directly for their own runtime.
 // We only charge the $5/month subscription for platform access.
-async function deployPersonal(ctx: any, args: any, _userId: Id<"users">): Promise<any> {
+async function deployPersonal(ctx: any, args: any, userId: Id<"users">): Promise<any> {
   try {
-    const result: any = await ctx.runAction(
-      api.awsCrossAccount.deployToUserAccount,
-      {
-        agentId: args.agentId,
+    // Get agent details
+    const agent = await ctx.runQuery(api.agents.get, { id: args.agentId });
+    if (!agent) {
+      throw new Error("Agent not found");
+    }
+
+    // Extract dependencies from agent tools
+    const dependencies: string[] = [];
+    for (const tool of agent.tools || []) {
+      if (tool.requiresPip && tool.pipPackages) {
+        dependencies.push(...tool.pipPackages);
       }
-    );
+    }
+
+    // Build environment variables
+    const environmentVariables: Record<string, string> = {
+      AGENT_NAME: agent.name,
+      AGENT_MODEL: agent.model,
+    };
+
+    // Deploy to AgentCore in user's AWS account
+    const result: any = await ctx.runAction(api.agentcoreDeployment.deployToAgentCore, {
+      agentId: args.agentId,
+      code: agent.generatedCode,
+      dependencies,
+      environmentVariables,
+    });
+
+    if (!result.success) {
+      throw new Error(result.error || "AgentCore deployment failed");
+    }
 
     return {
       success: true,
       tier: "personal",
       result,
-      message: "Agent deployed to your AWS account",
+      message: "Agent deployed to your AWS account via Bedrock AgentCore",
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);

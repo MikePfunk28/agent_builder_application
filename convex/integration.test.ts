@@ -1454,7 +1454,7 @@ describe("Deployment Integration Tests", () => {
     });
   });
 
-  describe("Personal (AWS Fargate) Deployment Workflow", () => {
+  describe("Personal (AgentCore) Deployment Workflow", () => {
     test("should handle personal tier deployment workflow", async () => {
       const t = convexTest(schema, modules);
 
