@@ -278,6 +278,15 @@ export const executeWorkflowStage = action( {
       throw new Error( gateResult.reason );
     }
 
+    // Rate limit: prevent burst abuse per user
+    const { checkRateLimit, buildTierRateLimitConfig } = await import( "./rateLimiter" );
+    const { getTierConfig } = await import( "./lib/tierConfig" );
+    const rlCfg = buildTierRateLimitConfig( getTierConfig( gateResult.tier ).maxConcurrentTests, "agentExecution" );
+    const rlResult = await checkRateLimit( ctx, String( gateResult.userId ), "agentExecution", rlCfg );
+    if ( !rlResult.allowed ) {
+      throw new Error( rlResult.reason ?? "Rate limit exceeded. Please try again later." );
+    }
+
     const stage = WORKFLOW_STAGES[args.stage as keyof typeof WORKFLOW_STAGES];
     if ( !stage ) {
       throw new Error( `Invalid workflow stage: ${args.stage}` );
@@ -464,6 +473,17 @@ export const executeCompleteWorkflow = action( {
       throw new Error( gateResult.reason );
     }
 
+    // Rate limit: prevent burst abuse per user
+    {
+      const { checkRateLimit, buildTierRateLimitConfig } = await import( "./rateLimiter" );
+      const { getTierConfig } = await import( "./lib/tierConfig" );
+      const rlCfg = buildTierRateLimitConfig( getTierConfig( gateResult.tier ).maxConcurrentTests, "agentExecution" );
+      const rlResult = await checkRateLimit( ctx, String( gateResult.userId ), "agentExecution", rlCfg );
+      if ( !rlResult.allowed ) {
+        throw new Error( rlResult.reason ?? "Rate limit exceeded. Please try again later." );
+      }
+    }
+
     const workflowResults: Array<{
       stage: string;
       output: string;
@@ -537,6 +557,17 @@ export const streamWorkflowExecution = action( {
     );
     if ( !gateResult.allowed ) {
       throw new Error( gateResult.reason );
+    }
+
+    // Rate limit: prevent burst abuse per user
+    {
+      const { checkRateLimit, buildTierRateLimitConfig } = await import( "./rateLimiter" );
+      const { getTierConfig } = await import( "./lib/tierConfig" );
+      const rlCfg = buildTierRateLimitConfig( getTierConfig( gateResult.tier ).maxConcurrentTests, "agentExecution" );
+      const rlResult = await checkRateLimit( ctx, String( gateResult.userId ), "agentExecution", rlCfg );
+      if ( !rlResult.allowed ) {
+        throw new Error( rlResult.reason ?? "Rate limit exceeded. Please try again later." );
+      }
     }
 
     const { resolveBedrockModelId } = await import( "./modelRegistry.js" );

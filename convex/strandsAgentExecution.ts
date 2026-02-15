@@ -179,12 +179,13 @@ async function executeViaAgentCore(
 ): Promise<AgentExecutionResult> {
   // Load agent's skills from dynamicTools table (if configured)
   const agentSkills: import( "./lib/toolDispatch" ).SkillDefinition[] = [];
-  const agentDoc = agent as any; // Access optional fields added to schema
 
-  if ( agentDoc.skills && Array.isArray( agentDoc.skills ) ) {
+  // Type-safe access to optional skills array on agent document
+  const skills = ( agent as { skills?: Array<{ skillId?: string; enabled?: boolean }> } ).skills;
+  if ( skills && Array.isArray( skills ) ) {
     // Load full skill definitions for enabled skills
-    const enabledSkills = agentDoc.skills.filter(
-      ( s: any ) => s.enabled !== false,
+    const enabledSkills = skills.filter(
+      ( s ) => s.enabled !== false,
     );
     for ( const skillRef of enabledSkills ) {
       if ( skillRef.skillId ) {

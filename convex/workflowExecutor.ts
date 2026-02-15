@@ -175,6 +175,15 @@ async function executePromptModelWorkflow(
         throw new Error( gate.reason );
       }
       gateResult = gate;
+
+      // Rate limit: prevent burst abuse per user
+      const { checkRateLimit, buildTierRateLimitConfig } = await import( "./rateLimiter" );
+      const { getTierConfig } = await import( "./lib/tierConfig" );
+      const rlCfg = buildTierRateLimitConfig( getTierConfig( gate.tier ).maxConcurrentTests, "agentExecution" );
+      const rlResult = await checkRateLimit( ctx, String( gate.userId ), "agentExecution", rlCfg );
+      if ( !rlResult.allowed ) {
+        throw new Error( rlResult.reason ?? "Rate limit exceeded. Please try again later." );
+      }
     }
 
     // Execute composed messages with actual API calls

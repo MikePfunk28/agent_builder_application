@@ -115,6 +115,20 @@ export const executeUnifiedAgent = action({
             error: gateResult.reason,
           };
         }
+
+        // Rate limit: prevent burst abuse per user
+        const { checkRateLimit, buildTierRateLimitConfig } = await import( "./rateLimiter" );
+        const { getTierConfig } = await import( "./lib/tierConfig" );
+        const rlCfg = buildTierRateLimitConfig( getTierConfig( gateResult.tier ).maxConcurrentTests, "agentExecution" );
+        const rlResult = await checkRateLimit( ctx, String( gateResult.userId ), "agentExecution", rlCfg );
+        if ( !rlResult.allowed ) {
+          return {
+            success: false,
+            modality: "text",
+            content: "",
+            error: rlResult.reason ?? "Rate limit exceeded. Please try again later.",
+          };
+        }
       }
 
       // Make modality and model switching decision

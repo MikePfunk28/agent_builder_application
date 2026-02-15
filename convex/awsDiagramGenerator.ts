@@ -138,8 +138,8 @@ function buildResourceList(deployment: any): AWSResource[] {
   // Add region as context
   const region = deployment.region || "us-east-1";
 
-  if (deployment.tier === "freemium" || deployment.tier === "tier1") {
-    // Tier 1: AgentCore (Bedrock)
+  if (deployment.tier === "freemium") {
+    // Freemium: AgentCore (Bedrock)
     resources.push({
       type: "bedrock-agentcore",
       name: deployment.agentName || "Agent",
@@ -161,8 +161,8 @@ function buildResourceList(deployment: any): AWSResource[] {
         },
       });
     }
-  } else if (deployment.tier === "personal" || deployment.tier === "tier2") {
-    // Tier 2: Personal AWS (Fargate)
+  } else if (deployment.tier === "personal") {
+    // Personal: AWS (Fargate)
     
     // VPC
     resources.push({
@@ -282,12 +282,12 @@ function buildResourceList(deployment: any): AWSResource[] {
         },
       });
     }
-  } else if (deployment.tier === "enterprise" || deployment.tier === "tier3") {
-    // Tier 3: Enterprise (includes everything from Tier 2 plus SSO)
-    
-    // Include all Tier 2 resources
-    const tier2Deployment = { ...deployment, tier: "tier2" };
-    resources.push(...buildResourceList(tier2Deployment));
+  } else if (deployment.tier === "enterprise") {
+    // Enterprise: includes everything from Personal tier plus SSO
+
+    // Include all Personal tier resources
+    const personalDeployment = { ...deployment, tier: "personal" };
+    resources.push(...buildResourceList(personalDeployment));
 
     // Add SSO/Identity Center
     resources.push({

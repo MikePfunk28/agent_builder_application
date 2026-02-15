@@ -84,12 +84,12 @@ export const deployToAWS = action( {
     // Check if user has AWS credentials configured (saved)
     const hasAWSCreds = userId ? await ctx.runQuery( api.awsAuth.hasValidAWSCredentials ) : false;
 
-    // If user has saved AWS credentials, deploy to THEIR account (Tier 2)
+    // If user has saved AWS credentials, deploy to THEIR account (personal tier)
     if ( hasAWSCreds && userId ) {
-      return await deployTier2( ctx, args, userId );
+      return await deployPersonal( ctx, args, userId );
     }
 
-    // Otherwise, use platform deployment (Tier 1)
+    // Otherwise, use platform deployment (freemium tier)
     if ( tier === "freemium" ) {
       // Anonymous users must provide AWS credentials
       if ( !userId ) {
@@ -105,17 +105,17 @@ export const deployToAWS = action( {
       }
 
       // Deploy to platform Fargate
-      return await deployTier1( ctx, args, userId );
+      return await deployFreemium( ctx, args, userId );
     } else if ( tier === "enterprise" ) {
-      // Tier 3: Enterprise SSO (not implemented yet)
+      // Enterprise: SSO deployment (not implemented yet)
       throw new Error( "Enterprise tier not yet implemented" );
     }
 
-    // Fallback to Tier 1 - requires authentication
+    // Fallback to freemium - requires authentication
     if ( !userId ) {
       throw new Error( "Authentication required for deployment." );
     }
-    return await deployTier1( ctx, args, userId );
+    return await deployFreemium( ctx, args, userId );
   },
 } );
 
@@ -948,9 +948,9 @@ export const executeDeploymentInternal = internalAction( {
 // ============================================================================
 
 /**
- * Tier 1: Deploy to YOUR Fargate (Freemium)
+ * Freemium: Deploy to platform Fargate
  */
-async function deployTier1( ctx: any, args: any, userId: Id<"users"> ): Promise<any> {
+async function deployFreemium( ctx: any, args: any, userId: Id<"users"> ): Promise<any> {
   // Create deployment record
   const deploymentId: any = await ctx.runMutation( internal.awsDeployment.createDeploymentInternal, {
     agentId: args.agentId,
@@ -963,7 +963,7 @@ async function deployTier1( ctx: any, args: any, userId: Id<"users"> ): Promise<
   try {
     await ctx.runMutation( internalStripeMutations.incrementUsageAndReportOverage, { userId } );
   } catch ( billingErr ) {
-    console.error( "awsDeployment.deployTier1: billing failed (non-fatal)", {
+    console.error( "awsDeployment.deployFreemium: billing failed (non-fatal)", {
       userId,
       error: billingErr instanceof Error ? billingErr.message : billingErr,
     } );
@@ -985,9 +985,9 @@ async function deployTier1( ctx: any, args: any, userId: Id<"users"> ): Promise<
 }
 
 /**
- * Tier 2: Deploy to USER's Fargate (Personal AWS Account) using Web Identity Federation
+ * Personal: Deploy to USER's Fargate (Personal AWS Account) using Web Identity Federation
  */
-async function deployTier2( ctx: any, args: any, userId: string ): Promise<any> {
+async function deployPersonal( ctx: any, args: any, userId: string ): Promise<any> {
   // Get user's stored Role ARN
   const user = await ctx.runQuery( internal.awsDeployment.getUserTierInternal, { userId } );
 

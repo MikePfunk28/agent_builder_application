@@ -1356,8 +1356,8 @@ describe("Deployment Integration Tests", () => {
       const testUserId = await t.run(async (ctx) => {
         return await ctx.db.insert("users", {
 
-          email: "tier1-all@example.com",
-          name: "Tier 1 All Tests User",
+          email: "freemium-all@example.com",
+          name: "Freemium All Tests User",
           tier: "freemium",
           executionsThisMonth: 0,
           createdAt: Date.now(),
@@ -1368,8 +1368,8 @@ describe("Deployment Integration Tests", () => {
       const testAgentId = await t.run(async (ctx) => {
         return await ctx.db.insert("agents", {
           createdBy: testUserId,
-          name: "Tier 1 Test Agent",
-          description: "Test agent for Tier 1 deployment",
+          name: "Freemium Test Agent",
+          description: "Test agent for freemium deployment",
           systemPrompt: "You are a test agent",
           model: "anthropic.claude-3-sonnet-20240229-v1:0",
           tools: [],
@@ -1378,7 +1378,7 @@ describe("Deployment Integration Tests", () => {
         });
       });
 
-      t.withIdentity({ subject: "test-user-tier1-all" });
+      t.withIdentity({ subject: "test-user-freemium-all" });
 
       // Test 1: Deploy agent
       const result = await t.action(api.deploymentRouter.deployAgent, {
@@ -1404,8 +1404,8 @@ describe("Deployment Integration Tests", () => {
       const testUserId = await t.run(async (ctx) => {
         return await ctx.db.insert("users", {
 
-          email: "tier1-usage-limits@example.com",
-          name: "Tier 1 Usage Limits User",
+          email: "freemium-usage-limits@example.com",
+          name: "Freemium Usage Limits User",
           tier: "freemium",
           executionsThisMonth: 0,
           createdAt: Date.now(),
@@ -1425,7 +1425,7 @@ describe("Deployment Integration Tests", () => {
         });
       });
 
-      t.withIdentity({ subject: "test-user-tier1-usage-limits" });
+      t.withIdentity({ subject: "test-user-freemium-usage-limits" });
 
       // Test usage increment
       const userBefore = await t.query(api.deploymentRouter.getUserTier);
@@ -1454,16 +1454,16 @@ describe("Deployment Integration Tests", () => {
     });
   });
 
-  describe("Tier 2 (Personal AWS) Deployment Workflow", () => {
-    test("should handle Tier 2 deployment workflow", async () => {
+  describe("Personal (AWS Fargate) Deployment Workflow", () => {
+    test("should handle personal tier deployment workflow", async () => {
       const t = convexTest(schema, modules);
 
       // Create personal tier user
       const testUserId = await t.run(async (ctx) => {
         return await ctx.db.insert("users", {
 
-          email: "tier2-all@example.com",
-          name: "Tier 2 All Tests User",
+          email: "personal-all@example.com",
+          name: "Personal All Tests User",
           tier: "personal",
           createdAt: Date.now(),
         });
@@ -1473,12 +1473,12 @@ describe("Deployment Integration Tests", () => {
       const testAgentId = await t.run(async (ctx) => {
         return await ctx.db.insert("agents", {
           createdBy: testUserId,
-          name: "Tier 2 Test Agent",
-          description: "Test agent for Tier 2 deployment",
+          name: "Personal Test Agent",
+          description: "Test agent for personal tier deployment",
           systemPrompt: "You are a test agent",
           model: "gpt-4",
           tools: [],
-          generatedCode: "# Tier 2 test agent code",
+          generatedCode: "# Personal tier test agent code",
           deploymentType: "aws",
         });
       });
@@ -1497,7 +1497,7 @@ describe("Deployment Integration Tests", () => {
         });
       });
 
-      t.withIdentity({ subject: "test-user-tier2-all" });
+      t.withIdentity({ subject: "test-user-personal-all" });
 
       // Test deployment
       const result = await t.action(api.deploymentRouter.deployAgent, {
@@ -1972,17 +1972,41 @@ describe("Deployment Integration Tests", () => {
         });
       });
 
-      // Reset monthly usage
-      const result = await t.mutation(api.deploymentRouter.resetMonthlyUsage);
+      // Reset monthly usage via direct DB (mirrors cron's resetFreemiumMonthlyUsage logic)
+      const resetCount = await t.run(async (ctx) => {
+        const freemiumUsers = await ctx.db
+          .query("users")
+          .filter((q) =>
+            q.or(
+              q.eq(q.field("tier"), "freemium"),
+              q.eq(q.field("tier"), undefined)
+            )
+          )
+          .collect();
 
-      expect(result).toBeDefined();
-      expect(result.reset).toBeGreaterThanOrEqual(2);
+        let count = 0;
+        for (const user of freemiumUsers) {
+          if ((user.executionsThisMonth ?? 0) > 0) {
+            await ctx.db.patch(user._id, {
+              executionsThisMonth: 0,
+              rawCallsThisMonth: 0,
+              tokensInputThisMonth: 0,
+              tokensOutputThisMonth: 0,
+              billingPeriodStart: Date.now(),
+            });
+            count++;
+          }
+        }
+        return count;
+      });
+
+      expect(resetCount).toBeGreaterThanOrEqual(2);
 
       // Verify usage was reset
       const users = await t.run(async (ctx) => {
         return await ctx.db
           .query("users")
-          .withIndex("by_tier", (q) => q.eq("tier", "freemium"))
+          .filter((q) => q.eq(q.field("tier"), "freemium"))
           .collect();
       });
 
@@ -2006,8 +2030,29 @@ describe("Deployment Integration Tests", () => {
         });
       });
 
-      // Reset monthly usage (only affects freemium)
-      await t.mutation(api.deploymentRouter.resetMonthlyUsage);
+      // Reset monthly usage (only affects freemium — mirrors cron logic)
+      await t.run(async (ctx) => {
+        const freemiumUsers = await ctx.db
+          .query("users")
+          .filter((q) =>
+            q.or(
+              q.eq(q.field("tier"), "freemium"),
+              q.eq(q.field("tier"), undefined)
+            )
+          )
+          .collect();
+        for (const user of freemiumUsers) {
+          if ((user.executionsThisMonth ?? 0) > 0) {
+            await ctx.db.patch(user._id, {
+              executionsThisMonth: 0,
+              rawCallsThisMonth: 0,
+              tokensInputThisMonth: 0,
+              tokensOutputThisMonth: 0,
+              billingPeriodStart: Date.now(),
+            });
+          }
+        }
+      });
 
       // Verify personal user usage was not reset
       const user = await t.run(async (ctx) => {

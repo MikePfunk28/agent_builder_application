@@ -1,7 +1,7 @@
 // Deployment Router - Routes deployments to correct tier
-// Tier 1: Freemium (YOUR AWS)
-// Tier 2: Personal (USER's AWS)
-// Tier 3: Enterprise (ENTERPRISE AWS via SSO)
+// Freemium: AgentCore sandbox (OUR AWS)
+// Personal: Fargate (USER's AWS)
+// Enterprise: SSO deployment (ENTERPRISE AWS via SSO)
 
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
@@ -34,13 +34,13 @@ export const deployAgent = action({
     // Route based on tier
     switch (user.tier) {
       case "freemium":
-        return await deployTier1(ctx, args, userId);
+        return await deployFreemium(ctx, args, userId);
 
       case "personal":
-        return await deployTier2(ctx, args, userId);
+        return await deployPersonal(ctx, args, userId);
 
       case "enterprise":
-        return await deployTier3(ctx, args, userId);
+        return await deployEnterprise(ctx, args, userId);
 
       default:
         throw new Error(`Unknown tier: ${user.tier}`);
@@ -62,8 +62,8 @@ export const getUserTier = query({
   },
 });
 
-// Tier 1: Deploy to AgentCore (Freemium)
-async function deployTier1(ctx: any, args: any, userId: Id<"users">): Promise<any> {
+// Freemium: Deploy to AgentCore sandbox
+async function deployFreemium(ctx: any, args: any, userId: Id<"users">): Promise<any> {
   // Check usage limits
   const user = await ctx.runQuery(api.deploymentRouter.getUserTier);
 
@@ -135,7 +135,7 @@ async function deployTier1(ctx: any, args: any, userId: Id<"users">): Promise<an
         modelId: agent.model,
       } );
     } catch ( billingErr ) {
-      console.error( "deploymentRouter.deployTier1: billing failed (non-fatal)", {
+      console.error( "deploymentRouter.deployFreemium: billing failed (non-fatal)", {
         userId, modelId: agent.model,
         error: billingErr instanceof Error ? billingErr.message : billingErr,
       } );
@@ -158,10 +158,10 @@ async function deployTier1(ctx: any, args: any, userId: Id<"users">): Promise<an
   }
 }
 
-// Tier 2: Deploy to USER's Fargate (Personal AWS Account)
+// Personal: Deploy to USER's Fargate (Personal AWS Account)
 // No per-deployment billing — user pays AWS directly for their own runtime.
 // We only charge the $5/month subscription for platform access.
-async function deployTier2(ctx: any, args: any, _userId: Id<"users">): Promise<any> {
+async function deployPersonal(ctx: any, args: any, _userId: Id<"users">): Promise<any> {
   try {
     const result: any = await ctx.runAction(
       api.awsCrossAccount.deployToUserAccount,
@@ -188,8 +188,8 @@ async function deployTier2(ctx: any, args: any, _userId: Id<"users">): Promise<a
   }
 }
 
-// Tier 3: Deploy to ENTERPRISE AWS (via SSO)
-async function deployTier3(_ctx: any, _args: any, _userId: string): Promise<any> {
+// Enterprise: Deploy to ENTERPRISE AWS (via SSO)
+async function deployEnterprise(_ctx: any, _args: any, _userId: string): Promise<any> {
   try {
     // TODO: Implement enterprise SSO deployment
     // This would use AWS SSO credentials instead of AssumeRole
@@ -228,24 +228,9 @@ export const incrementUsage = mutation({
   },
 });
 
-// Reset monthly usage (call this from a cron job)
-export const resetMonthlyUsage = mutation({
-  args: {},
-  handler: async (ctx) => {
-    const users = await ctx.db
-      .query("users")
-      .withIndex("by_tier", (q) => q.eq("tier", "freemium"))
-      .collect();
-
-    for (const user of users) {
-      await ctx.db.patch(user._id, {
-        executionsThisMonth: 0,
-      });
-    }
-
-    return { reset: users.length };
-  },
-});
+// Monthly usage reset for freemium users is handled by:
+// - Cron: crons.ts → internal.stripeMutations.resetFreemiumMonthlyUsage (1st of month)
+// - Paid users: Stripe invoice.paid webhook → internal.stripeMutations.resetMonthlyUsage
 
 // Get deployment history
 export const getDeploymentHistory = query({

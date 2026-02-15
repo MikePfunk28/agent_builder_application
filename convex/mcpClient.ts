@@ -255,6 +255,26 @@ export const invokeMCPTool = action( {
       // Use server-specific timeout or provided timeout
       const timeout = args.timeout || server.timeout || 30000;
 
+      // Gate: If this server routes to Bedrock (AgentCore), enforce tier access
+      const isBedrockServer = server.name === "bedrock-agentcore-mcp-server" || args.toolName === "execute_agent";
+      if ( isBedrockServer && billingUserId ) {
+        const { requireBedrockAccessForUser } = await import( "./lib/bedrockGate" );
+        const userDoc = await ctx.runQuery( internal.users.getInternal, { id: billingUserId } );
+        const gateResult = await requireBedrockAccessForUser( userDoc, undefined );
+        if ( !gateResult.allowed ) {
+          return {
+            success: false,
+            error: gateResult.reason,
+          };
+        }
+      } else if ( isBedrockServer && !billingUserId ) {
+        // Unauthenticated caller trying to invoke Bedrock — block
+        return {
+          success: false,
+          error: "Authentication required to use cloud AI models. Please sign in.",
+        };
+      }
+
       // Invoke tool with retry logic
       const result = await invokeMCPToolWithRetry(
         server,
@@ -643,14 +663,17 @@ async function invokeBedrockDirect( parameters: any, timeout: number ): Promise<
       content: [{ text: input }],
     } );
 
-    // Prepare request payload
-    const payload = {
-      anthropic_version: "bedrock-2023-05-31",
+    // Prepare request payload — anthropic_version header is only valid for Claude models
+    const isClaudeModel = modelId.toLowerCase().startsWith( "anthropic." );
+    const payload: Record<string, any> = {
       max_tokens: 4096,
       system: systemPrompt,
       messages: messages,
       temperature: 0.7,
     };
+    if ( isClaudeModel ) {
+      payload.anthropic_version = "bedrock-2023-05-31";
+    }
 
     const command = new InvokeModelCommand( {
       modelId: modelId,

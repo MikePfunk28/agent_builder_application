@@ -63,6 +63,21 @@ export const executePromptChain = action({
         };
       }
       gateUserId = gateResult.userId;
+
+      // Rate limit: prevent burst abuse per user
+      const { checkRateLimit, buildTierRateLimitConfig } = await import( "./rateLimiter" );
+      const { getTierConfig } = await import( "./lib/tierConfig" );
+      const rlCfg = buildTierRateLimitConfig( getTierConfig( gateResult.tier ).maxConcurrentTests, "agentExecution" );
+      const rlResult = await checkRateLimit( ctx, String( gateResult.userId ), "agentExecution", rlCfg );
+      if ( !rlResult.allowed ) {
+        return {
+          success: false,
+          finalOutput: null,
+          intermediateResults: [],
+          totalLatency: 0,
+          error: rlResult.reason ?? "Rate limit exceeded. Please try again later.",
+        };
+      }
     }
 
     const startTime = Date.now();
@@ -204,6 +219,20 @@ export const executeParallelPrompts = action({
         };
       }
       gateUserId = gateResult.userId;
+
+      // Rate limit: prevent burst abuse per user
+      const { checkRateLimit, buildTierRateLimitConfig } = await import( "./rateLimiter" );
+      const { getTierConfig } = await import( "./lib/tierConfig" );
+      const rlCfg = buildTierRateLimitConfig( getTierConfig( gateResult.tier ).maxConcurrentTests, "agentExecution" );
+      const rlResult = await checkRateLimit( ctx, String( gateResult.userId ), "agentExecution", rlCfg );
+      if ( !rlResult.allowed ) {
+        return {
+          success: false,
+          results: [],
+          totalLatency: 0,
+          error: rlResult.reason ?? "Rate limit exceeded. Please try again later.",
+        };
+      }
     }
 
     const startTime = Date.now();
