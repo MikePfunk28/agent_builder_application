@@ -122,8 +122,7 @@ export function AWSAuthModal({ isOpen, onClose, onSuccess }: AWSAuthModalProps) 
                   <li>
                     Attach permissions policy: <strong>PowerUserAccess</strong> or create custom policy with:
                     <ul className="ml-6 mt-1 list-disc">
-                      <li>ECS full access</li>
-                      <li>ECR full access</li>
+                      <li>Bedrock full access</li>
                       <li>CloudFormation full access</li>
                       <li>IAM limited (for service roles)</li>
                     </ul>

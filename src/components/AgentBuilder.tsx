@@ -249,7 +249,7 @@ export function AgentBuilder() {
     return () => {
       cancelled = true;
     };
-  }, [automationData, executeWorkflow, lastAutomationStamp, setWorkflowResult] );
+  }, [automationData, executeWorkflow, lastAutomationStamp, setWorkflowResult, workflowResult] );
 
   useEffect( () => {
     if ( workflowResult ) {
@@ -260,7 +260,7 @@ export function AgentBuilder() {
     }
   }, [workflowResult, automationStatus] );
 
-  const handleAutoGenerateFromPlan = useCallback( async () => {
+  const autoGenerateFromPlan = useCallback( async () => {
     if ( !automationSummary ) {
       toast.error( "No automation plan available yet" );
       return;
@@ -280,7 +280,7 @@ export function AgentBuilder() {
 
     const finalOutput = automationSummary.finalOutput || "";
 
-    const nameMatch = requirementsOutput.match( /Agent Name[:\-]\s*(.+)/i );
+    const nameMatch = requirementsOutput.match( /Agent Name[:-]\s*(.+)/i );
     let derivedName = nameMatch ? nameMatch[1].trim() : "";
     if ( !derivedName ) {
       derivedName = `Automated Agent ${new Date().toLocaleTimeString()}`;
@@ -325,7 +325,7 @@ export function AgentBuilder() {
       setRequirementsTxt( response.requirementsTxt || "" );
       toast.success( "Agent generated from automation plan" );
       setCurrentStep( 4 );
-    } catch ( error ) {
+    } catch ( error: unknown ) {
       console.error( error );
       toast.error( "Automatic generation failed", {
         description: error instanceof Error ? error.message : undefined,
@@ -334,7 +334,11 @@ export function AgentBuilder() {
       setIsGenerating( false );
       setIsAutoGenerating( false );
     }
-  }, [automationSummary, automationData, config.tools, generateAgent] );
+  }, [automationSummary, automationData, config.model, config.tools, generateAgent] );
+
+  const handleAutoGenerateFromPlan = useCallback( () => {
+    void autoGenerateFromPlan();
+  }, [autoGenerateFromPlan] );
 
   const handleExportConfig = useCallback( () => {
     const payload = {
@@ -360,10 +364,7 @@ export function AgentBuilder() {
     fileInputRef.current?.click();
   }, [] );
 
-  const handleImportFileSelected = useCallback( async ( event: ChangeEvent<HTMLInputElement> ) => {
-    const file = event.target.files?.[0];
-    if ( !file ) return;
-
+  const importFile = useCallback( async ( file: File ) => {
     try {
       const text = await file.text();
       const data = JSON.parse( text );
@@ -390,14 +391,23 @@ export function AgentBuilder() {
 
       setSavedAgentId( null );
       toast.success( "Builder state imported" );
-    } catch ( error: any ) {
+    } catch ( error: unknown ) {
+      const message = error instanceof Error ? error.message : String( error );
       toast.error( "Failed to import configuration", {
-        description: error?.message,
+        description: message,
       } );
-    } finally {
-      event.target.value = "";
     }
   }, [setConfig, setWorkflowResult] );
+
+  const handleImportFileSelected = useCallback(
+    ( event: ChangeEvent<HTMLInputElement> ) => {
+      const file = event.target.files?.[0];
+      if ( !file ) return;
+      event.target.value = "";
+      void importFile( file );
+    },
+    [importFile]
+  );
 
   const handleDownload = async () => {
     // Allow download even without saving - generate package on the fly
@@ -490,7 +500,7 @@ export function AgentBuilder() {
         type="file"
         accept="application/json"
         className="hidden"
-        onChange={handleImportFileSelected}
+        onChange={(e) => { handleImportFileSelected(e); }}
       />
 
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">

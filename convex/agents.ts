@@ -81,10 +81,12 @@ export const create = mutation({
     mcpInputSchema: v.optional(v.string()), // JSON-stringified JSON Schema for MCP tool input
     mcpServers: v.optional(v.array(v.object({
       name: v.string(),
-      command: v.string(),
-      args: v.array(v.string()),
+      command: v.optional(v.string()),
+      args: v.optional(v.array(v.string())),
       env: v.optional(v.record(v.string(), v.string())), // MCP server environment variables
       disabled: v.optional(v.boolean()),
+      url: v.optional(v.string()),
+      transportType: v.optional(v.string()), // "stdio" | "sse" | "http" | "direct"
     }))),
     sourceWorkflowId: v.optional(v.id("workflows")),
   },
@@ -127,10 +129,12 @@ export const update = mutation({
     mcpInputSchema: v.optional(v.string()), // JSON-stringified JSON Schema for MCP tool input
     mcpServers: v.optional(v.array(v.object({
       name: v.string(),
-      command: v.string(),
-      args: v.array(v.string()),
+      command: v.optional(v.string()),
+      args: v.optional(v.array(v.string())),
       env: v.optional(v.record(v.string(), v.string())), // MCP server environment variables
       disabled: v.optional(v.boolean()),
+      url: v.optional(v.string()),
+      transportType: v.optional(v.string()), // "stdio" | "sse" | "http" | "direct"
     }))),
     modelProvider: v.optional(v.string()),
     sourceWorkflowId: v.optional(v.id("workflows")),

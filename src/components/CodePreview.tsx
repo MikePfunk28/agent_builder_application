@@ -155,7 +155,7 @@ export function CodePreview({ code, dockerConfig, requirementsTxt, deploymentTyp
             <>
               <p>1. Configure AWS credentials and Bedrock access</p>
               <p>2. Install dependencies: <code className="bg-black px-1 rounded">pip install -r requirements.txt</code></p>
-              <p>3. Deploy to Lambda or ECS using the generated configuration</p>
+              <p>3. Deploy to Bedrock AgentCore using the generated configuration</p>
             </>
           )}
           {deploymentType === "ollama" && (

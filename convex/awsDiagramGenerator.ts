@@ -138,8 +138,8 @@ function buildResourceList(deployment: any): AWSResource[] {
   // Add region as context
   const region = deployment.region || "us-east-1";
 
-  if (deployment.tier === "freemium" || deployment.tier === "tier1") {
-    // Tier 1: AgentCore (Bedrock)
+  if (deployment.tier === "freemium") {
+    // Freemium: AgentCore (Bedrock)
     resources.push({
       type: "bedrock-agentcore",
       name: deployment.agentName || "Agent",
@@ -161,77 +161,32 @@ function buildResourceList(deployment: any): AWSResource[] {
         },
       });
     }
-  } else if (deployment.tier === "personal" || deployment.tier === "tier2") {
-    // Tier 2: Personal AWS (Fargate)
-    
-    // VPC
-    resources.push({
-      type: "vpc",
-      name: `${deployment.agentName}-vpc`,
-      properties: {
-        cidr: "10.0.0.0/16",
-        region,
-      },
-    });
+  } else if (deployment.tier === "personal") {
+    // Personal: AWS (Bedrock AgentCore in user's account)
 
-    // Subnets
+    // AgentCore Runtime
     resources.push({
-      type: "subnet",
-      name: `${deployment.agentName}-subnet-1`,
-      properties: {
-        cidr: "10.0.1.0/24",
-        availabilityZone: `${region}a`,
-      },
-    });
-
-    resources.push({
-      type: "subnet",
-      name: `${deployment.agentName}-subnet-2`,
-      properties: {
-        cidr: "10.0.2.0/24",
-        availabilityZone: `${region}b`,
-      },
-    });
-
-    // ECR Repository
-    if (deployment.ecrRepositoryUri) {
-      resources.push({
-        type: "ecr",
-        name: deployment.ecrRepositoryUri.split("/").pop() || "agent-repository",
-        id: deployment.ecrRepositoryUri,
-        properties: {
-          region,
-        },
-      });
-    }
-
-    // ECS Cluster
-    resources.push({
-      type: "ecs-cluster",
-      name: `${deployment.agentName}-cluster`,
+      type: "bedrock-agentcore",
+      name: `${deployment.agentName}-runtime`,
       properties: {
         region,
       },
     });
 
-    // ECS Fargate Service
-    if (deployment.taskArn) {
-      resources.push({
-        type: "ecs-fargate",
-        name: `${deployment.agentName}-service`,
-        id: deployment.taskArn,
-        properties: {
-          cpu: "256",
-          memory: "512",
-          region,
-        },
-      });
-    }
+    // Lambda (AgentCore entry point)
+    resources.push({
+      type: "lambda",
+      name: `${deployment.agentName}-invoker`,
+      properties: {
+        runtime: "python3.11",
+        region,
+      },
+    });
 
     // CloudWatch Logs
     resources.push({
       type: "cloudwatch-logs",
-      name: `/ecs/${deployment.agentName}`,
+      name: `/agentcore/${deployment.agentName}`,
       properties: {
         retentionDays: deployment.logRetentionDays || 7,
         region,
@@ -282,12 +237,12 @@ function buildResourceList(deployment: any): AWSResource[] {
         },
       });
     }
-  } else if (deployment.tier === "enterprise" || deployment.tier === "tier3") {
-    // Tier 3: Enterprise (includes everything from Tier 2 plus SSO)
-    
-    // Include all Tier 2 resources
-    const tier2Deployment = { ...deployment, tier: "tier2" };
-    resources.push(...buildResourceList(tier2Deployment));
+  } else if (deployment.tier === "enterprise") {
+    // Enterprise: includes everything from Personal tier plus SSO
+
+    // Include all Personal tier resources
+    const personalDeployment = { ...deployment, tier: "personal" };
+    resources.push(...buildResourceList(personalDeployment));
 
     // Add SSO/Identity Center
     resources.push({

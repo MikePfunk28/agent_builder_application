@@ -21,7 +21,7 @@ export const cloudwatchClient = new CloudWatchLogsClient({
     : undefined,
 });
 
-const LOG_GROUP = process.env.CLOUDWATCH_LOG_GROUP || "/ecs/agent-tests";
+const LOG_GROUP = process.env.CLOUDWATCH_LOG_GROUP || "/agentcore/agent-tests";
 
 /**
  * Fetch new log events from CloudWatch Logs
@@ -92,6 +92,6 @@ export async function pollNewLogs(params: {
  * Generate log stream name from test ID
  */
 export function getLogStreamName(taskId: string): string {
-  // ECS log stream format: {prefix}/{container-name}/{task-id}
+  // Log stream format: {prefix}/{container-name}/{task-id}
   return `agent-test/agent-test-container/${taskId}`;
 }

@@ -465,25 +465,7 @@ chmod +x lambda_deploy.sh
 - Lambda execution role with Bedrock permissions
 - Python 3.11+
 
-### Option 2: ECS Fargate (Containers)
-
-Best for: Always-on agents, high traffic
-
-\`\`\`bash
-# Deploy using CloudFormation
-aws cloudformation create-stack     --stack-name ${sanitizedName}     --template-body file://cloudformation.yaml     --capabilities CAPABILITY_IAM
-
-# Or use CLI script
-chmod +x deploy.sh
-./deploy.sh
-\`\`\`
-
-**Requirements:**
-- Docker installed
-- AWS CLI configured
-- ECR repository access
-
-### Option 3: Bedrock AgentCore (Managed)
+### Option 2: Bedrock AgentCore (Managed)
 
 Best for: Production agents, enterprise use
 
@@ -502,7 +484,7 @@ chmod +x deploy_agentcore.sh
 - S3 bucket for agent packages
 - AgentCore execution role
 
-### Option 4: Local Docker
+### Option 3: Local Docker
 
 Best for: Development and testing
 
@@ -535,7 +517,6 @@ To change the model, update the \`MODEL_ID\` environment variable or modify \`${
 
 All deployments log to CloudWatch:
 - Lambda: \`/aws/lambda/${sanitizedName}-lambda\`
-- Fargate: \`/ecs/${sanitizedName}\`
 - AgentCore: \`/aws/bedrock/agentcore/${sanitizedName}\`
 
 `;

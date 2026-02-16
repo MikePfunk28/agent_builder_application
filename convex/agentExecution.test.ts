@@ -2,8 +2,8 @@
  * Agent Execution Integration Tests
  * 
  * Tests agent execution in multiple environments:
- * 1. Docker/ECS Fargate (for Ollama models)
- * 2. AWS Bedrock AgentCore (for Bedrock models)
+ * 1. Local Docker/Ollama (for local models)
+ * 2. AWS Bedrock AgentCore (for cloud models)
  * 
  * Requirements: 3.1-3.7, 6.1-6.7, 7.1-7.7, 14.1-14.2
  */
@@ -40,7 +40,7 @@ describe("Agent Execution Infrastructure", () => {
     // Set authenticated user for all subsequent operations
     t = t.withIdentity({ subject: testUserId });
 
-    // Create Ollama agent (for Docker/Fargate testing)
+    // Create Ollama agent (for local Docker testing)
     ollamaAgentId = await t.run(async (ctx: any) => {
       return await ctx.db.insert("agents", {
         name: "Ollama Test Agent",
@@ -690,19 +690,11 @@ class BedrockTestAgent(Agent):
         testQuery: "test",
       });
 
-      // Simulate ECS task assignment
-      await t.run(async (ctx: any) => {
-        await ctx.db.patch(result.testId, {
-          ecsTaskArn: "arn:aws:ecs:us-east-1:123456789012:task/test-cluster/abc123",
-          ecsTaskId: "abc123",
-        });
-      });
-
       const test = await t.query(api.testExecution.getTestById, {
         testId: result.testId,
       });
 
-      // Test routed through AgentCore — ECS fields are deprecated
+      // Test routed through AgentCore
       // Verify the test was created and queued successfully
     });
 
@@ -811,7 +803,6 @@ class BedrockTestAgent(Agent):
       expect(test.cpuUsed).toBe(0.5);
 
       // These metrics can be used to calculate:
-      // - Fargate cost: (executionTime / 3600000) * (memory/1024) * $0.04048
       // - AgentCore cost: per-invocation pricing
     });
 
@@ -835,7 +826,7 @@ class BedrockTestAgent(Agent):
   });
 
   describe("Complete Test Execution Flow", () => {
-    test("should execute complete test flow for Ollama agent (Docker/Fargate)", async () => {
+    test("should execute complete test flow for Ollama agent (local Docker)", async () => {
       // Requirement 3.1-3.7: Complete execution flow
       
       // 1. Submit test
@@ -884,17 +875,7 @@ class BedrockTestAgent(Agent):
       expect(test.phase).toBe("building");
       expect(test.startedAt).toBeDefined();
 
-      // 5. Simulate container start - add ECS task info
-      await t.run(async (ctx: any) => {
-        await ctx.db.patch(result.testId, {
-          ecsTaskArn: "arn:aws:ecs:us-east-1:123456789012:task/test-cluster/abc123",
-          ecsTaskId: "abc123",
-          cloudwatchLogGroup: "/ecs/agent-tests",
-          cloudwatchLogStream: "test-abc123",
-        });
-      });
-
-      // 6. Update to RUNNING status
+      // 5. Update to RUNNING status
       await t.run(async (ctx: any) => {
         await ctx.runMutation(internal.testExecution.updateStatus, {
           testId: result.testId,

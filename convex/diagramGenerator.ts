@@ -129,42 +129,31 @@ with Diagram("${agentName} - Bedrock AgentCore", filename="${sanitizedName}_arch
 }
 
 /**
- * Generate Docker/Ollama architecture diagram
+ * Generate Docker/Ollama architecture diagram (local deployment)
  */
 function generateDockerDiagram(agentName: string, model: string, tools: any[]): string {
   const sanitizedName = agentName.replace(/[^a-zA-Z0-9]/g, '_');
-  
+
   return `# Architecture diagram for ${agentName}
-with Diagram("${agentName} - Docker Deployment", filename="${sanitizedName}_architecture", show=False, direction="LR"):
+with Diagram("${agentName} - Local Docker Deployment", filename="${sanitizedName}_architecture", show=False, direction="LR"):
     # User/Client
     user = Custom("User", "./assets/user.png")
-    
-    # Load Balancer
-    lb = ELB("Load Balancer")
-    
-    # ECS Fargate
-    with Cluster("ECS Fargate"):
+
+    # Local Docker Container
+    with Cluster("Local Docker"):
         with Cluster("Agent Container"):
-            agent = ECS("Agent Runtime")
+            agent = Custom("Agent Runtime", "./assets/docker.png")
             ollama = Custom("Ollama\\n${model}", "./assets/ollama.png")
-            
+
             agent >> ollama
-    
+
     # Tools
     with Cluster("Agent Tools"):
-        ${tools.map((tool, idx) => `tool${idx} = Lambda("${tool.name}")`).join('\n        ')}
-    
-    # CloudWatch
-    logs = CloudwatchLogs("CloudWatch Logs")
-    
-    # ECR for images
-    ecr = ECR("Container Registry")
-    
+        ${tools.map((tool, idx) => `tool${idx} = Custom("${tool.name}", "./assets/tool.png")`).join('\n        ')}
+
     # Connections
-    user >> lb >> agent
+    user >> agent
     ${tools.map((_, idx) => `agent >> tool${idx}`).join('\n    ')}
-    agent >> logs
-    ecr >> agent
 `;
 }
 

@@ -114,8 +114,8 @@ function generatePackageJson(stackName: string): string {
     "cdk",
     "agentcore",
     "bedrock",
-    "ecs",
-    "fargate"
+    "agentcore",
+    "bedrock"
   ],
   "author": "AgentCore CDK Generator",
   "license": "MIT"
@@ -167,16 +167,13 @@ function generateCdkJson(): string {
     "@aws-cdk/aws-lambda:recognizeLayerVersion": true,
     "@aws-cdk/core:checkSecretUsage": true,
     "@aws-cdk/core:target-partitions": ["aws", "aws-cn"],
-    "@aws-cdk-containers/ecs-service-extensions:enableLogging": true,
     "@aws-cdk/aws-ec2:uniqueImdsv2TemplateName": true,
-    "@aws-cdk/aws-ecs:arnFormatIncludesClusterName": true,
     "@aws-cdk/aws-iam:minimizePolicies": true,
     "@aws-cdk/core:validateSnapshotRemovalPolicy": true,
     "@aws-cdk/aws-s3:createDefaultLoggingPolicy": true,
     "@aws-cdk/aws-apigateway:disableCloudWatchRole": true,
     "@aws-cdk/core:enablePartitionLiterals": true,
     "@aws-cdk/aws-iam:standardizedServicePrincipals": true,
-    "@aws-cdk/aws-ecs:disableExplicitDeploymentControllerForCircuitBreaker": true,
     "@aws-cdk/aws-s3:serverAccessLogsUseBucketPolicy": true,
     "@aws-cdk/aws-ec2:restrictDefaultSecurityGroup": true,
     "@aws-cdk/aws-autoscaling:generateLaunchTemplateInsteadOfLaunchConfig": true,
@@ -190,15 +187,10 @@ function generateCdkJson(): string {
   const { agentName, environment = "prod" } = args;
 
   return `import * as cdk from 'aws-cdk-lib';
-import * as ec2 from 'aws-cdk-lib/aws-ec2';
-import * as ecs from 'aws-cdk-lib/aws-ecs';
-import * as ecr from 'aws-cdk-lib/aws-ecr';
-import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
-import * as applicationautoscaling from 'aws-cdk-lib/aws-applicationautoscaling';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import { Construct } from 'constructs';
 
@@ -207,29 +199,15 @@ export interface AgentCoreStackProps extends cdk.StackProps {
   environment: string;
   modelId: string;
   tools: any[];
-  vpcConfig: {
-    createVpc: boolean;
-    vpcCidr?: string;
-    availabilityZones?: string[];
-  };
   monitoring: {
     enableXRay: boolean;
     enableCloudWatch: boolean;
     logRetentionDays?: number;
   };
-  scaling: {
-    minCapacity: number;
-    maxCapacity: number;
-    targetCpuUtilization: number;
-  };
 }
 
 export class AgentCoreStack extends cdk.Stack {
-  public readonly vpc: ec2.IVpc;
-  public readonly cluster: ecs.Cluster;
-  public readonly service: ecs.FargateService;
-  public readonly loadBalancer: elbv2.ApplicationLoadBalancer;
-  public readonly ecrRepository: ecr.Repository;
+  public readonly s3Bucket: s3.Bucket;
 
   constructor(scope: Construct, id: string, props: AgentCoreStackProps) {
     super(scope, id, props);
@@ -239,39 +217,8 @@ export class AgentCoreStack extends cdk.Stack {
     cdk.Tags.of(this).add('Environment', props.environment);
     cdk.Tags.of(this).add('ManagedBy', 'CDK');
 
-    // VPC
-    if (props.vpcConfig.createVpc) {
-      this.vpc = new ec2.Vpc(this, 'VPC', {
-        vpcName: \`\${props.agentName}-\${props.environment}-vpc\`,
-        ipAddresses: ec2.IpAddresses.cidr(props.vpcConfig.vpcCidr || '10.0.0.0/16'),
-        maxAzs: 3,
-        natGateways: 2,
-        subnetConfiguration: [
-          {
-            cidrMask: 24,
-            name: 'Public',
-            subnetType: ec2.SubnetType.PUBLIC,
-          },
-          {
-            cidrMask: 24,
-            name: 'Private',
-            subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
-          },
-        ],
-      });
-    } else {
-      this.vpc = ec2.Vpc.fromLookup(this, 'DefaultVPC', { isDefault: true });
-    }
-
-    // ECR Repository
-    this.ecrRepository = new ecr.Repository(this, 'ECRRepository', {
-      repositoryName: \`\${props.agentName}-\${props.environment}\`,
-      imageScanOnPush: true,
-      lifecycleRules: [{ maxImageCount: 10 }],
-    });
-
-    // S3 Bucket
-    const s3Bucket = new s3.Bucket(this, 'S3Bucket', {
+    // S3 Bucket for agent artifacts
+    this.s3Bucket = new s3.Bucket(this, 'S3Bucket', {
       bucketName: \`\${props.agentName}-\${props.environment}-\${cdk.Aws.ACCOUNT_ID}-storage\`,
       encryption: s3.BucketEncryption.S3_MANAGED,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -293,94 +240,45 @@ export class AgentCoreStack extends cdk.Stack {
       },
     });
 
-    // Log Group
+    // Log Group for AgentCore
     const logGroup = new logs.LogGroup(this, 'LogGroup', {
-      logGroupName: \`/aws/ecs/\${props.agentName}-\${props.environment}\`,
+      logGroupName: \`/aws/agentcore/\${props.agentName}-\${props.environment}\`,
       retention: logs.RetentionDays.ONE_MONTH,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
-    // ECS Cluster
-    this.cluster = new ecs.Cluster(this, 'Cluster', {
-      clusterName: \`\${props.agentName}-\${props.environment}-cluster\`,
-      vpc: this.vpc,
-      containerInsights: props.monitoring.enableCloudWatch,
+    // IAM Role for Bedrock AgentCore
+    const agentCoreRole = new iam.Role(this, 'AgentCoreRole', {
+      roleName: \`\${props.agentName}-\${props.environment}-agentcore-role\`,
+      assumedBy: new iam.ServicePrincipal('bedrock.amazonaws.com'),
+      managedPolicies: [
+        iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonBedrockFullAccess'),
+      ],
     });
 
-    // Task Definition
-    const taskDefinition = new ecs.FargateTaskDefinition(this, 'TaskDefinition', {
-      family: \`\${props.agentName}-\${props.environment}\`,
-      cpu: 1024,
-      memoryLimitMiB: 2048,
-    });
+    // Grant S3 access to AgentCore role
+    this.s3Bucket.grantReadWrite(agentCoreRole);
 
-    // Container
-    const container = taskDefinition.addContainer('agentcore', {
-      image: ecs.ContainerImage.fromEcrRepository(this.ecrRepository, 'latest'),
-      environment: {
-        AWS_REGION: cdk.Aws.REGION,
-        ENVIRONMENT: props.environment,
-        AGENT_NAME: props.agentName,
-      },
-      secrets: {
-        MODEL_ID: ecs.Secret.fromSecretsManager(secrets, 'MODEL_ID'),
-      },
-      logging: ecs.LogDrivers.awsLogs({
-        logGroup: logGroup,
-        streamPrefix: 'ecs',
-      }),
-    });
+    // Grant secrets access
+    secrets.grantRead(agentCoreRole);
 
-    container.addPortMappings({ containerPort: 8080 });
-
-    // Load Balancer
-    this.loadBalancer = new elbv2.ApplicationLoadBalancer(this, 'LoadBalancer', {
-      vpc: this.vpc,
-      internetFacing: true,
-    });
-
-    const targetGroup = new elbv2.ApplicationTargetGroup(this, 'TargetGroup', {
-      port: 8080,
-      protocol: elbv2.ApplicationProtocol.HTTP,
-      vpc: this.vpc,
-      targetType: elbv2.TargetType.IP,
-      healthCheck: { path: '/ping' },
-    });
-
-    this.loadBalancer.addListener('Listener', {
-      port: 80,
-      defaultTargetGroups: [targetGroup],
-    });
-
-    // ECS Service
-    this.service = new ecs.FargateService(this, 'Service', {
-      serviceName: \`\${props.agentName}-\${props.environment}-service\`,
-      cluster: this.cluster,
-      taskDefinition,
-      desiredCount: props.scaling.minCapacity,
-    });
-
-    this.service.attachToApplicationTargetGroup(targetGroup);
-
-    // Auto Scaling
-    const scalableTarget = this.service.autoScaleTaskCount({
-      minCapacity: props.scaling.minCapacity,
-      maxCapacity: props.scaling.maxCapacity,
-    });
-
-    scalableTarget.scaleOnCpuUtilization('CpuScaling', {
-      targetUtilizationPercent: props.scaling.targetCpuUtilization,
-    });
+    // Grant CloudWatch access
+    logGroup.grantWrite(agentCoreRole);
 
     // Outputs
     new cdk.CfnOutput(this, 'AgentCoreEndpoint', {
-      value: \`http://\${this.loadBalancer.loadBalancerDnsName}\`,
+      value: \`https://bedrock-agentcore.\${cdk.Aws.REGION}.amazonaws.com/agents/\${props.agentName}-\${props.environment}/invoke\`,
       exportName: \`\${props.agentName}-\${props.environment}-endpoint\`,
     });
 
-    new cdk.CfnOutput(this, 'ECRRepositoryURI', {
-      value: this.ecrRepository.repositoryUri,
-      exportName: \`\${props.agentName}-\${props.environment}-ecr-uri\`,
+    new cdk.CfnOutput(this, 'S3BucketName', {
+      value: this.s3Bucket.bucketName,
+      exportName: \`\${props.agentName}-\${props.environment}-s3-bucket\`,
+    });
+
+    new cdk.CfnOutput(this, 'AgentCoreRoleArn', {
+      value: agentCoreRole.roleArn,
+      exportName: \`\${props.agentName}-\${props.environment}-role-arn\`,
     });
   }
 }`;
@@ -442,21 +340,18 @@ Production-ready AgentCore infrastructure deployment using AWS CDK.
 
 ## Architecture
 
-- **ECS Fargate**: Serverless container hosting
-- **Application Load Balancer**: High availability
-- **Auto Scaling**: CPU-based scaling
-- **VPC**: Isolated network
-- **ECR**: Container registry
-- **S3**: Agent storage
-- **CloudWatch**: Monitoring
+- **Bedrock AgentCore**: Managed agent runtime
+- **IAM Roles**: Least-privilege access control
+- **S3**: Agent artifact storage
+- **Secrets Manager**: Configuration & secrets
+- **CloudWatch**: Monitoring & logging
 
 ## Quick Start
 
 1. Install dependencies: \`npm install\`
 2. Bootstrap CDK: \`npm run bootstrap\`
 3. Deploy: \`npm run deploy\`
-4. Build and push container to ECR
-5. Update ECS service
+4. Configure AgentCore endpoint
 
 ## Commands
 
@@ -471,10 +366,10 @@ Access CloudWatch dashboard for metrics and logs.
 
 ## Security
 
-- VPC with private subnets
-- Security groups with least privilege
-- IAM roles with minimal permissions
-- Encrypted storage
+- IAM roles with least-privilege policies
+- Secrets Manager for sensitive configuration
+- Encrypted S3 storage with versioning
+- CloudWatch logging with configurable retention
 
 ## Cleanup
 
@@ -530,14 +425,12 @@ function generateDeploymentInstructions(stackName: string, region: string): stri
 ## Prerequisites
 - AWS CLI configured
 - Node.js 18+
-- Docker
 
 ## Steps
 1. \`npm install\`
 2. \`cdk bootstrap\`
 3. \`cdk deploy\`
-4. Build and push container to ECR
-5. Update ECS service
+4. Configure AgentCore endpoint
 
 ## Verification
 - Check CloudWatch logs

@@ -1,6 +1,6 @@
 /**
  * CloudFormation Template Generator
- * Generates AWS infrastructure templates for agent deployment
+ * Generates AWS infrastructure templates for Bedrock AgentCore deployment
  */
 
 import { DEFAULT_RESOURCES, sanitizeAgentName } from "../constants";
@@ -49,85 +49,25 @@ class CloudFormationBuilder {
     return this;
   }
 
-  addECRRepository(): this {
+  addS3Bucket(): this {
     this.sections.push(
       `Resources:`,
-      `  # ECR Repository for agent container`,
-      `  AgentRepository:`,
-      `    Type: AWS::ECR::Repository`,
+      `  # S3 Bucket for agent artifacts`,
+      `  AgentArtifactsBucket:`,
+      `    Type: AWS::S3::Bucket`,
       `    Properties:`,
-      `      RepositoryName: !Sub '\${AgentName}-\${Environment}'`,
-      `      ImageScanningConfiguration:`,
-      `        ScanOnPush: true`,
-      `      LifecyclePolicy:`,
-      `        LifecyclePolicyText: |`,
-      `          {`,
-      `            "rules": [{`,
-      `              "rulePriority": 1,`,
-      `              "description": "Keep last ${DEFAULT_RESOURCES.ECR_IMAGE_RETENTION} images",`,
-      `              "selection": {`,
-      `                "tagStatus": "any",`,
-      `                "countType": "imageCountMoreThan",`,
-      `                "countNumber": ${DEFAULT_RESOURCES.ECR_IMAGE_RETENTION}`,
-      `              },`,
-      `              "action": { "type": "expire" }`,
-      `            }]`,
-      `          }`,
-      ``
-    );
-    return this;
-  }
-
-  addECSCluster(): this {
-    this.sections.push(
-      `  # ECS Cluster`,
-      `  AgentCluster:`,
-      `    Type: AWS::ECS::Cluster`,
-      `    Properties:`,
-      `      ClusterName: !Sub '\${AgentName}-cluster-\${Environment}'`,
-      `      CapacityProviders:`,
-      `        - FARGATE`,
-      `        - FARGATE_SPOT`,
-      `      DefaultCapacityProviderStrategy:`,
-      `        - CapacityProvider: FARGATE`,
-      `          Weight: 1`,
-      ``
-    );
-    return this;
-  }
-
-  addTaskDefinition(): this {
-    this.sections.push(
-      `  # Task Definition`,
-      `  AgentTaskDefinition:`,
-      `    Type: AWS::ECS::TaskDefinition`,
-      `    Properties:`,
-      `      Family: !Sub '\${AgentName}-task'`,
-      `      NetworkMode: awsvpc`,
-      `      RequiresCompatibilities:`,
-      `        - FARGATE`,
-      `      Cpu: '${DEFAULT_RESOURCES.ECS_CPU}'`,
-      `      Memory: '${DEFAULT_RESOURCES.ECS_MEMORY}'`,
-      `      ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn`,
-      `      TaskRoleArn: !GetAtt TaskRole.Arn`,
-      `      ContainerDefinitions:`,
-      `        - Name: agent`,
-      `          Image: !Sub '\${AWS::AccountId}.dkr.ecr.\${AWS::Region}.amazonaws.com/\${AgentRepository}:latest'`,
-      `          Essential: true`,
-      `          PortMappings:`,
-      `            - ContainerPort: ${DEFAULT_RESOURCES.CONTAINER_PORT}`,
-      `              Protocol: tcp`,
-      `          LogConfiguration:`,
-      `            LogDriver: awslogs`,
-      `            Options:`,
-      `              awslogs-group: !Ref AgentLogGroup`,
-      `              awslogs-region: !Ref AWS::Region`,
-      `              awslogs-stream-prefix: agent`,
-      `          Environment:`,
-      `            - Name: AGENT_NAME`,
-      `              Value: !Ref AgentName`,
-      `            - Name: ENVIRONMENT`,
-      `              Value: !Ref Environment`,
+      `      BucketName: !Sub '\${AgentName}-\${Environment}-\${AWS::AccountId}-artifacts'`,
+      `      BucketEncryption:`,
+      `        ServerSideEncryptionConfiguration:`,
+      `          - ServerSideEncryptionByDefault:`,
+      `              SSEAlgorithm: AES256`,
+      `      PublicAccessBlockConfiguration:`,
+      `        BlockPublicAcls: true`,
+      `        BlockPublicPolicy: true`,
+      `        IgnorePublicAcls: true`,
+      `        RestrictPublicBuckets: true`,
+      `      VersioningConfiguration:`,
+      `        Status: Enabled`,
       ``
     );
     return this;
@@ -139,7 +79,7 @@ class CloudFormationBuilder {
       `  AgentLogGroup:`,
       `    Type: AWS::Logs::LogGroup`,
       `    Properties:`,
-      `      LogGroupName: !Sub '/ecs/\${AgentName}'`,
+      `      LogGroupName: !Sub '/aws/agentcore/\${AgentName}'`,
       `      RetentionInDays: ${DEFAULT_RESOURCES.LOG_RETENTION_DAYS}`,
       ``
     );
@@ -149,36 +89,45 @@ class CloudFormationBuilder {
   addIAMRoles(): this {
     this.sections.push(
       `  # IAM Roles`,
-      `  TaskExecutionRole:`,
+      `  AgentCoreExecutionRole:`,
       `    Type: AWS::IAM::Role`,
       `    Properties:`,
+      `      RoleName: !Sub '\${AgentName}-\${Environment}-agentcore-role'`,
       `      AssumeRolePolicyDocument:`,
       `        Statement:`,
       `          - Effect: Allow`,
       `            Principal:`,
-      `              Service: ecs-tasks.amazonaws.com`,
+      `              Service: bedrock.amazonaws.com`,
       `            Action: sts:AssumeRole`,
       `      ManagedPolicyArns:`,
-      `        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy`,
-      ``,
-      `  TaskRole:`,
-      `    Type: AWS::IAM::Role`,
-      `    Properties:`,
-      `      AssumeRolePolicyDocument:`,
-      `        Statement:`,
-      `          - Effect: Allow`,
-      `            Principal:`,
-      `              Service: ecs-tasks.amazonaws.com`,
-      `            Action: sts:AssumeRole`,
+      `        - arn:aws:iam::aws:policy/AmazonBedrockFullAccess`,
       `      Policies:`,
-      `        - PolicyName: BedrockAccess`,
+      `        - PolicyName: AgentCoreAccess`,
       `          PolicyDocument:`,
       `            Statement:`,
       `              - Effect: Allow`,
       `                Action:`,
       `                  - bedrock:InvokeModel`,
       `                  - bedrock:InvokeModelWithResponseStream`,
+      `                  - s3:GetObject`,
+      `                  - s3:PutObject`,
+      `                  - logs:CreateLogGroup`,
+      `                  - logs:CreateLogStream`,
+      `                  - logs:PutLogEvents`,
       `                Resource: '*'`,
+      ``
+    );
+    return this;
+  }
+
+  addSecretsManager(): this {
+    this.sections.push(
+      `  # Secrets Manager for agent configuration`,
+      `  AgentSecrets:`,
+      `    Type: AWS::SecretsManager::Secret`,
+      `    Properties:`,
+      `      Name: !Sub '\${AgentName}-\${Environment}-secrets'`,
+      `      Description: !Sub 'Secrets for \${AgentName} agent'`,
       ``
     );
     return this;
@@ -187,23 +136,23 @@ class CloudFormationBuilder {
   addOutputs(): this {
     this.sections.push(
       `Outputs:`,
-      `  RepositoryUri:`,
-      `    Description: ECR Repository URI`,
-      `    Value: !GetAtt AgentRepository.RepositoryUri`,
+      `  AgentCoreRoleArn:`,
+      `    Description: AgentCore Execution Role ARN`,
+      `    Value: !GetAtt AgentCoreExecutionRole.Arn`,
       `    Export:`,
-      `      Name: !Sub '\${AWS::StackName}-RepositoryUri'`,
+      `      Name: !Sub '\${AWS::StackName}-RoleArn'`,
       ``,
-      `  ClusterName:`,
-      `    Description: ECS Cluster Name`,
-      `    Value: !Ref AgentCluster`,
+      `  ArtifactsBucketName:`,
+      `    Description: S3 Bucket for agent artifacts`,
+      `    Value: !Ref AgentArtifactsBucket`,
       `    Export:`,
-      `      Name: !Sub '\${AWS::StackName}-ClusterName'`,
+      `      Name: !Sub '\${AWS::StackName}-ArtifactsBucket'`,
       ``,
-      `  TaskDefinitionArn:`,
-      `    Description: Task Definition ARN`,
-      `    Value: !Ref AgentTaskDefinition`,
+      `  LogGroupName:`,
+      `    Description: CloudWatch Log Group`,
+      `    Value: !Ref AgentLogGroup`,
       `    Export:`,
-      `      Name: !Sub '\${AWS::StackName}-TaskDefinitionArn'`
+      `      Name: !Sub '\${AWS::StackName}-LogGroup'`
     );
     return this;
   }
@@ -220,11 +169,10 @@ export function generateCloudFormationTemplate(agent: Agent): string {
   return new CloudFormationBuilder()
     .addHeader(agent)
     .addParameters(agent)
-    .addECRRepository()
-    .addECSCluster()
-    .addTaskDefinition()
+    .addS3Bucket()
     .addCloudWatchLogs()
     .addIAMRoles()
+    .addSecretsManager()
     .addOutputs()
     .build();
 }

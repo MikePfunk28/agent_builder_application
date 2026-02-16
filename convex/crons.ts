@@ -1,11 +1,10 @@
 /**
  * Cron Jobs Configuration
  *
- * Scheduled tasks for queue processing and maintenance
- * 
- * NOTE: To save costs, the queue processor is now triggered on-demand
- * when tests are submitted, rather than polling every few seconds.
- * Only the cleanup job runs on a schedule.
+ * Scheduled tasks for billing resets and maintenance.
+ *
+ * NOTE: Queue processing is triggered on-demand when tests are submitted,
+ * NOT via polling. Only billing resets and cleanup run on a schedule.
  */
 
 import { cronJobs } from "convex/server";
@@ -13,7 +12,12 @@ import { internal } from "./_generated/api";
 
 const crons = cronJobs();
 
-// ALL CRON JOBS DISABLED
-// Cleanup should be triggered manually or on-demand, not on a schedule
+// Reset freemium-tier users' monthly usage on the 1st of each month at 00:00 UTC.
+// Paid users are reset via Stripe invoice.paid webhook instead.
+crons.monthly(
+  "reset freemium monthly usage",
+  { day: 1, hourUTC: 0, minuteUTC: 0 },
+  internal.stripeMutations.resetFreemiumMonthlyUsage,
+);
 
 export default crons;

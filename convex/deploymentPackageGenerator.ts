@@ -7,7 +7,7 @@ import { action } from "./_generated/server";
 import { v } from "convex/values";
 import { api } from "./_generated/api";
 import { getAuthUserId } from "@convex-dev/auth/server";
-import { isAWSDeployment, isContainerDeployment, sanitizePythonModuleName, escapePythonString, escapePythonTripleQuote } from "./constants";
+import { isAWSDeployment, isLocalDeployment, sanitizePythonModuleName, escapePythonString, escapePythonTripleQuote } from "./constants";
 import {
   generateRequirementsTxt,
   generateDockerfile,
@@ -67,54 +67,10 @@ function buildResourceListFromAgent(agent: any): AWSResource[] {
       },
     });
   } else {
-    // Docker/Container deployment (Fargate)
-    resources.push({
-      type: "vpc",
-      name: `${agent.name}-vpc`,
-      properties: {
-        cidr: "10.0.0.0/16",
-        region,
-      },
-    });
-
-    resources.push({
-      type: "subnet",
-      name: `${agent.name}-subnet-1`,
-      properties: {
-        cidr: "10.0.1.0/24",
-        availabilityZone: `${region}a`,
-      },
-    });
-
-    resources.push({
-      type: "ecr",
-      name: `${agent.name}-repository`,
-      properties: {
-        region,
-      },
-    });
-
-    resources.push({
-      type: "ecs-cluster",
-      name: `${agent.name}-cluster`,
-      properties: {
-        region,
-      },
-    });
-
-    resources.push({
-      type: "ecs-fargate",
-      name: `${agent.name}-service`,
-      properties: {
-        cpu: "256",
-        memory: "512",
-        region,
-      },
-    });
-
+    // Docker/Container deployment (local only — cloud deploys go through AgentCore)
     resources.push({
       type: "cloudwatch-logs",
-      name: `/ecs/${agent.name}`,
+      name: `/agentcore/${agent.name}`,
       properties: {
         retentionDays: 7,
         region,
@@ -163,7 +119,7 @@ export function assembleDeploymentPackageFiles(agent: any, options: DeploymentPa
     files["cloudformation.yaml"] = generateCloudFormationTemplate(agent);
   }
 
-  if (isContainerDeployment(agent.deploymentType) || options.includeCLIScript) {
+  if (isLocalDeployment(agent.deploymentType) || options.includeCLIScript) {
     files["deploy.sh"] = generateDeployScript(agent);
   }
 
@@ -251,7 +207,7 @@ export const generateDeploymentPackage = action({
       includeCLIScript: v.optional(v.boolean()),
       includeLambdaConfig: v.optional(v.boolean()),
       usePyprojectToml: v.optional(v.boolean()),
-      deploymentTarget: v.optional(v.string()), // "fargate" | "lambda" | "agentcore"
+      deploymentTarget: v.optional(v.string()), // "lambda" | "agentcore"
     })),
   },
   handler: async (ctx, args) => {

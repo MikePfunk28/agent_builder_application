@@ -242,7 +242,7 @@ export async function dispatchToolCall(
       case "code": {
         // Code skills provide their implementation as tool output.
         // The code is stored in skillConfig and returned for the agent to use/incorporate.
-        // Full ECS execution requires a testExecution record (use the Agent Tester for that).
+        // Full execution requires a testExecution record (use the Agent Tester for that).
         const codeConfig = skill.skillConfig as { code?: string; language?: string };
         const code = codeConfig?.code || "";
         if ( !code ) {
@@ -300,7 +300,7 @@ export async function dispatchToolCall(
       }
 
       case "sandbox": {
-        // Sandbox execution: Docker via ECS, E2B is a future placeholder
+        // Sandbox execution: Docker container or E2B (future placeholder)
         const sandboxConfig = skill.skillConfig as {
           runtime?: "docker" | "e2b";
           command?: string;

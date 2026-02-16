@@ -132,7 +132,11 @@ export function validateMessage(
 }
 
 /**
- * Check rate limits for user
+ * Check rate limits for user (messages-per-hour, content guardrail).
+ *
+ * NOTE: For per-minute burst protection on Bedrock actions, use
+ * rateLimiter.ts:checkRateLimit() instead. This function handles
+ * the content-safety messages-per-hour limit within evaluateGuardrails().
  */
 export function checkRateLimits(
   userId: string,

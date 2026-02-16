@@ -243,6 +243,48 @@ export const resetMonthlyUsage = internalMutation( {
 } );
 
 /**
+ * Reset monthly usage for all freemium-tier users.
+ * Called by cron on the 1st of each month.
+ * Paid users are reset via invoice.paid webhook instead.
+ */
+export const resetFreemiumMonthlyUsage = internalMutation( {
+  args: {},
+  handler: async ( ctx ) => {
+    const freemiumUsers = await ctx.db
+      .query( "users" )
+      .filter( ( q ) =>
+        q.or(
+          q.eq( q.field( "tier" ), "freemium" ),
+          q.eq( q.field( "tier" ), undefined )
+        )
+      )
+      .collect();
+
+    let resetCount = 0;
+    for ( const user of freemiumUsers ) {
+      // Only reset if they have usage
+      if (
+        ( user.executionsThisMonth ?? 0 ) > 0 ||
+        ( user.rawCallsThisMonth ?? 0 ) > 0 ||
+        ( user.tokensInputThisMonth ?? 0 ) > 0 ||
+        ( user.tokensOutputThisMonth ?? 0 ) > 0
+      ) {
+        await ctx.db.patch( user._id, {
+          executionsThisMonth: 0,
+          rawCallsThisMonth: 0,
+          tokensInputThisMonth: 0,
+          tokensOutputThisMonth: 0,
+          billingPeriodStart: Date.now(),
+        } );
+        resetCount++;
+      }
+    }
+
+    console.log( `resetFreemiumMonthlyUsage: reset ${resetCount} freemium users` );
+  },
+} );
+
+/**
  * Mark subscription as past_due when payment fails.
  */
 export const markPastDue = internalMutation( {

@@ -27,7 +27,7 @@ export const calculatePlatformValue = query({
       included: {
         infrastructure: {
           value: 2000,
-          items: ["VPC setup", "ECS Fargate config", "ALB", "Security groups", "IAM roles"]
+          items: ["Bedrock AgentCore", "S3 storage", "CloudWatch logs", "IAM roles", "Secrets Manager"]
         },
         memory: {
           value: 1500,

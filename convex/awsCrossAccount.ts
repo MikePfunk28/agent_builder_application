@@ -85,13 +85,30 @@ export const deployToUserAccount = action({
     const agent = await ctx.runQuery(api.agents.get, { id: args.agentId });
     if (!agent) throw new Error("Agent not found");
 
-    // Deploy to user's Fargate using their credentials
-    const deployment = await deployToFargate({
-      credentials,
-      region: awsAccount.region!,
-      agent,
-      accountType: "user",
+    // Deploy to user's AgentCore using their credentials
+    // Extract dependencies from agent tools
+    const dependencies: string[] = [];
+    for (const tool of agent.tools || []) {
+      if (tool.requiresPip && tool.pipPackages) {
+        dependencies.push(...tool.pipPackages);
+      }
+    }
+
+    const environmentVariables: Record<string, string> = {
+      AGENT_NAME: agent.name,
+      AGENT_MODEL: agent.model,
+    };
+
+    const deployment: any = await ctx.runAction(api.agentcoreDeployment.deployToAgentCore, {
+      agentId: args.agentId,
+      code: agent.generatedCode,
+      dependencies,
+      environmentVariables,
     });
+
+    if (!deployment.success) {
+      throw new Error(deployment.error || "AgentCore deployment failed");
+    }
 
     // Log deployment
     await ctx.runMutation(api.deployments.create, {
@@ -99,15 +116,14 @@ export const deployToUserAccount = action({
       tier: "personal",
       awsAccountId: awsAccount.awsAccountId,
       region: awsAccount.region!,
-      taskArn: deployment.taskArn,
+      taskArn: deployment.runtimeId || "agentcore",
       status: "running",
     });
 
     return {
       success: true,
-      taskArn: deployment.taskArn,
-      logStreamUrl: deployment.logStreamUrl,
-      message: "Agent deployed to your AWS account!",
+      runtimeId: deployment.runtimeId,
+      message: "Agent deployed to your AWS account via Bedrock AgentCore!",
     };
   },
 });
@@ -143,71 +159,5 @@ export const validateRole = action({
   },
 });
 
-// Helper: Deploy to Fargate (works for both YOUR account and USER account)
-async function deployToFargate(params: {
-  credentials: {
-    accessKeyId: string;
-    secretAccessKey: string;
-    sessionToken: string;
-  };
-  region: string;
-  agent: any;
-  accountType: "platform" | "user";
-}) {
-  const { credentials, region, agent, accountType } = params;
-
-  // Call AWS HTTP action to run ECS task
-  const response = await fetch(
-    `${process.env.CONVEX_SITE_URL}/aws/runTask`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.AWS_API_SECRET}`,
-      },
-      body: JSON.stringify({
-        credentials,
-        region,
-        cluster:
-          accountType === "platform"
-            ? process.env.ECS_CLUSTER_NAME
-            : "agent-builder-cluster",
-        taskDefinition:
-          accountType === "platform"
-            ? process.env.ECS_TASK_FAMILY
-            : "agent-builder-agent-tester",
-        subnets: [
-          accountType === "platform"
-            ? process.env.ECS_SUBNET_ID
-            : "subnet-user",
-        ],
-        securityGroups: [
-          accountType === "platform"
-            ? process.env.ECS_SECURITY_GROUP_ID
-            : "sg-user",
-        ],
-        containerOverrides: {
-          name: "agent-tester",
-          environment: [
-            { name: "AGENT_ID", value: agent._id },
-            { name: "AGENT_NAME", value: agent.name },
-            { name: "AGENT_CODE", value: agent.code },
-          ],
-        },
-      }),
-    }
-  );
-
-  if (!response.ok) {
-    throw new Error(`Failed to run task: ${response.statusText}`);
-  }
-
-  const result = await response.json();
-
-  return {
-    taskArn: result.taskArn,
-    logStreamUrl: `https://${region}.console.aws.amazon.com/cloudwatch/home?region=${region}#logsV2:log-groups/log-group/${encodeURIComponent(
-      "/ecs/agent-builder-agent-tester"
-    )}`,
-  };
-}
+// Fargate helper removed — all cross-account deployments now go through Bedrock AgentCore.
+// See agentcoreDeployment.ts for the AgentCore deployment path.

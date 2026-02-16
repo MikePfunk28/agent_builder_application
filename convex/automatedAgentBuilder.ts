@@ -150,6 +150,17 @@ export const processResponse = action( {
       throw new Error( gateResult.reason );
     }
 
+    // Rate limit: prevent burst abuse per user
+    {
+      const { checkRateLimit, buildTierRateLimitConfig } = await import( "./rateLimiter" );
+      const { getTierConfig } = await import( "./lib/tierConfig" );
+      const rlCfg = buildTierRateLimitConfig( getTierConfig( gateResult.tier ).maxConcurrentTests, "agentExecution" );
+      const rlResult = await checkRateLimit( ctx, String( gateResult.userId ), "agentExecution", rlCfg );
+      if ( !rlResult.allowed ) {
+        throw new Error( rlResult.reason ?? "Rate limit exceeded. Please try again later." );
+      }
+    }
+
     // Use Claude Haiku 4.5 with interleaved thinking to analyze and ask next question
     const systemPrompt = buildSystemPrompt( session.agentRequirements );
     const response = await analyzeAndAskNext( systemPrompt, updatedHistory );
