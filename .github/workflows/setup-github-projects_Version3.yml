@@ -38,7 +38,7 @@ jobs:
           while read -r issue_num; do
             [ -z "$issue_num" ] && continue
             ISSUE_URL="https://github.com/$REPO/issues/$issue_num"
-            err=$(gh project item-add "$PROJECT_ID" --url "$ISSUE_URL" 2>&1) || {
+            err=$(gh project item-add "$PROJECT_ID" --owner MikePfunk28 --url "$ISSUE_URL" 2>&1) || {
               echo "Error adding issue $issue_num to project $PROJECT_ID: $err" >&2
               failures=$((failures+1))
             }
@@ -58,10 +58,10 @@ jobs:
 
           if [ "${{ github.event_name }}" = "issues" ]; then
             ISSUE_URL="https://github.com/${REPO}/issues/${{ github.event.issue.number }}"
-            out=$(gh project item-add "$PROJECT_ID" --url "$ISSUE_URL" 2>&1) || { echo "Error adding issue $ISSUE_URL to project: $out" >&2; exit 1; }
+            out=$(gh project item-add "$PROJECT_ID" --owner MikePfunk28 --url "$ISSUE_URL" 2>&1) || { echo "Error adding issue $ISSUE_URL to project: $out" >&2; exit 1; }
           elif [ "${{ github.event_name }}" = "pull_request" ]; then
             URL="https://github.com/${REPO}/pull/${{ github.event.pull_request.number }}"
-            out=$(gh project item-add "$PROJECT_ID" --url "$URL" 2>&1) || { echo "Error adding PR $URL to project: $out" >&2; exit 1; }
+            out=$(gh project item-add "$PROJECT_ID" --owner MikePfunk28 --url "$URL" 2>&1) || { echo "Error adding PR $URL to project: $out" >&2; exit 1; }
           else
             echo "Unsupported event: ${{ github.event_name }}" >&2
             exit 1
