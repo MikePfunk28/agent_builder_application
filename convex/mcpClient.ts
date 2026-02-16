@@ -886,7 +886,7 @@ export const testMCPServerConnection = action( {
   args: {
     serverName: v.string(),
   },
-  handler: async ( ctx, args ) => {
+  handler: async ( ctx, args ): Promise<{ success: boolean; status: string; error?: string; tools?: Array<{ name: string; description?: string; inputSchema?: unknown }> }> => {
     try {
       // Get server configuration
       const server = await ctx.runQuery( api.mcpConfig.getMCPServerByName, {
@@ -964,6 +964,7 @@ export const testMCPServerConnection = action( {
           transport = new SSEClientTransport( new URL( server.url ) );
         } else {
           // stdio transport
+          if ( !server.command ) throw new Error( "stdio server missing command" );
           const { StdioClientTransport } = await import( "@modelcontextprotocol/sdk/client/stdio.js" );
           transport = new StdioClientTransport( {
             command: server.command,

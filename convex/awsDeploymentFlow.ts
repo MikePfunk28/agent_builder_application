@@ -320,7 +320,7 @@ async function deployToBedrockAgentCore(
   const agentCode = generateBedrockAgentCode(agent);
   
   // Package as Lambda deployment package
-  const deploymentPackage = await packageForLambda(agentCode);
+  const deploymentPackage = await packageForLambda( agentCode );
 
   try {
     // Try to create new function
@@ -406,6 +406,17 @@ def handler(event, context):
             'body': json.dumps({'error': str(e)})
         }
 `;
+}
+
+/**
+ * Package Python agent code as a zip buffer suitable for Lambda Code.ZipFile.
+ * Uses jszip (already a project dependency via awsDeployment.ts).
+ */
+async function packageForLambda( code: string ): Promise<Uint8Array> {
+  const JSZipModule = await import( "jszip" );
+  const zip = new JSZipModule.default();
+  zip.file( "agent.py", code );
+  return zip.generateAsync( { type: "uint8array" } );
 }
 
 // ECS/Fargate stubs removed — all deployments now use Bedrock AgentCore.
