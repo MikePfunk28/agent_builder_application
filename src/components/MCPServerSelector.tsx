@@ -15,11 +15,13 @@ interface MCPServer {
   _id: Id<"mcpServers"> | string;
   source?: "system" | "user";
   name: string;
-  command: string;
-  args: string[];
+  command?: string;
+  args?: string[];
   env?: Record<string, string>;
   disabled: boolean;
   status: string;
+  url?: string;
+  transportType?: "stdio" | "sse" | "http" | "direct";
   availableTools?: Array<{
     name: string;
     description?: string;
@@ -29,18 +31,53 @@ interface MCPServer {
 interface MCPServerSelectorProps {
   selectedServers: Array<{
     name: string;
-    command: string;
-    args: string[];
+    command?: string;
+    args?: string[];
     env?: Record<string, string>;
     disabled?: boolean;
+    url?: string;
+    transportType?: "stdio" | "sse" | "http" | "direct";
   }>;
   onSelectionChange: (servers: Array<{
     name: string;
-    command: string;
-    args: string[];
+    command?: string;
+    args?: string[];
     env?: Record<string, string>;
     disabled?: boolean;
+    url?: string;
+    transportType?: "stdio" | "sse" | "http" | "direct";
   }>) => void;
+}
+
+function getTransportType(server: MCPServer): "stdio" | "sse" | "http" | "direct" {
+  if (server.transportType) {
+    return server.transportType;
+  }
+
+  if (server.url) {
+    return "sse";
+  }
+
+  if (server.command) {
+    return "stdio";
+  }
+
+  return "direct";
+}
+
+function getServerSubtitle(server: MCPServer) {
+  const args = server.args ?? [];
+  const transportType = getTransportType(server);
+
+  if ((transportType === "sse" || transportType === "http") && server.url) {
+    return server.url;
+  }
+
+  if (transportType === "stdio" && server.command) {
+    return [server.command, ...args].join(" ");
+  }
+
+  return "Built-in direct integration";
 }
 
 export function MCPServerSelector({
@@ -73,9 +110,11 @@ export function MCPServerSelector({
         {
           name: server.name,
           command: server.command,
-          args: server.args,
+          args: server.args ?? [],
           env: server.env,
           disabled: false,
+          url: server.url,
+          transportType: getTransportType(server),
         },
       ]);
     }
@@ -171,6 +210,8 @@ export function MCPServerSelector({
           {servers.map((server) => {
             const isSelected = isServerSelected(server.name);
             const isDisabled = server.disabled;
+            const subtitle = getServerSubtitle(server);
+            const transportType = getTransportType(server);
 
             return (
               <button
@@ -203,7 +244,7 @@ export function MCPServerSelector({
                         {server.name}
                       </h4>
                       <p className="text-xs text-green-600 mt-1 font-mono truncate">
-                        {server.command} {server.args.join(' ')}
+                        {subtitle}
                       </p>
                     </div>
                   </div>
@@ -233,6 +274,9 @@ export function MCPServerSelector({
                     {server.status === 'connected' ? 'Connected' :
                      server.status === 'error' ? 'Error' :
                      'Disconnected'}
+                  </span>
+                  <span className="text-xs px-2 py-0.5 bg-black/30 text-green-300 rounded border border-green-900/30">
+                    {transportType.toUpperCase()}
                   </span>
                   {isDisabled && (
                     <span className="text-xs px-2 py-0.5 bg-gray-700 text-gray-400 rounded">

@@ -10,8 +10,8 @@ interface MCPServerFormProps {
     _id: Id<"mcpServers"> | string;
     source?: "system" | "user";
     name: string;
-    command: string;
-    args: string[];
+    command?: string;
+    args?: string[];
     env?: Record<string, string>;
     disabled: boolean;
     timeout?: number;
@@ -27,7 +27,7 @@ interface EnvVar {
 export function MCPServerForm({ server, onClose }: MCPServerFormProps) {
   const [name, setName] = useState(server?.name || '');
   const [command, setCommand] = useState(server?.command || '');
-  const [argsText, setArgsText] = useState(server?.args.join(' ') || '');
+  const [argsText, setArgsText] = useState(server?.args?.join(' ') || '');
   const [envVars, setEnvVars] = useState<EnvVar[]>(() => {
     if (server?.env) {
       return Object.entries(server.env).map(([key, value]) => ({ key, value }));
